@@ -196,6 +196,14 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 .checkbox-inline { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9b4bd; white-space: nowrap; }
 .checkbox-inline input { width: auto; margin: 0; }
 
+.compendium-range { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9b4bd; white-space: nowrap; }
+.compendium-range-label { font-size: 12px; }
+.compendium-range input {
+  width: 64px; min-width: 0; flex: none;
+  background: #0b0e11; color: #e6e9ec; border: 1px solid #33414f;
+  border-radius: 6px; padding: 6px 8px; font-size: 13px;
+}
+
 .compendium-table-wrap { overflow-x: auto; border: 1px solid #1d2833; border-radius: 10px; }
 .compendium-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .compendium-table th, .compendium-table td { padding: 8px 10px; text-align: left; white-space: nowrap; }

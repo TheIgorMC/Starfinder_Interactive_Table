@@ -174,10 +174,8 @@ const SECTIONS = [
       { key: "save", label: "Save", get: (r) => formatSavingThrow(r.mechanics?.savingThrow) },
       sourceCol,
     ],
-    facets: [
-      { key: "school", label: "School", get: (r) => r.data?.school || "" },
-      { key: "level", label: "Level", get: (r) => (r.data?.level != null ? String(r.data.level) : "") },
-    ],
+    facets: [{ key: "school", label: "School", get: (r) => r.data?.school || "" }],
+    ranges: [{ key: "level", label: "Level", get: levelCol.get }],
   },
   {
     key: "weapons", label: "Weapons", categories: ["weapon"],
@@ -194,6 +192,7 @@ const SECTIONS = [
       { key: "weaponCategory", label: "Damage Type", get: (r) => r.data?.weaponCategory || "" },
       { key: "melee", label: "Melee / Ranged", get: (r) => (MELEE_WEAPON_TYPES.has(r.data?.weaponType) ? "Melee" : "Ranged") },
     ],
+    ranges: [{ key: "level", label: "Level", get: levelCol.get }, { key: "price", label: "Price", get: priceCol.get }],
   },
   {
     key: "armor", label: "Armor & Shields", categories: ["armor", "shield"],
@@ -208,6 +207,7 @@ const SECTIONS = [
       bulkCol, levelCol, priceCol, sourceCol,
     ],
     facets: [{ key: "armorType", label: "Weight", get: (r) => r.data?.armorType || "" }],
+    ranges: [{ key: "level", label: "Level", get: levelCol.get }, { key: "price", label: "Price", get: priceCol.get }],
   },
   {
     key: "ammo", label: "Ammunition", categories: ["ammunition", "weaponAccessory", "fusion"],
@@ -219,6 +219,7 @@ const SECTIONS = [
       bulkCol, levelCol, priceCol, sourceCol,
     ],
     facets: [{ key: "ammoType", label: "Ammo Type", get: (r) => r.data?.ammunitionType || "" }],
+    ranges: [{ key: "level", label: "Level", get: levelCol.get }, { key: "price", label: "Price", get: priceCol.get }],
   },
   {
     key: "feats", label: "Feats", categories: ["feat"],
@@ -229,6 +230,7 @@ const SECTIONS = [
       sourceCol,
     ],
     facets: [{ key: "combat", label: "Combat feats", get: (r) => (r.data?.combat ? "Yes" : "No") }],
+    ranges: [],
   },
   {
     key: "features", label: "Class / Racial / Theme Features",
@@ -240,6 +242,7 @@ const SECTIONS = [
       sourceCol,
     ],
     facets: [],
+    ranges: [],
   },
   {
     key: "items", label: "Gear & Items",
@@ -251,6 +254,7 @@ const SECTIONS = [
       bulkCol, levelCol, priceCol, sourceCol,
     ],
     facets: [{ key: "subtype", label: "Subtype", get: (r) => r.data?.augmentationType || r.data?.consumableType || "" }],
+    ranges: [{ key: "level", label: "Level", get: levelCol.get }, { key: "price", label: "Price", get: priceCol.get }],
   },
   {
     key: "character", label: "Races, Classes & Archetypes", categories: ["race", "class", "archetype", "theme"],
@@ -260,6 +264,7 @@ const SECTIONS = [
       sourceCol,
     ],
     facets: [],
+    ranges: [],
   },
   {
     key: "conditions", label: "Conditions & Effects", categories: ["condition", "effect"],
@@ -269,6 +274,7 @@ const SECTIONS = [
       sourceCol,
     ],
     facets: [],
+    ranges: [],
   },
 ];
 
@@ -342,6 +348,7 @@ export default function Compendium() {
   const [typeFilter, setTypeFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [facetValues, setFacetValues] = useState({});
+  const [rangeValues, setRangeValues] = useState({});
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
@@ -367,7 +374,7 @@ export default function Compendium() {
   // client-side afterward (sections top out around 3,300 rows, comfortably
   // fine to hold in memory for a personal-use tool).
   useEffect(() => {
-    setTypeFilter(""); setSourceFilter(""); setFacetValues({}); setQ("");
+    setTypeFilter(""); setSourceFilter(""); setFacetValues({}); setRangeValues({}); setQ("");
     setSortKey("name"); setSortDir("asc"); setExpandedKey(null);
     setLoading(true); setError("");
     let cancelled = false;
@@ -394,6 +401,17 @@ export default function Compendium() {
     return out;
   }, [rows, section]);
 
+  // Min/max actually present in the section, shown as input placeholders
+  // so "Level" / "Price" read as a hint rather than a blank box.
+  const rangeBounds = useMemo(() => {
+    const out = {};
+    for (const rf of section.ranges) {
+      const values = rows.map((r) => rf.get(r)).filter((v) => v != null && Number.isFinite(v));
+      out[rf.key] = values.length ? { min: Math.min(...values), max: Math.max(...values) } : null;
+    }
+    return out;
+  }, [rows, section]);
+
   const filteredRows = useMemo(() => {
     let list = rows;
     if (typeFilter) list = list.filter((r) => r.category === typeFilter);
@@ -403,12 +421,23 @@ export default function Compendium() {
       const val = facetValues[f.key];
       if (val) list = list.filter((r) => f.get(r) === val);
     }
+    for (const rf of section.ranges) {
+      const bounds = rangeValues[rf.key];
+      if (!bounds || (bounds.min === "" && bounds.max === "")) continue;
+      list = list.filter((r) => {
+        const v = rf.get(r);
+        if (v == null) return false;
+        if (bounds.min !== "" && v < Number(bounds.min)) return false;
+        if (bounds.max !== "" && v > Number(bounds.max)) return false;
+        return true;
+      });
+    }
     if (q) {
       const needle = q.toLowerCase();
       list = list.filter((r) => r.name.toLowerCase().includes(needle));
     }
     return list;
-  }, [rows, typeFilter, sourceFilter, onlyOwned, ownedSources, facetValues, q, section]);
+  }, [rows, typeFilter, sourceFilter, onlyOwned, ownedSources, facetValues, rangeValues, q, section]);
 
   const sortedRows = useMemo(() => {
     const column = section.columns.find((c) => c.key === sortKey);
@@ -459,6 +488,26 @@ export default function Compendium() {
             {(facetOptions[f.key] || []).map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         ))}
+
+        {section.ranges.map((rf) => {
+          const bounds = rangeBounds[rf.key];
+          const val = rangeValues[rf.key] || { min: "", max: "" };
+          const setVal = (patch) => setRangeValues((v) => ({ ...v, [rf.key]: { ...val, ...patch } }));
+          return (
+            <div className="compendium-range" key={rf.key} title={bounds ? `${rf.label}: ${bounds.min}–${bounds.max}` : rf.label}>
+              <span className="compendium-range-label">{rf.label}</span>
+              <input
+                type="number" placeholder={bounds ? String(bounds.min) : "min"}
+                value={val.min} onChange={(e) => setVal({ min: e.target.value })}
+              />
+              <span>–</span>
+              <input
+                type="number" placeholder={bounds ? String(bounds.max) : "max"}
+                value={val.max} onChange={(e) => setVal({ max: e.target.value })}
+              />
+            </div>
+          );
+        })}
 
         <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
           <option value="">{onlyOwned && ownedSources.length > 0 ? "My sources" : "All sources"}</option>
