@@ -17,7 +17,7 @@ button {
 button:hover { background: #26343f; }
 button.link { background: none; border: none; color: #6db3f2; padding: 2px 0; }
 
-input {
+input, textarea, select {
   background: #12181e;
   color: #e6e9ec;
   border: 1px solid #33414f;
@@ -25,7 +25,9 @@ input {
   padding: 6px 8px;
   margin: 2px 0;
   width: 100%;
+  font-family: inherit;
 }
+textarea { resize: vertical; }
 
 .muted { color: #7c8894; }
 .card { max-width: 320px; display: flex; flex-direction: column; gap: 6px; }
@@ -58,10 +60,71 @@ input {
 .gm header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #1d2833; }
 .gm header h2 { margin: 0; font-size: 18px; }
 .gm-body { display: flex; }
-.gm-body aside { width: 260px; padding: 12px 16px; border-right: 1px solid #1d2833; }
+.gm-body aside { width: 280px; padding: 12px 16px; border-right: 1px solid #1d2833; flex-shrink: 0; }
 .gm-body aside ul { list-style: none; padding: 0; }
 .gm-body main { flex: 1; padding: 12px; }
 .map-scroll { overflow: auto; max-height: calc(100vh - 90px); }
+
+/* GM tab nav — same visual language as the media-library sub-tabs (.tab-row) */
+.gm-tabs {
+  display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid #1d2833;
+  background: #0e1319;
+}
+.gm-tabs button {
+  background: none; border: none; border-radius: 0; color: #a9b4bd;
+  padding: 10px 14px; border-bottom: 2px solid transparent;
+}
+.gm-tabs button:hover { background: #12181e; color: #e6e9ec; }
+.gm-tabs button.active { color: #e6e9ec; border-bottom-color: #4f8ef7; }
+.gm-tab-content { min-height: 0; }
+.gm-panel { padding: 16px 20px; max-width: 480px; }
+
+/* Media library */
+.tab-row { display: flex; gap: 4px; margin-bottom: 12px; }
+.tab-row button { background: none; border: 1px solid #1d2833; color: #a9b4bd; }
+.tab-row button.active { background: #16202a; color: #e6e9ec; border-color: #4f8ef7; }
+.media-library, .homebrew { padding: 16px 20px; }
+.media-upload { margin-bottom: 16px; }
+.button-like {
+  display: inline-flex; align-items: center; background: #1d2833; border: 1px solid #33414f;
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; white-space: nowrap;
+}
+.button-like:hover { background: #26343f; }
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+.media-item {
+  background: #12181e; border: 1px solid #1d2833; border-radius: 10px; padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.media-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: #0b0e11; }
+.media-item-label { font-size: 12px; color: #cfd6dd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-item-actions { display: flex; justify-content: space-between; font-size: 12px; }
+
+/* Campaign */
+.campaign { padding: 16px 20px; }
+.campaign-body { display: flex; gap: 20px; }
+.campaign-list { flex: 1; max-width: 320px; }
+.campaign-list ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.campaign-list li { padding: 6px 0; border-bottom: 1px solid #161c22; }
+.campaign-editor {
+  flex: 1.4; max-width: 560px; display: flex; flex-direction: column; gap: 8px;
+  background: #12181e; border: 1px solid #1d2833; border-radius: 10px; padding: 16px;
+}
+.campaign-links { margin-top: 8px; border-top: 1px solid #1d2833; padding-top: 8px; }
+.campaign-links h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; color: #7c8894; }
+.campaign-links ul { list-style: none; padding: 0; margin: 0 0 8px; }
+.campaign-links li { padding: 3px 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.campaign-links li button { margin-left: auto; }
+
+.campaign-pcs { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #1d2833; }
+.campaign-pcs h3 { font-size: 13px; text-transform: uppercase; color: #7c8894; margin: 14px 0 8px; }
+.campaign-pc-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.campaign-pc-list li {
+  display: flex; align-items: center; gap: 8px;
+  background: #12181e; border: 1px solid #1d2833; border-radius: 8px; padding: 6px 12px;
+}
+.campaign-pc-list img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.hephaistos-import { display: flex; flex-direction: column; gap: 6px; }
+.hephaistos-import textarea { font-family: monospace; font-size: 11px; }
 
 /* Display (projector) */
 .display-full { position: fixed; inset: 0; background: #000; }

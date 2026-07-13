@@ -32,6 +32,7 @@ export default function Display() {
     }
     const s = sessionRef.current;
     if (msg.type === "session:created") { loadSession(null); return; }
+    if (msg.type === "session:updated" && msg.payload.id === s?.id) { loadSession(s.id); return; }
     if (!s) return;
     if ((msg.type === "token:moved" || msg.type === "token:created") && msg.payload.session_id === s.id) {
       setSession((cur) => {

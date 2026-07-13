@@ -45,10 +45,26 @@ export default function BattleMap({ session, onCellClick, onTokenClick, fit = fa
             onClick={() => onTokenClick?.(t)}
             style={{ cursor: onTokenClick ? "pointer" : "default" }}
           >
-            <circle r={CELL * 0.42} fill={t.color} stroke="#fff" strokeWidth="2" />
-            <text y="4" textAnchor="middle" fontSize="11" fill="#fff" fontWeight="bold">
-              {t.label.slice(0, 3).toUpperCase()}
-            </text>
+            {t.image_url ? (
+              <>
+                <clipPath id={`clip-${t.id}`}>
+                  <circle r={CELL * 0.42} />
+                </clipPath>
+                <image
+                  href={t.image_url}
+                  x={-CELL * 0.42} y={-CELL * 0.42} width={CELL * 0.84} height={CELL * 0.84}
+                  clipPath={`url(#clip-${t.id})`} preserveAspectRatio="xMidYMid slice"
+                />
+                <circle r={CELL * 0.42} fill="none" stroke="#fff" strokeWidth="2" />
+              </>
+            ) : (
+              <>
+                <circle r={CELL * 0.42} fill={t.color} stroke="#fff" strokeWidth="2" />
+                <text y="4" textAnchor="middle" fontSize="11" fill="#fff" fontWeight="bold">
+                  {t.label.slice(0, 3).toUpperCase()}
+                </text>
+              </>
+            )}
           </g>
         ))}
       </svg>

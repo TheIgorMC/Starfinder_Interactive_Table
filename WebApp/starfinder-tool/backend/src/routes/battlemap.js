@@ -33,14 +33,29 @@ r.get("/sessions/:id", async (req, res) => {
   res.json({ ...s.rows[0], tokens: t.rows });
 });
 
+// e.g. attaching a map image from the media library after creating the session
+r.patch("/sessions/:id", requireGM, async (req, res) => {
+  const b = req.body ?? {};
+  const cols = ["name", "grid_w", "grid_h", "map_url", "active"].filter((f) => b[f] !== undefined);
+  if (!cols.length) return res.status(400).json({ error: "no fields" });
+  const sets = cols.map((f, i) => `${f}=$${i + 1}`).join(",");
+  const { rows } = await pool.query(
+    `UPDATE battle_sessions SET ${sets} WHERE id=$${cols.length + 1} RETURNING *`,
+    [...cols.map((f) => b[f]), req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "not found" });
+  broadcast("session:updated", rows[0]);
+  res.json(rows[0]);
+});
+
 // --- tokens ---
 r.post("/sessions/:id/tokens", requireGM, async (req, res) => {
-  const { label, color = "#4f8ef7", x = 0, y = 0, character_id = null, tracker_id = null } = req.body ?? {};
+  const { label, color = "#4f8ef7", x = 0, y = 0, character_id = null, tracker_id = null, image_url = "" } = req.body ?? {};
   if (!label) return res.status(400).json({ error: "label required" });
   const { rows } = await pool.query(
-    `INSERT INTO tokens (session_id, label, color, x, y, character_id, tracker_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [req.params.id, label, color, x, y, character_id, tracker_id]
+    `INSERT INTO tokens (session_id, label, color, x, y, character_id, tracker_id, image_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [req.params.id, label, color, x, y, character_id, tracker_id, image_url]
   );
   broadcast("token:created", rows[0]);
   res.status(201).json(rows[0]);

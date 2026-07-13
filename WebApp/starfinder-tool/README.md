@@ -46,6 +46,41 @@ login — they're shared physical screens, not per-person devices, and only
 show what the GM explicitly pushes to them (battle map, mood board, and a
 GM-curated subset of character summaries — never full sheets or notes).
 
+## Media library
+
+Maps, mood-screen images, token art, and character portraits, uploaded from
+the GM console's **Media Library** tab. Files land under the same
+`uploads/` volume already mounted at `/app/uploads` (i.e.
+`/mnt/data_ssd/nas_share/SIT/uploads/{map,mood,token,portrait}/` on the
+Pi) — no extra volume or setup needed. Uploaded images are served publicly
+(no login) since the projector/tablet displaying them have none either;
+nothing sensitive lives there.
+
+## Campaign system
+
+The GM console's **Campaign** tab is a small in-house wiki: events,
+locations, NPCs, factions, and objects, each with a name/summary/body,
+an optional image (from the media library, not required — plenty of lore
+entries are just text), and freeform relationships to other entries (e.g.
+"member of", "located in", "owned by" — shown from both ends). Every entry
+defaults to GM-only; a "visible to players" checkbox reveals a specific one.
+This intentionally replaces having a separate external tool for campaign
+notes.
+
+The **Characters** sub-tab covers both real PCs (from the `characters`
+table, importable from Hephaistos below) and NPCs (campaign entries) side
+by side, since both are "characters" from a GM's perspective.
+
+## Importing characters from Hephaistos
+
+The GM console's Campaign → Characters tab can import a character JSON
+exported from [Hephaistos](https://hephaistos.online), a popular SF1e
+character builder — either upload the `.json` file or paste its contents.
+Maps ability scores, HP/SP/RP, EAC/KAC, saves, BAB, initiative, speed,
+skills, feats, and inventory onto our `characters` schema. Optionally
+assign the imported character directly to an existing player account (skip
+this for NPCs, or when the player will self-link it by logging in first).
+
 ## On "automatic" rule effects
 
 The Compendium surfaces full rules text (a feat's Benefit, a race's traits,
@@ -112,5 +147,9 @@ cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 - [x] Compendium view (`/compendium`): browse/search/filter imported AoN data by category and source book, full effect text, defaults to GM's owned sources (`frontend/src/views/Compendium.jsx`)
 - [x] GM "Owned sourcebooks" panel — sets the Compendium's default source filter (`frontend/src/components/SourcesConfig.jsx`)
 - [x] Login system: one GM account + one account per player (auto-linked to their character), signed session cookies, server-side ownership checks on every character/battlemap/settings route (`backend/src/auth.js`, `004_users.sql`, `scripts/create-user.js`)
+- [x] GM console restructured into tabs — Battle Map / Scene & Mood / Media Library / Campaign / Sources (`frontend/src/views/GM.jsx`)
+- [x] Media library: upload/browse/delete maps, mood-screen images, token art, character portraits (`backend/src/routes/media.js`, `frontend/src/components/MediaLibrary.jsx`); wired into map images, token art (rendered on the battle map), and character portraits
+- [x] Campaign system: typed entries (events/locations/NPCs/factions/objects) with relationships between them, GM-only by default with a per-entry "visible to players" flag (`backend/src/routes/campaign.js`, `006_campaign.sql`, `frontend/src/components/Campaign.jsx`)
+- [x] Hephaistos character import: GM can import a character JSON export from hephaistos.online, optionally assigning it straight to a player account (`backend/src/hephaistos.js`, `POST /api/characters/import/hephaistos`)
 - [ ] ESP32 firmware (spec in docs/07-modules-and-peripherals.md)
 - [ ] Automatic rule effects (e.g. a feat's numeric bonus auto-applying to a character) — not implemented, see note below

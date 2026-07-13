@@ -3,6 +3,8 @@ import { api, useWs } from "../api.js";
 import BattleMap from "../components/BattleMap.jsx";
 import ScenePanel from "../components/ScenePanel.jsx";
 import SourcesConfig from "../components/SourcesConfig.jsx";
+import MediaLibrary from "../components/MediaLibrary.jsx";
+import Campaign from "../components/Campaign.jsx";
 import { useAuth } from "../auth.jsx";
 
 /*
@@ -62,13 +64,92 @@ function useMiniTracker(onPosition) {
   return { status, connect, disconnect };
 }
 
+const TABS = [
+  { key: "battlemap", label: "Battle Map" },
+  { key: "scene", label: "Scene & Mood" },
+  { key: "media", label: "Media Library" },
+  { key: "campaign", label: "Campaign" },
+  { key: "sources", label: "Sources" },
+];
+
+function BattleMapTab({ session, sessions, loadSessions, loadSession, createSession, selectedToken, setSelectedToken, onCellClick }) {
+  const [newLabel, setNewLabel] = useState("");
+  const [newTrackerId, setNewTrackerId] = useState("");
+  const [newTokenImage, setNewTokenImage] = useState("");
+  const [tokenImages, setTokenImages] = useState([]);
+  const [mapImages, setMapImages] = useState([]);
+  const [pickedMap, setPickedMap] = useState("");
+
+  useEffect(() => {
+    api("/media?category=token").then(setTokenImages).catch(() => {});
+    api("/media?category=map").then(setMapImages).catch(() => {});
+  }, []);
+
+  const addToken = async () => {
+    if (!session || !newLabel) return;
+    await api(`/battlemap/sessions/${session.id}/tokens`, {
+      method: "POST",
+      body: { label: newLabel, tracker_id: newTrackerId || null, image_url: newTokenImage || "" },
+    });
+    setNewLabel(""); setNewTrackerId(""); setNewTokenImage("");
+    loadSession(session.id);
+  };
+
+  const setMap = async () => {
+    if (!session || !pickedMap) return;
+    await api(`/battlemap/sessions/${session.id}`, { method: "PATCH", body: { map_url: pickedMap } });
+    loadSession(session.id);
+  };
+
+  return (
+    <div className="gm-body">
+      <aside>
+        <h3>Sessions</h3>
+        <button onClick={createSession}>+ New encounter</button>
+        <ul>
+          {sessions.map((s) => (
+            <li key={s.id}>
+              <button className="link" onClick={() => loadSession(s.id)}>{s.name}</button>
+            </li>
+          ))}
+        </ul>
+
+        {session && (
+          <>
+            <h3>Map image</h3>
+            <div className="row">
+              <select value={pickedMap} onChange={(e) => setPickedMap(e.target.value)}>
+                <option value="">From media library…</option>
+                {mapImages.map((m) => <option key={m.id} value={m.url}>{m.label || m.original_name}</option>)}
+              </select>
+              <button onClick={setMap} disabled={!pickedMap}>Set</button>
+            </div>
+
+            <h3>Add token</h3>
+            <input placeholder="Label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
+            <input placeholder="Tracker ID (optional)" value={newTrackerId} onChange={(e) => setNewTrackerId(e.target.value)} />
+            <select value={newTokenImage} onChange={(e) => setNewTokenImage(e.target.value)}>
+              <option value="">No image (plain color)</option>
+              {tokenImages.map((m) => <option key={m.id} value={m.url}>{m.label || m.original_name}</option>)}
+            </select>
+            <button onClick={addToken}>Add</button>
+            {selectedToken && <p className="muted">Moving "{selectedToken.label}" — click a cell.</p>}
+          </>
+        )}
+      </aside>
+      <main>
+        <BattleMap session={session} onCellClick={onCellClick} onTokenClick={setSelectedToken} />
+      </main>
+    </div>
+  );
+}
+
 export default function GM() {
   const { user, logout } = useAuth();
+  const [tab, setTab] = useState("battlemap");
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [selectedToken, setSelectedToken] = useState(null);
-  const [newLabel, setNewLabel] = useState("");
-  const [newTrackerId, setNewTrackerId] = useState("");
   const [characters, setCharacters] = useState([]);
   const sessionRef = useRef(null);
   sessionRef.current = session;
@@ -86,6 +167,9 @@ export default function GM() {
     if (msg.type === "token:deleted" && msg.payload.session_id === s.id) {
       setSession((cur) => ({ ...cur, tokens: cur.tokens.filter((t) => t.id !== msg.payload.id) }));
     }
+    if (msg.type === "session:updated" && msg.payload.id === s.id) {
+      setSession((cur) => ({ ...cur, ...msg.payload }));
+    }
   });
 
   const tracker = useMiniTracker((trackerId, x, y) => {
@@ -102,16 +186,6 @@ export default function GM() {
     const s = await api("/battlemap/sessions", { method: "POST", body: { name: `Encounter ${sessions.length + 1}` } });
     await loadSessions();
     await loadSession(s.id);
-  };
-
-  const addToken = async () => {
-    if (!session || !newLabel) return;
-    await api(`/battlemap/sessions/${session.id}/tokens`, {
-      method: "POST",
-      body: { label: newLabel, tracker_id: newTrackerId || null },
-    });
-    setNewLabel(""); setNewTrackerId("");
-    loadSession(session.id);
   };
 
   const onCellClick = (x, y) => {
@@ -135,38 +209,35 @@ export default function GM() {
         <button className="link" onClick={logout}>Sign out</button>
       </header>
 
-      <div className="gm-body">
-        <aside>
-          <h3>Sessions</h3>
-          <button onClick={createSession}>+ New encounter</button>
-          <ul>
-            {sessions.map((s) => (
-              <li key={s.id}>
-                <button className="link" onClick={() => loadSession(s.id)}>{s.name}</button>
-              </li>
-            ))}
-          </ul>
+      <nav className="gm-tabs">
+        {TABS.map((t) => (
+          <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-          {session && (
-            <>
-              <h3>Add token</h3>
-              <input placeholder="Label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
-              <input placeholder="Tracker ID (optional)" value={newTrackerId} onChange={(e) => setNewTrackerId(e.target.value)} />
-              <button onClick={addToken}>Add</button>
-              {selectedToken && <p className="muted">Moving “{selectedToken.label}” — click a cell.</p>}
-            </>
-          )}
-          <ScenePanel session={session} characters={characters} />
-          <SourcesConfig />
-        </aside>
-
-        <main>
-          <BattleMap
-            session={session}
+      <div className="gm-tab-content">
+        {tab === "battlemap" && (
+          <BattleMapTab
+            session={session} sessions={sessions}
+            loadSessions={loadSessions} loadSession={loadSession} createSession={createSession}
+            selectedToken={selectedToken} setSelectedToken={setSelectedToken}
             onCellClick={onCellClick}
-            onTokenClick={setSelectedToken}
           />
-        </main>
+        )}
+        {tab === "scene" && (
+          <div className="gm-panel">
+            <ScenePanel session={session} characters={characters} />
+          </div>
+        )}
+        {tab === "media" && <MediaLibrary />}
+        {tab === "campaign" && <Campaign />}
+        {tab === "sources" && (
+          <div className="gm-panel">
+            <SourcesConfig />
+          </div>
+        )}
       </div>
     </div>
   );
