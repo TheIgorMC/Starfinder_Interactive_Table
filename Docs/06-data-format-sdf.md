@@ -7,7 +7,7 @@ with **zero code changes** — the backend content module is category-agnostic.
 ## Location
 
 All content lives under the content root, mounted into the backend at
-`/app/content` (host: `/mnt/data_ssd/nas_share/Archivio_V2/SIT/content`).
+`/app/content` (host: `/mnt/data_ssd/nas_share/SIT/content`).
 
 ```
 content/

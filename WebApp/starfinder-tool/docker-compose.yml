@@ -10,9 +10,9 @@ services:
       - NODE_ENV=production
       - PORT=3000
     volumes:
-      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/uploads:/app/uploads
-      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/aon-cache:/app/aon-cache
-      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/content:/app/content
+      - /mnt/data_ssd/nas_share/SIT/uploads:/app/uploads
+      - /mnt/data_ssd/nas_share/SIT/aon-cache:/app/aon-cache
+      - /mnt/data_ssd/nas_share/SIT/content:/app/content
     depends_on:
       db:
         condition: service_healthy
@@ -35,7 +35,7 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-sf}
       - POSTGRES_DB=sf
     volumes:
-      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/db:/var/lib/postgresql/data
+      - /mnt/data_ssd/nas_share/SIT/db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sf"]
       interval: 5s

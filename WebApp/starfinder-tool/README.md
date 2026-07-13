@@ -2,14 +2,23 @@
 
 ## Deploy on Orange Pi (Dockge)
 
-1. Copy this whole folder to `/mnt/emmc/stacks/starfinder-tool/`
-2. Create data dirs:
+1. Clone the repo on the Pi (once): `git clone <repo-url> /mnt/data_ssd/repos/Starfinder_Interactive_Table`
+2. Symlink this folder into Dockge's stacks root (Dockge doesn't scan nested subfolders):
    ```
-   sudo mkdir -p /mnt/data_ssd/nas_share/Archivio_V2/SIT/{db,uploads,aon-cache,content}
+   ln -s /mnt/data_ssd/repos/Starfinder_Interactive_Table/WebApp/starfinder-tool \
+         /mnt/emmc/stacks/starfinder-tool
    ```
-3. Copy `.env.example` → `.env`, set `DB_PASSWORD`
-4. In Dockge: the stack appears automatically → Deploy
-5. Open `http://<pi-ip>:7600`
+3. Create data dirs:
+   ```
+   sudo mkdir -p /mnt/data_ssd/nas_share/SIT/{db,uploads,aon-cache,content}
+   ```
+4. Copy `.env.example` → `.env` (inside `WebApp/starfinder-tool/`), set `DB_PASSWORD`
+5. In Dockge: the stack appears automatically → Deploy
+6. Open `http://<pi-ip>:7600`
+7. To update: `git pull` in the repo, then redeploy the stack in Dockge
+
+Note: `MapCreator/` elsewhere in the repo is a separate offline tool and is
+not part of this stack — it doesn't run on the Pi.
 
 ## Device roles
 

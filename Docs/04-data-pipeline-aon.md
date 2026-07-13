@@ -11,7 +11,7 @@ locally, not fetched live per request.
 3. **Normalize** into DB tables (one table per category, shared `sources`
    table for book references, since the user owns physical copies and
    licensing is respected via AoN's own OGL/Community Use terms).
-4. **Store** as seed data in `/mnt/data_ssd/starfinder-tool/aon-cache/` (raw
+4. **Store** as seed data in `/mnt/data_ssd/nas_share/SIT/aon-cache/` (raw
    JSON) and import into Postgres on backend startup/migration.
 5. **Re-run** the crawl periodically (manual trigger) to pick up errata/new
    books — site changelog shows infrequent updates, no need for automation.

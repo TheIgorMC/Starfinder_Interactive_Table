@@ -7,7 +7,7 @@ feature completeness.
 
 1. **Infra**
    - [ ] docker-compose stack boots on Orange Pi via Dockge (backend, frontend, db)
-   - [ ] Volumes correctly mapped to `/mnt/data_ssd/starfinder-tool/...`
+   - [ ] Volumes correctly mapped to `/mnt/data_ssd/nas_share/SIT/...`
 
 2. **Backend skeleton**
    - [ ] Express app with REST scaffold
