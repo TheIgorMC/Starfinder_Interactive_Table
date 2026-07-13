@@ -26,11 +26,14 @@ async function main() {
   for await (const file of walk(root)) {
     const entry = JSON.parse(await readFile(file, "utf8"));
     await pool.query(
-      `INSERT INTO aon_entries (category, name, source, url, data)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO aon_entries (category, name, source, url, data, mechanics)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (category, name) DO UPDATE
-       SET source = EXCLUDED.source, url = EXCLUDED.url, data = EXCLUDED.data`,
-      [entry.category, entry.name, entry.source || "", entry.url || "", JSON.stringify(entry.data || {})]
+       SET source = EXCLUDED.source, url = EXCLUDED.url, data = EXCLUDED.data, mechanics = EXCLUDED.mechanics`,
+      [
+        entry.category, entry.name, entry.source || "", entry.url || "",
+        JSON.stringify(entry.data || {}), JSON.stringify(entry.mechanics || {}),
+      ]
     );
     count++;
   }

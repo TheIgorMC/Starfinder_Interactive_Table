@@ -83,12 +83,33 @@ this for NPCs, or when the player will self-link it by logging in first).
 
 ## On "automatic" rule effects
 
-The Compendium surfaces full rules text (a feat's Benefit, a race's traits,
-etc.) but does not parse that prose into structured mechanical effects or
-auto-apply anything to a character sheet — e.g. taking a feat with a skill
-bonus doesn't move the character's numbers on its own. This is a genuinely
-hard, open-ended problem (reliably turning free-form rules text into
-structured modifiers), and `03-features-scope.md` explicitly defers
+The Compendium now surfaces a **structured mechanics** categorization
+alongside the full rules text — targets/range/area/duration/saving
+throw/requirements parsed out of the scraped fields into typed data (e.g.
+Magic Missile's target count, its "no two more than 15 ft. apart"
+constraint) — see `Docs/04-data-pipeline-aon.md` → "Structured mechanics"
+and `backend/src/mechanics-schema.js`/`mechanics-parser.js`. This is the
+categorization layer a character engine would read from.
+
+It still does not **auto-apply** anything to a character sheet — e.g.
+taking a feat with a skill bonus doesn't move the character's numbers on
+its own, and the AoN-scraper parser only structures already-labeled scalar
+fields (Range, Duration, Prerequisites, ...), not free-form Benefit/
+Description prose. Reliably turning arbitrary rules prose into modifiers is
+still a hard, open-ended problem for entries sourced that way.
+
+For entries imported from Foundry instead (see "Foundry import" in
+`Docs/04-data-pipeline-aon.md` — 8,921 entries across 26 categories: feats,
+spells, races, classes, archetypes, themes, every class/racial/archetype/
+theme feature, conditions, effects, and the full equipment family), the gap
+is narrower: each one carries a real `mechanics.modifiers` array of
+hand-designed, formula-capable bonuses (e.g. Deadly Aim's `-2` to attack
+rolls, `max(1, floor(@attributes.baseAttackBonus.value/2))` to damage) —
+actually evaluating those formulas against a character's attributes and
+applying them live is still not built, but the structured data to do it
+with, and a full glossary of the `@`-path/`effectType`/bonus-`type`
+conventions those formulas use, now exists (see "The Modifiers system" in
+`Docs/04-data-pipeline-aon.md`). `03-features-scope.md` still defers
 "automated rules enforcement" past v1: state is tracked manually for now.
 The `feats` JSONB column already exists on `characters` for storing which
 feats a character has taken, but there's currently no UI to attach a
@@ -144,12 +165,14 @@ cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 - [x] AoN scraper + validator + importer, with per-entry source book/page and full rules text (`backend/scripts/`, Feats + Spells + Races + Classes; see docs/04-data-pipeline-aon.md)
 - [x] `/api/aon` search endpoint — filter by category, source book (single or a set), name (`backend/src/routes/aon.js`)
 - [x] `/api/settings` generic key/value store, used for the GM's "owned sourcebooks" config (`backend/src/routes/settings.js`, `003_settings.sql`)
-- [x] Compendium view (`/compendium`): browse/search/filter imported AoN data by category and source book, full effect text, defaults to GM's owned sources (`frontend/src/views/Compendium.jsx`)
+- [x] Compendium view (`/compendium`): sectioned, sortable, filterable tables (Spells / Weapons / Armor & Shields / Ammunition / Feats / Class-Racial-Theme Features / Gear & Items / Races-Classes-Archetypes / Conditions & Effects) — click a column header to sort, click a row to expand its full rules text and mechanics inline, per-section facet filters (weapon type, melee/ranged, armor weight, spell school/level, ...), defaults to GM's owned sources (`frontend/src/views/Compendium.jsx`)
 - [x] GM "Owned sourcebooks" panel — sets the Compendium's default source filter (`frontend/src/components/SourcesConfig.jsx`)
 - [x] Login system: one GM account + one account per player (auto-linked to their character), signed session cookies, server-side ownership checks on every character/battlemap/settings route (`backend/src/auth.js`, `004_users.sql`, `scripts/create-user.js`)
 - [x] GM console restructured into tabs — Battle Map / Scene & Mood / Media Library / Campaign / Sources (`frontend/src/views/GM.jsx`)
 - [x] Media library: upload/browse/delete maps, mood-screen images, token art, character portraits (`backend/src/routes/media.js`, `frontend/src/components/MediaLibrary.jsx`); wired into map images, token art (rendered on the battle map), and character portraits
 - [x] Campaign system: typed entries (events/locations/NPCs/factions/objects) with relationships between them, GM-only by default with a per-entry "visible to players" flag (`backend/src/routes/campaign.js`, `006_campaign.sql`, `frontend/src/components/Campaign.jsx`)
 - [x] Hephaistos character import: GM can import a character JSON export from hephaistos.online, optionally assigning it straight to a player account (`backend/src/hephaistos.js`, `POST /api/characters/import/hephaistos`)
+- [x] Structured mechanics categorization: targets/range/area/duration/saving throw/requirements parsed from scraped fields into typed data, shown in the Compendium (`backend/src/mechanics-schema.js`, `mechanics-parser.js`, `007_aon_mechanics.sql`; see docs/04-data-pipeline-aon.md)
+- [x] Foundry import: 8,921 entries across 26 categories (feats, spells, races, classes, archetypes, themes, every class/racial/archetype/theme feature, conditions, effects, full equipment family) imported from a local FoundryVTT Starfinder system checkout instead of scraping — higher-fidelity range/duration/save/damage/armor-AC and a real `modifiers` array of pre-designed, formula-capable bonuses (`backend/src/foundry-import.js`, `scripts/import-foundry.js`; full field reference in docs/04-data-pipeline-aon.md)
 - [ ] ESP32 firmware (spec in docs/07-modules-and-peripherals.md)
-- [ ] Automatic rule effects (e.g. a feat's numeric bonus auto-applying to a character) — not implemented, see note below
+- [ ] Automatic rule effects (e.g. a feat's numeric bonus auto-applying to a character) — categorization exists, application to a character sheet doesn't yet, see note below

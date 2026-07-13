@@ -6,6 +6,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "scrape:aon": "node scripts/scrape-aon.js",
+    "import:foundry": "node scripts/import-foundry.js",
+    "derive:aon": "node scripts/derive-mechanics.js",
     "validate:aon": "node scripts/validate-aon-cache.js",
     "import:aon": "node scripts/import-aon-cache.js",
     "create-user": "node scripts/create-user.js"

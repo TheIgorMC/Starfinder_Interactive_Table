@@ -164,17 +164,28 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 .caption { color: #cfd6dd; font-size: 22px; font-style: italic; margin: 8px; text-align: center; }
 
 /* Compendium */
-.compendium { padding: 20px 32px 48px; max-width: 1200px; margin: 0 auto; }
+.compendium { padding: 20px 32px 48px; max-width: 1400px; margin: 0 auto; }
 .compendium header {
-  display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px;
+  display: flex; align-items: baseline; gap: 16px; margin-bottom: 16px;
   padding-bottom: 14px; border-bottom: 1px solid #1d2833;
 }
 .compendium header h2 { margin: 0; font-size: 22px; letter-spacing: 0.2px; }
 .compendium header .muted { margin-left: auto; font-size: 13px; }
 
+.compendium-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px;
+  border-bottom: 1px solid #1d2833; padding-bottom: 2px;
+}
+.compendium-tabs button {
+  background: none; border: none; border-radius: 0; color: #a9b4bd;
+  padding: 8px 12px; border-bottom: 2px solid transparent; font-size: 13px; white-space: nowrap;
+}
+.compendium-tabs button:hover { background: #12181e; color: #e6e9ec; }
+.compendium-tabs button.active { color: #e6e9ec; border-bottom-color: #4f8ef7; }
+
 .compendium-filters {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-  margin-bottom: 20px; padding: 12px 14px;
+  margin-bottom: 16px; padding: 12px 14px;
   background: #12181e; border: 1px solid #1d2833; border-radius: 10px;
 }
 .compendium-filters select {
@@ -185,30 +196,24 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 .checkbox-inline { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9b4bd; white-space: nowrap; }
 .checkbox-inline input { width: auto; margin: 0; }
 
-.compendium-body { display: flex; gap: 20px; align-items: flex-start; }
-
-.compendium-list { list-style: none; padding: 0; margin: 0; flex: 1.1; max-width: 560px; max-height: 74vh; overflow-y: auto; }
-.compendium-list li { border-bottom: 1px solid #161c22; }
-.compendium-row {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  background: none; border: none; border-radius: 0;
-  padding: 10px 8px; text-align: left; color: #e6e9ec; cursor: pointer;
+.compendium-table-wrap { overflow-x: auto; border: 1px solid #1d2833; border-radius: 10px; }
+.compendium-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.compendium-table th, .compendium-table td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+.compendium-table td { overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+.compendium-table thead th {
+  position: sticky; top: 0; background: #12181e; border-bottom: 1px solid #1d2833;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #7c8894;
+  cursor: pointer; user-select: none;
 }
-.compendium-row:hover { background: #12181e; }
-.compendium-row.active { background: #16202a; box-shadow: inset 3px 0 0 #4f8ef7; }
-.compendium-row-name { font-weight: 500; }
-.compendium-row-source { margin-left: auto; font-size: 12px; text-align: right; flex-shrink: 0; max-width: 45%; }
-
-.compendium-detail {
-  flex: 1; min-width: 300px; max-width: 520px;
-  background: #12181e; border: 1px solid #1d2833; border-radius: 12px;
-  padding: 20px; position: sticky; top: 20px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-.compendium-detail-close {
-  float: right; font-size: 16px; color: #7c8894;
-}
-.compendium-detail h3 { margin: 6px 0 2px; font-size: 20px; clear: both; }
+.compendium-table thead th:hover { color: #e6e9ec; }
+.compendium-table thead th.sorted { color: #4f8ef7; }
+.compendium-table tbody tr.compendium-row { cursor: pointer; border-bottom: 1px solid #161c22; }
+.compendium-table tbody tr.compendium-row:hover { background: #12181e; }
+.compendium-table tbody tr.compendium-row.active { background: #16202a; }
+.compendium-table tbody tr.compendium-row td:first-child { font-weight: 500; white-space: normal; }
+.compendium-expand-col { width: 20px; text-align: center !important; color: #7c8894; }
+.compendium-expand-row td { background: #0e1319; border-bottom: 1px solid #1d2833; white-space: normal; max-width: none; }
+.compendium-expand { padding: 6px 10px 14px; max-width: 720px; }
 .compendium-detail-source { margin: 0 0 14px; font-size: 13px; }
 .compendium-effect {
   line-height: 1.55; white-space: pre-wrap;
@@ -218,6 +223,13 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 .compendium-fields { margin: 0 0 14px; }
 .compendium-fields dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #7c8894; margin-top: 10px; }
 .compendium-fields dd { margin: 2px 0 0; line-height: 1.45; white-space: pre-wrap; }
+.compendium-mechanics {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 4px;
+  padding: 10px 14px; margin: 0 0 14px;
+  background: #101a23; border: 1px solid #1d3348; border-radius: 8px;
+}
+.compendium-mechanics dt { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6f9bc4; }
+.compendium-mechanics dd { margin: 0; }
 
 .pill.cat-feat { background: #24405f; color: #a9d0ff; }
 .pill.cat-spell { background: #402458; color: #ddb0ff; }

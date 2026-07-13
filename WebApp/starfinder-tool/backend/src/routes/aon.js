@@ -32,13 +32,18 @@ r.get("/sources", async (req, res) => {
 });
 
 r.get("/", async (req, res) => {
-  const { category, source, sources, q } = req.query;
+  const { category, categories, source, sources, q } = req.query;
   const conditions = [];
   const params = [];
 
   if (category) {
     params.push(category);
     conditions.push(`category = $${params.length}`);
+  } else if (categories) {
+    // comma-separated list — used by the Compendium's sectioned table view,
+    // where one section (e.g. "Armor") spans several categories (armor, shield)
+    params.push(categories.split(",").map((s) => s.trim()).filter(Boolean));
+    conditions.push(`category = ANY($${params.length}::text[])`);
   }
   if (source) {
     params.push(source);
@@ -54,11 +59,15 @@ r.get("/", async (req, res) => {
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  // The largest single section (class/racial/archetype/theme features
+  // combined) is ~3,300 rows — the Compendium's table view fetches a whole
+  // section at once and sorts/filters client-side, so the cap needs to
+  // cover that, not just a search-results page.
+  const limit = Math.min(Number(req.query.limit) || 100, 5000);
   params.push(limit);
 
   const { rows } = await pool.query(
-    `SELECT id, category, name, source, url, data FROM aon_entries
+    `SELECT id, category, name, source, url, data, mechanics FROM aon_entries
      ${where} ORDER BY name LIMIT $${params.length}`,
     params
   );

@@ -5,6 +5,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { validateMechanics } from "../src/mechanics-schema.js";
 
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -25,6 +26,7 @@ function checkEntry(entry, slug) {
   if (typeof entry.data !== "object" || entry.data === null || Array.isArray(entry.data))
     errors.push('"data" must be an object');
   if (!SLUG_RE.test(slug)) errors.push(`filename is not a valid slug (${slug})`);
+  if (entry.mechanics != null) errors.push(...validateMechanics(entry.mechanics).map((e) => `mechanics.${e}`));
   return errors;
 }
 
