@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, useWs } from "../api.js";
+import { useAuth } from "../auth.jsx";
 
 const mod = (score) => Math.floor((score - 10) / 2);
 const fmt = (n) => (n >= 0 ? `+${n}` : `${n}`);
@@ -7,61 +8,47 @@ const fmt = (n) => (n >= 0 ? `+${n}` : `${n}`);
 const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
 
 export default function Player() {
-  const [chars, setChars] = useState([]);
+  const { user, logout, refresh } = useAuth();
   const [char, setChar] = useState(null);
-  const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState({ name: "", race: "", theme: "", class: "", level: 1 });
 
-  const load = () => api("/characters").then(setChars);
-  useEffect(() => { load(); }, []);
+  const load = () => {
+    if (user?.characterId) api(`/characters/${user.characterId}`).then(setChar);
+  };
+  useEffect(() => { load(); }, [user?.characterId]);
 
   useWs((msg) => {
-    if (msg.type?.startsWith("character:")) {
-      load();
-      if (msg.type === "character:updated" && char?.id === msg.payload.id) setChar(msg.payload);
-    }
+    if (msg.type === "character:updated" && msg.payload.id === user?.characterId) load();
   });
 
   const create = async () => {
     if (!draft.name) return;
     const c = await api("/characters", { method: "POST", body: draft });
-    setCreating(false);
-    setDraft({ name: "", race: "", theme: "", class: "", level: 1 });
     setChar(c);
-    load();
+    await refresh(); // picks up the newly-linked characterId
   };
 
   const patch = (fields) =>
     api(`/characters/${char.id}`, { method: "PATCH", body: fields }).then(setChar);
 
-  if (!char) {
+  // Player account not linked to a character yet — self-service creation.
+  if (!user?.characterId) {
     return (
       <div className="player">
-        <h2>Characters</h2>
-        <ul>
-          {chars.map((c) => (
-            <li key={c.id}>
-              <button className="link" onClick={() => setChar(c)}>
-                {c.name} — {c.race} {c.class} {c.level}
-              </button>
-            </li>
-          ))}
-        </ul>
-        {creating ? (
-          <div className="card">
-            <input placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            <input placeholder="Race" value={draft.race} onChange={(e) => setDraft({ ...draft, race: e.target.value })} />
-            <input placeholder="Theme" value={draft.theme} onChange={(e) => setDraft({ ...draft, theme: e.target.value })} />
-            <input placeholder="Class" value={draft.class} onChange={(e) => setDraft({ ...draft, class: e.target.value })} />
-            <input type="number" min="1" max="20" value={draft.level} onChange={(e) => setDraft({ ...draft, level: +e.target.value })} />
-            <button onClick={create}>Create</button>
-          </div>
-        ) : (
-          <button onClick={() => setCreating(true)}>+ New character</button>
-        )}
+        <h2>Create your character</h2>
+        <div className="card">
+          <input placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          <input placeholder="Race" value={draft.race} onChange={(e) => setDraft({ ...draft, race: e.target.value })} />
+          <input placeholder="Theme" value={draft.theme} onChange={(e) => setDraft({ ...draft, theme: e.target.value })} />
+          <input placeholder="Class" value={draft.class} onChange={(e) => setDraft({ ...draft, class: e.target.value })} />
+          <input type="number" min="1" max="20" value={draft.level} onChange={(e) => setDraft({ ...draft, level: +e.target.value })} />
+          <button onClick={create} disabled={!draft.name}>Create</button>
+        </div>
       </div>
     );
   }
+
+  if (!char) return <div className="player">Loading…</div>;
 
   const Pool = ({ label, cur, max, curKey }) => (
     <div className="pool">
@@ -74,7 +61,10 @@ export default function Player() {
 
   return (
     <div className="player">
-      <button className="link" onClick={() => setChar(null)}>← All characters</button>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <span className="muted">{user.username}</span>
+        <button className="link" onClick={logout}>Sign out</button>
+      </div>
       <h2>{char.name}</h2>
       <p className="muted">{char.race} {char.theme} {char.class} — level {char.level}</p>
 

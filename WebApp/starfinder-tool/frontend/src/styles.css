@@ -44,6 +44,16 @@ input {
 .home nav { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
 .home a { color: #6db3f2; font-size: 18px; text-decoration: none; }
 
+/* Login */
+.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.login-card {
+  width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 10px;
+  background: #12181e; border: 1px solid #1d2833; border-radius: 12px; padding: 28px;
+}
+.login-card h1 { margin: 0; font-size: 20px; }
+.login-card .muted { margin: 0 0 8px; }
+.login-card button { margin-top: 4px; }
+
 /* GM */
 .gm header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #1d2833; }
 .gm header h2 { margin: 0; font-size: 18px; }
@@ -91,23 +101,73 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 .caption { color: #cfd6dd; font-size: 22px; font-style: italic; margin: 8px; text-align: center; }
 
 /* Compendium */
-.compendium { padding: 16px 24px; }
-.compendium header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
-.compendium header h2 { margin: 0; }
-.compendium-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.compendium-filters select { background: #12181e; color: #e6e9ec; border: 1px solid #33414f; border-radius: 6px; padding: 6px 8px; }
-.compendium-filters input { width: auto; min-width: 220px; }
-.compendium-body { display: flex; gap: 20px; align-items: flex-start; }
-.compendium-list { list-style: none; padding: 0; margin: 0; flex: 1; max-width: 480px; max-height: 70vh; overflow-y: auto; }
-.compendium-list li { padding: 6px 0; border-bottom: 1px solid #1d2833; }
-.compendium-list button.active { color: #fff; text-decoration: underline; }
-.compendium-detail {
-  flex: 1; min-width: 280px; max-width: 480px;
-  background: #12181e; border: 1px solid #1d2833; border-radius: 8px;
-  padding: 16px; position: sticky; top: 16px;
+.compendium { padding: 20px 32px 48px; max-width: 1200px; margin: 0 auto; }
+.compendium header {
+  display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px;
+  padding-bottom: 14px; border-bottom: 1px solid #1d2833;
 }
-.compendium-detail h3 { margin: 8px 0 4px; }
-.compendium-detail p { margin: 6px 0; line-height: 1.4; }
+.compendium header h2 { margin: 0; font-size: 22px; letter-spacing: 0.2px; }
+.compendium header .muted { margin-left: auto; font-size: 13px; }
+
+.compendium-filters {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 20px; padding: 12px 14px;
+  background: #12181e; border: 1px solid #1d2833; border-radius: 10px;
+}
+.compendium-filters select {
+  background: #0b0e11; color: #e6e9ec; border: 1px solid #33414f;
+  border-radius: 6px; padding: 7px 10px; font-size: 14px;
+}
+.compendium-filters input { width: auto; min-width: 220px; flex: 1; }
+.checkbox-inline { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9b4bd; white-space: nowrap; }
+.checkbox-inline input { width: auto; margin: 0; }
+
+.compendium-body { display: flex; gap: 20px; align-items: flex-start; }
+
+.compendium-list { list-style: none; padding: 0; margin: 0; flex: 1.1; max-width: 560px; max-height: 74vh; overflow-y: auto; }
+.compendium-list li { border-bottom: 1px solid #161c22; }
+.compendium-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; border-radius: 0;
+  padding: 10px 8px; text-align: left; color: #e6e9ec; cursor: pointer;
+}
+.compendium-row:hover { background: #12181e; }
+.compendium-row.active { background: #16202a; box-shadow: inset 3px 0 0 #4f8ef7; }
+.compendium-row-name { font-weight: 500; }
+.compendium-row-source { margin-left: auto; font-size: 12px; text-align: right; flex-shrink: 0; max-width: 45%; }
+
+.compendium-detail {
+  flex: 1; min-width: 300px; max-width: 520px;
+  background: #12181e; border: 1px solid #1d2833; border-radius: 12px;
+  padding: 20px; position: sticky; top: 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.compendium-detail-close {
+  float: right; font-size: 16px; color: #7c8894;
+}
+.compendium-detail h3 { margin: 6px 0 2px; font-size: 20px; clear: both; }
+.compendium-detail-source { margin: 0 0 14px; font-size: 13px; }
+.compendium-effect {
+  line-height: 1.55; white-space: pre-wrap;
+  padding: 12px 14px; margin: 0 0 14px;
+  background: #0b0e11; border: 1px solid #1d2833; border-radius: 8px;
+}
+.compendium-fields { margin: 0 0 14px; }
+.compendium-fields dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #7c8894; margin-top: 10px; }
+.compendium-fields dd { margin: 2px 0 0; line-height: 1.45; white-space: pre-wrap; }
+
+.pill.cat-feat { background: #24405f; color: #a9d0ff; }
+.pill.cat-spell { background: #402458; color: #ddb0ff; }
+.pill.cat-race { background: #1e5c34; color: #a9f0c0; }
+.pill.cat-class { background: #5c3e1e; color: #f7cd97; }
+
+/* Sources config (GM sidebar) */
+.sources-config { margin-top: 16px; border-top: 1px solid #1d2833; padding-top: 8px; }
+.sources-config-body { margin-top: 8px; }
+.sources-checklist { list-style: none; padding: 0; margin: 8px 0; max-height: 220px; overflow-y: auto; }
+.sources-checklist li { padding: 3px 0; font-size: 13px; }
+.sources-checklist label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.sources-checklist input { width: auto; margin: 0; }
 
 /* Tablet mood */
 .tablet-mood {

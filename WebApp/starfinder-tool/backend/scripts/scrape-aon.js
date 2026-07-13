@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 // Scrapes a category from aonsrd.com into local aon-cache/<category>/*.json,
-// including the source book (and page) for each entry so it can be filtered
-// on later. Run locally (not on the Pi) — see docs/04-data-pipeline-aon.md.
+// including the source book/page AND the full rules text (not just the
+// short list-page blurb) for each entry. Run locally (not on the Pi) —
+// see docs/04-data-pipeline-aon.md.
 //
 // Usage:
 //   node scripts/scrape-aon.js <category> [--limit=N] [--delay=MS] [--skip-source]
 //
 // Each category's index page has a different layout on this (very old)
 // ASP.NET site, so each one needs its own `listEntries($, pageUrl)` parser —
-// see CATEGORIES below. `--skip-source` does the fast list-only pass without
-// visiting every detail page (useful while adding/debugging a new category).
+// see CATEGORIES below. Every entry's own detail page is then fetched to
+// pull the full labeled rules text (Benefit, Description, etc. — whatever
+// that category's page actually has) via `applyDetail(entry, sections)`.
+// `--skip-source` does the fast list-only pass without visiting any detail
+// page (useful while adding/debugging a new category's listEntries).
 
 import { load } from "cheerio";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -17,11 +21,28 @@ import path from "node:path";
 
 const UA = "Mozilla/5.0 (SIT-scraper; personal, non-commercial use)";
 
+const clean = (s) => (s || "").replace(/^:\s*/, "").trim();
+const toCamel = (label) =>
+  label
+    .trim()
+    .replace(/[^a-zA-Z0-9 ]/g, "")
+    .split(/\s+/)
+    .map((w, i) => (i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase()))
+    .join("");
+
 const CATEGORIES = {
   // Simple GridView table: Name | Prerequisite | Description
   feats: {
     url: "https://aonsrd.com/Feats.aspx",
     singular: "feat",
+    // sections come from the labeled blocks on the feat's own detail page
+    applyDetail(entry, sections) {
+      entry.data.prerequisites = clean(sections.Prerequisites) || entry.data.prerequisite || "";
+      entry.data.effect = clean(sections.Benefit);
+      if (sections["Teamwork Benefit"]) entry.data.teamworkBenefit = clean(sections["Teamwork Benefit"]);
+      if (sections.Normal) entry.data.normal = clean(sections.Normal);
+      if (sections.Special) entry.data.special = clean(sections.Special);
+    },
     listEntries($, pageUrl) {
       const out = [];
       $("#ctl00_MainContent_GridView6 tr")
@@ -52,6 +73,12 @@ const CATEGORIES = {
   spells: {
     url: "https://aonsrd.com/Spells.aspx?Class=All",
     singular: "spell",
+    applyDetail(entry, sections) {
+      entry.data.effect = clean(sections.Description) || entry.data.description || "";
+      for (const label of ["School", "Casting Time", "Range", "Area", "Targets", "Duration", "Saving Throw", "Spell Resistance", "Classes", "Effect"]) {
+        if (sections[label]) entry.data[toCamel(label)] = clean(sections[label]);
+      }
+    },
     listEntries($, pageUrl) {
       const out = [];
       $("[id$='_LabelName']").each((_, el) => {
@@ -83,6 +110,12 @@ const CATEGORIES = {
   races: {
     url: "https://aonsrd.com/Races.aspx?ItemName=All",
     singular: "race",
+    // list page already has ability scores/HP/size/source; the detail page
+    // (same URL pattern, reused for both list rows and single-item view)
+    // adds the racial traits text, which isn't in the list table at all.
+    applyDetail(entry, sections) {
+      entry.data.effect = mergeSections(sections, entry.name);
+    },
     listEntries($, pageUrl) {
       const out = [];
       $("table[id^='ctl00_MainContent_GridViewRaces'] tr").each((_, row) => {
@@ -117,6 +150,12 @@ const CATEGORIES = {
   classes: {
     url: "https://aonsrd.com/Classes.aspx",
     singular: "class",
+    // no per-class level-progression table (that lives in an inner <table>,
+    // deliberately skipped by the section parser) — just the descriptive
+    // sections: flavor text, key ability score, class skills, and so on.
+    applyDetail(entry, sections) {
+      entry.data.effect = mergeSections(sections, entry.name);
+    },
     listEntries($, pageUrl) {
       const out = [];
       $("#ctl00_MainContent_FullClassList a").each((_, el) => {
@@ -153,27 +192,62 @@ function parseArgs(argv) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Every AoN detail page has a `<b>Source</b> <a><i>Book pg. N</i></a>` line.
-// Returns the book title (for filtering), page number, and the paizo.com
-// store link, or nulls if the page doesn't have one.
-async function fetchSource(url) {
+// Merges leftover labeled sections (racial traits, class flavor, etc.) that
+// don't map to a specific known field into one readable text blob, for
+// categories without a fixed set of expected labels.
+function mergeSections(sections, entryName) {
+  return Object.entries(sections)
+    .filter(([k, v]) => k !== "Source" && k !== entryName && v.trim())
+    .map(([k, v]) => `${k}: ${clean(v)}`)
+    .join("\n\n");
+}
+
+// Every AoN detail page is one big <span id="..._LabelName"> containing the
+// item's title, then a run of `<b>Label</b> value` pairs and `<hN>Heading</hN>`
+// sections (Source, Prerequisites, Benefit, Description, ...) mixed with
+// plain text and the occasional inner <table> (e.g. class level progression,
+// deliberately skipped — it isn't prose). This walks that container once and
+// returns both the parsed Source line and every other labeled section, so
+// each category's `applyDetail` can pull out whatever fields it has.
+async function fetchDetail(url) {
   const res = await fetch(url, { headers: { "User-Agent": UA } });
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
   const $ = load(await res.text());
 
-  const label = $("b")
-    .filter((_, el) => $(el).text().trim() === "Source")
-    .first();
-  if (!label.length) return { book: "", page: null, sourceUrl: "" };
+  const container = $("[id$='_LabelName']").first();
+  const sections = {};
+  let current = null;
+  container.contents().each((_, node) => {
+    if (node.type === "tag" && node.name === "b") {
+      current = $(node).text().replace(/:$/, "").trim() || null;
+      if (current) sections[current] = sections[current] || "";
+    } else if (node.type === "tag" && ["h1", "h2", "h3"].includes(node.name)) {
+      current = $(node).text().trim() || null;
+      if (current) sections[current] = sections[current] || "";
+    } else if (node.type === "tag" && node.name === "table") {
+      current = null; // skip tabular data (not prose)
+    } else if (node.type === "tag" && node.name === "a" && current) {
+      sections[current] += $(node).text();
+    } else if (node.type === "tag" && node.name === "br") {
+      if (current) sections[current] += "\n";
+    } else if (node.type === "text" && current) {
+      sections[current] += node.data;
+    }
+  });
+  for (const k in sections) sections[k] = sections[k].replace(/\n{2,}/g, "\n").trim();
 
-  const link = label.next("a");
-  const raw = (link.length ? link.text() : "").trim();
-  const match = raw.match(/^(.*?)(?:\s+pg\.\s*(\d+))?$/i);
+  const sourceRaw = (sections.Source || "").split("\n")[0].trim();
+  const match = sourceRaw.match(/^(.*?)(?:\s+pg\.\s*(\d+))?$/i);
+  const sourceLink = $(container).find("b")
+    .filter((_, el) => $(el).text().trim() === "Source")
+    .first()
+    .next("a");
 
   return {
-    book: (match ? match[1] : raw).trim(),
+    book: (match ? match[1] : sourceRaw).trim(),
     page: match && match[2] ? Number(match[2]) : null,
-    sourceUrl: link.attr("href") || "",
+    sourceUrl: sourceLink.attr("href") || "",
+    sections,
   };
 }
 
@@ -196,18 +270,21 @@ async function main() {
   console.log(`Found ${entries.length} ${category} entries.`);
 
   if (!skipSource) {
-    const pending = entries.filter((e) => e.url && !e.source);
-    console.log(`Fetching source info from ${pending.length} detail pages (${delay}ms apart)...`);
+    const pending = entries.filter((e) => e.url);
+    console.log(`Fetching ${pending.length} detail pages (source + full rules text, ${delay}ms apart)...`);
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
-      if (entry.url && !entry.source) {
+      if (entry.url) {
         try {
-          const src = await fetchSource(entry.url);
-          entry.source = src.book;
-          entry.data.sourcePage = src.page;
-          entry.data.sourceUrl = src.sourceUrl;
+          const detail = await fetchDetail(entry.url);
+          if (!entry.source) {
+            entry.source = detail.book;
+            entry.data.sourcePage = detail.page;
+            entry.data.sourceUrl = detail.sourceUrl;
+          }
+          config.applyDetail?.(entry, detail.sections);
         } catch (e) {
-          console.warn(`  warn: failed to fetch source for "${entry.name}": ${e.message}`);
+          console.warn(`  warn: failed to fetch detail for "${entry.name}": ${e.message}`);
         }
         await sleep(delay);
       }

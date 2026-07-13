@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { api, useWs } from "../api.js";
 import BattleMap from "../components/BattleMap.jsx";
 import ScenePanel from "../components/ScenePanel.jsx";
+import SourcesConfig from "../components/SourcesConfig.jsx";
+import { useAuth } from "../auth.jsx";
 
 /*
  * Mini tracker protocol (placeholder — adjust to real PCB firmware):
@@ -61,6 +63,7 @@ function useMiniTracker(onPosition) {
 }
 
 export default function GM() {
+  const { user, logout } = useAuth();
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [selectedToken, setSelectedToken] = useState(null);
@@ -128,6 +131,8 @@ export default function GM() {
         {tracker.status === "connected"
           ? <button onClick={tracker.disconnect}>Disconnect tracker</button>
           : <button onClick={tracker.connect}>Connect tracker</button>}
+        <span className="muted" style={{ marginLeft: "auto" }}>{user?.username}</span>
+        <button className="link" onClick={logout}>Sign out</button>
       </header>
 
       <div className="gm-body">
@@ -152,6 +157,7 @@ export default function GM() {
             </>
           )}
           <ScenePanel session={session} characters={characters} />
+          <SourcesConfig />
         </aside>
 
         <main>

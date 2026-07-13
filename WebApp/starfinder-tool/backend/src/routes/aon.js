@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { pool } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 // Read-only search/browse over the aon_entries table populated by
 // scripts/import-aon-cache.js. Supports filtering by category, by source
-// book, and free-text search over the name.
+// book, and free-text search over the name. Rules reference, not GM-only,
+// but still requires being logged in as someone (GM or player).
 const r = Router();
+r.use(requireAuth);
 
 r.get("/categories", async (_req, res) => {
   const { rows } = await pool.query(
@@ -29,7 +32,7 @@ r.get("/sources", async (req, res) => {
 });
 
 r.get("/", async (req, res) => {
-  const { category, source, q } = req.query;
+  const { category, source, sources, q } = req.query;
   const conditions = [];
   const params = [];
 
@@ -40,6 +43,10 @@ r.get("/", async (req, res) => {
   if (source) {
     params.push(source);
     conditions.push(`source = $${params.length}`);
+  } else if (sources) {
+    // comma-separated list — used for the GM's "owned sources" default filter
+    params.push(sources.split(",").map((s) => s.trim()).filter(Boolean));
+    conditions.push(`source = ANY($${params.length}::text[])`);
   }
   if (q) {
     params.push(`%${q}%`);

@@ -6,20 +6,23 @@ import { api, useWs } from "../api.js";
 export default function Tablet() {
   const [channel, setChannel] = useState({ mode: "idle", mediaUrl: "", caption: "", characterIds: [] });
   const [mood, setMood] = useState({ color: "#202040", name: "" });
-  const [chars, setChars] = useState([]);
+  const [featured, setFeatured] = useState([]);
+
+  // Public, but deliberately scoped server-side to only the characters the
+  // GM has chosen to feature, with only the fields this view shows — not
+  // the full character list (that's GM-only, see /api/characters).
+  const loadFeatured = () => api("/scene/tablet/characters").then(setFeatured);
 
   useEffect(() => {
     api("/scene/state").then((s) => { setChannel(s.tablet); setMood(s.mood); });
-    api("/characters").then(setChars);
+    loadFeatured();
   }, []);
 
   useWs((msg) => {
-    if (msg.type === "scene:channel" && msg.payload.channel === "tablet") setChannel(msg.payload.state);
+    if (msg.type === "scene:channel" && msg.payload.channel === "tablet") { setChannel(msg.payload.state); loadFeatured(); }
     if (msg.type === "scene:mood") setMood(msg.payload);
-    if (msg.type?.startsWith("character:")) api("/characters").then(setChars);
+    if (msg.type?.startsWith("character:")) loadFeatured();
   });
-
-  const featured = chars.filter((c) => channel.characterIds?.includes(c.id));
 
   return (
     <div className="tablet-mood" style={{ "--mood": mood.color }}>

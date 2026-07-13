@@ -12,23 +12,64 @@
    ```
    sudo mkdir -p /mnt/data_ssd/nas_share/SIT/{db,uploads,aon-cache,content}
    ```
-4. Copy `.env.example` → `.env` (inside `WebApp/starfinder-tool/`), set `DB_PASSWORD`
+4. Copy `.env.example` → `.env` (inside `WebApp/starfinder-tool/`), set `DB_PASSWORD` **and `SESSION_SECRET`** (`openssl rand -hex 32`)
 5. In Dockge: the stack appears automatically → Deploy
-6. Open `http://<pi-ip>:7600`
-7. To update: `git pull` in the repo, then redeploy the stack in Dockge
+6. Create login accounts (see below) — nobody can use `/gm` or `/player` until you do
+7. Open `http://<pi-ip>:7600`
+8. To update: `git pull` in the repo, then redeploy the stack in Dockge
 
 Note: `MapCreator/` elsewhere in the repo is a separate offline tool and is
 not part of this stack — it doesn't run on the Pi.
+
+## Accounts / login
+
+`/gm` and `/player` (and `/compendium`) require signing in — there's no
+self-registration UI, accounts are created via a CLI script run inside the
+backend container:
+
+```bash
+# one GM account
+docker compose exec backend node scripts/create-user.js gm alice "hunter2"
+
+# one account per player — character gets linked automatically the first
+# time they log in and create it (or pass an existing character id)
+docker compose exec backend node scripts/create-user.js player bob "hunter2"
+```
+
+Rules: one GM account (sees/controls everything), one character per player
+account (enforced server-side — a player can create exactly one character,
+then it's permanently linked to their login). Re-running the script for an
+existing username resets that user's password.
+
+`/display` (projector) and `/tablet` (GM's mood board) are **not** behind
+login — they're shared physical screens, not per-person devices, and only
+show what the GM explicitly pushes to them (battle map, mood board, and a
+GM-curated subset of character summaries — never full sheets or notes).
+
+## On "automatic" rule effects
+
+The Compendium surfaces full rules text (a feat's Benefit, a race's traits,
+etc.) but does not parse that prose into structured mechanical effects or
+auto-apply anything to a character sheet — e.g. taking a feat with a skill
+bonus doesn't move the character's numbers on its own. This is a genuinely
+hard, open-ended problem (reliably turning free-form rules text into
+structured modifiers), and `03-features-scope.md` explicitly defers
+"automated rules enforcement" past v1: state is tracked manually for now.
+The `feats` JSONB column already exists on `characters` for storing which
+feats a character has taken, but there's currently no UI to attach a
+Compendium entry to a character — that's the natural next step if you want
+manual-but-convenient tracking (effect text visible on the sheet) short of
+full automation.
 
 ## Device roles
 
 | Route | Device |
 |---|---|
-| `/gm` | PC — GM console + "Connect tracker" button (Web Serial, Chrome/Edge) |
-| `/player` | Player tablet / mobile — character sheets |
-| `/tablet` | GM tablet — mood board (scenario art, featured characters), driven from `/gm` |
-| `/display` | Projector — fullscreen read-only battle map, auto-follows the latest active session |
-| `/compendium` | Any device — searchable rules lookup (feats/spells/races/classes) over `/api/aon`, filterable by category and source book |
+| `/gm` | PC — GM console + "Connect tracker" button (Web Serial, Chrome/Edge). **GM login required.** |
+| `/player` | Player tablet / mobile — character sheet, scoped to the logged-in player's own character. **Player login required.** |
+| `/tablet` | GM tablet — mood board (scenario art, featured characters), driven from `/gm`. No login (shared screen). |
+| `/display` | Projector — fullscreen read-only battle map, auto-follows the latest active session. No login (shared screen). |
+| `/compendium` | Any device — searchable rules lookup (feats/spells/races/classes) over `/api/aon`, filterable by category and source book. **Any login required** (GM or player). |
 
 ## Mini tracker protocol (placeholder)
 
@@ -47,7 +88,8 @@ setting the token's *Tracker ID* when adding it. Coordinates are POSTed to
 
 ```
 # terminal 1 — needs a local Postgres, or: docker run -e POSTGRES_PASSWORD=sf -e POSTGRES_USER=sf -e POSTGRES_DB=sf -p 5432:5432 postgres:16-alpine
-cd backend && DATABASE_URL=postgres://sf:sf@localhost:5432/sf npm run dev
+cd backend && DATABASE_URL=postgres://sf:sf@localhost:5432/sf SESSION_SECRET=dev-only npm run dev
+node scripts/create-user.js gm gm gmpass   # then log in with gm/gmpass
 
 # terminal 2
 cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
@@ -64,7 +106,11 @@ cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 - [x] Minimal character sheet (abilities, pools, defenses) with live +/- editing
 - [x] Scene module: projector/tablet channels, mood presets, ESP32 light node registry
 - [x] Content module: serves SDF data packs (see docs/06-data-format-sdf.md)
-- [x] AoN scraper + validator + importer, with per-entry source book/page (`backend/scripts/`, Feats + Spells + Races + Classes; see docs/04-data-pipeline-aon.md)
-- [x] `/api/aon` search endpoint — filter by category, source book, name (`backend/src/routes/aon.js`)
-- [x] Compendium view (`/compendium`): browse/search/filter imported AoN data by category and source book (`frontend/src/views/Compendium.jsx`)
+- [x] AoN scraper + validator + importer, with per-entry source book/page and full rules text (`backend/scripts/`, Feats + Spells + Races + Classes; see docs/04-data-pipeline-aon.md)
+- [x] `/api/aon` search endpoint — filter by category, source book (single or a set), name (`backend/src/routes/aon.js`)
+- [x] `/api/settings` generic key/value store, used for the GM's "owned sourcebooks" config (`backend/src/routes/settings.js`, `003_settings.sql`)
+- [x] Compendium view (`/compendium`): browse/search/filter imported AoN data by category and source book, full effect text, defaults to GM's owned sources (`frontend/src/views/Compendium.jsx`)
+- [x] GM "Owned sourcebooks" panel — sets the Compendium's default source filter (`frontend/src/components/SourcesConfig.jsx`)
+- [x] Login system: one GM account + one account per player (auto-linked to their character), signed session cookies, server-side ownership checks on every character/battlemap/settings route (`backend/src/auth.js`, `004_users.sql`, `scripts/create-user.js`)
 - [ ] ESP32 firmware (spec in docs/07-modules-and-peripherals.md)
+- [ ] Automatic rule effects (e.g. a feat's numeric bonus auto-applying to a character) — not implemented, see note below

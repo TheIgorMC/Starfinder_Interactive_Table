@@ -1,8 +1,14 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { broadcast } from "../ws.js";
+import { requireGM } from "../auth.js";
 
 const r = Router();
+
+// GETs stay public — the projector display (/display) shows the battle map
+// with no login of its own, and token positions/labels aren't sensitive
+// (everyone at the table is meant to see the map). Only mutations are
+// GM-gated, since only the GM console drives them.
 
 // --- sessions ---
 r.get("/sessions", async (_req, res) => {
@@ -10,7 +16,7 @@ r.get("/sessions", async (_req, res) => {
   res.json(rows);
 });
 
-r.post("/sessions", async (req, res) => {
+r.post("/sessions", requireGM, async (req, res) => {
   const { name = "New Encounter", grid_w = 30, grid_h = 20, map_url = "" } = req.body ?? {};
   const { rows } = await pool.query(
     "INSERT INTO battle_sessions (name, grid_w, grid_h, map_url) VALUES ($1,$2,$3,$4) RETURNING *",
@@ -28,7 +34,7 @@ r.get("/sessions/:id", async (req, res) => {
 });
 
 // --- tokens ---
-r.post("/sessions/:id/tokens", async (req, res) => {
+r.post("/sessions/:id/tokens", requireGM, async (req, res) => {
   const { label, color = "#4f8ef7", x = 0, y = 0, character_id = null, tracker_id = null } = req.body ?? {};
   if (!label) return res.status(400).json({ error: "label required" });
   const { rows } = await pool.query(
@@ -41,7 +47,7 @@ r.post("/sessions/:id/tokens", async (req, res) => {
 });
 
 // manual move (drag on GM screen) or tracker-driven move by token id
-r.post("/sessions/:sid/tokens/:tid/position", async (req, res) => {
+r.post("/sessions/:sid/tokens/:tid/position", requireGM, async (req, res) => {
   const { x, y } = req.body ?? {};
   if (!Number.isInteger(x) || !Number.isInteger(y))
     return res.status(400).json({ error: "x and y must be integers" });
@@ -55,7 +61,7 @@ r.post("/sessions/:sid/tokens/:tid/position", async (req, res) => {
 });
 
 // tracker-driven move by physical mini id (Hall sensor PCB, POSTed from PC browser)
-r.post("/tracker/position", async (req, res) => {
+r.post("/tracker/position", requireGM, async (req, res) => {
   const { tracker_id, x, y } = req.body ?? {};
   if (!tracker_id || !Number.isInteger(x) || !Number.isInteger(y))
     return res.status(400).json({ error: "tracker_id, x, y required" });
@@ -68,7 +74,7 @@ r.post("/tracker/position", async (req, res) => {
   res.json(rows[0]);
 });
 
-r.delete("/sessions/:sid/tokens/:tid", async (req, res) => {
+r.delete("/sessions/:sid/tokens/:tid", requireGM, async (req, res) => {
   await pool.query("DELETE FROM tokens WHERE id=$1 AND session_id=$2", [req.params.tid, req.params.sid]);
   broadcast("token:deleted", { id: Number(req.params.tid), session_id: Number(req.params.sid) });
   res.status(204).end();

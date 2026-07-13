@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { broadcast } from "../ws.js";
+import { pool } from "../db.js";
+import { requireGM } from "../auth.js";
 
 /*
  * Scene module — controls what non-GM displays are showing and ambient mood.
@@ -31,10 +33,27 @@ const lightNodes = new Map();
 
 const r = Router();
 
+// public — the projector and mood tablet have no login of their own
 r.get("/state", (_req, res) => res.json({ ...state, lightNodes: [...lightNodes.values()] }));
 
+// Public summary of only the characters the GM has chosen to feature on the
+// mood tablet — deliberately NOT the full /api/characters list (that's
+// GM-only) and deliberately only the handful of fields the tablet actually
+// shows, so an unauthenticated device on the same LAN can't be used to pull
+// every player's full sheet.
+r.get("/tablet/characters", async (_req, res) => {
+  const ids = state.tablet.characterIds || [];
+  if (!ids.length) return res.json([]);
+  const { rows } = await pool.query(
+    `SELECT id, name, race, class, level, hp_cur, hp_max, sp_cur, sp_max, rp_cur, rp_max
+     FROM characters WHERE id = ANY($1::int[])`,
+    [ids]
+  );
+  res.json(rows);
+});
+
 // GM sets what a channel shows
-r.post("/channel/:name", (req, res) => {
+r.post("/channel/:name", requireGM, (req, res) => {
   const ch = state[req.params.name];
   if (!ch) return res.status(404).json({ error: "unknown channel" });
   Object.assign(ch, req.body ?? {});
@@ -43,7 +62,7 @@ r.post("/channel/:name", (req, res) => {
 });
 
 // GM sets mood (broadcast to browsers AND polled by ESP32 nodes)
-r.post("/mood", (req, res) => {
+r.post("/mood", requireGM, (req, res) => {
   Object.assign(state.mood, req.body ?? {});
   broadcast("scene:mood", state.mood);
   res.json(state.mood);

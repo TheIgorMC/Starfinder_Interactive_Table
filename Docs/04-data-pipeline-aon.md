@@ -52,10 +52,20 @@ DATABASE_URL=postgres://sf:<pw>@localhost:5432/sf npm run import:aon -- /mnt/dat
 
 Every entry carries its source book in the top-level `source` field (e.g.
 `"Starfinder Core Rulebook"`, `"Character Operations Manual"`) plus
-`data.sourcePage` and `data.sourceUrl` (Paizo store link), scraped from each
-item's own detail page (`<b>Source</b> <a>...</a>` line). `source` is
+`data.sourcePage` and `data.sourceUrl` (Paizo store link). `source` is
 indexed (`002_aon_source_index.sql`) and exposed for filtering via the
 backend's `/api/aon` route — see below.
+
+Every entry's detail page is also fetched for its **full rules text**, not
+just the short one-line blurb from the list page — e.g. a feat's complete
+`Benefit`/`Prerequisites`/`Teamwork Benefit` text, a spell's full
+`Description` plus `School`/`Range`/`Duration`/etc., a race's full traits
+text, a class's flavor/key-ability/class-skills text. This is a generic
+labeled-section parser (`fetchDetail()` in `scrape-aon.js`) that walks each
+detail page's content block once and returns every `<b>Label</b>`/`<hN>`
+section it finds; each category's `applyDetail(entry, sections)` then picks
+the fields relevant to it — see the field list per category below. The
+primary rules-text field is always `data.effect`.
 
 ### Implemented categories
 
@@ -64,17 +74,22 @@ ASP.NET site, not a consistent API), so each one needs a small
 `listEntries($, pageUrl)` parser added to `CATEGORIES` in
 `backend/scripts/scrape-aon.js`. Implemented and verified so far:
 
-- `feats` — 477 entries, table-based list page; source comes from each feat's
-  own detail page (one HTTP request per entry)
-- `spells` — 615 entries, span-list-based list page; source from detail page
+- `feats` — 477 entries, table-based list page. `data.effect` = Benefit text,
+  `data.prerequisites` = full Prerequisites text (list-page version was
+  truncated), plus `data.teamworkBenefit`/`data.normal`/`data.special` when present
+- `spells` — 615 entries, span-list-based list page. `data.effect` =
+  Description text, plus `data.school`/`castingTime`/`range`/`area`/
+  `duration`/`savingThrow`/`spellResistance`/`classes` when present
 - `races` — 143 entries (Core / Core [Legacy] / Other species), table-based;
-  source book is already in the list page itself, so this one's fast — no
-  per-entry detail-page fetch at all
+  ability scores/HP/size/source come straight from the list page, but the
+  full racial traits text (`data.effect`) still needs a per-entry detail-page
+  fetch — the list table alone doesn't have it
 - `classes` — 14 entries (the 13 playable classes + Drone), just a link list
-  on the index page; source comes from each class's own detail page. One
-  entry (`Drone`) has no `<b>Source</b>` line on its page in the expected
-  place, so its `source` comes back empty — flagged here rather than
-  silently guessed
+  on the index page; `data.effect` = flavor/key-ability-score/class-skills
+  text (the level-progression table itself is skipped — it's tabular, not
+  prose). One entry (`Drone`) has no `<b>Source</b>` line on its page in the
+  expected place, so its `source` comes back empty — flagged here rather
+  than silently guessed
 
 Not yet implemented: Equipment (itself ~10 sub-categories — Weapons, Armor,
 Augmentations, Technological Items, Magic Items, Hybrid Items, etc., each
