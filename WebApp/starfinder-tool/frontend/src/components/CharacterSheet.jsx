@@ -109,7 +109,21 @@ export default function CharacterSheet({ character, patch }) {
   // previous call's change instead of composing with it.
   const updateItems = (idToChanges) => patchEquipment(equipment.map((it) => (idToChanges.has(it.id) ? { ...it, ...idToChanges.get(it.id) } : it)));
 
-  const sumBulk = (items) => Math.round(items.reduce((sum, it) => sum + (Number(it.bulk) || 0) * (it.quantity || 1), 0) * 10) / 10;
+  // SF1e bulk rule: items lighter than 1 Bulk ("L") don't add up fractionally —
+  // every 10 light items together count as 1 Bulk, any remainder is dropped.
+  // Summing the raw fractional values instead (e.g. 8 light items -> 0.8)
+  // overstates carried bulk and never lines up with the source sheet's total.
+  const sumBulk = (items) => {
+    let heavy = 0;
+    let lightCount = 0;
+    for (const it of items) {
+      const b = Number(it.bulk) || 0;
+      const q = it.quantity || 1;
+      if (b > 0 && b < 1) lightCount += q;
+      else heavy += b * q;
+    }
+    return Math.round((heavy + Math.floor(lightCount / 10)) * 10) / 10;
+  };
   const carriedBulk = sumBulk(equipment.filter((it) => !it.stashed));
   const stashedBulk = sumBulk(equipment.filter((it) => it.stashed));
 
@@ -211,6 +225,13 @@ export default function CharacterSheet({ character, patch }) {
 
       {tab === "skills" && (
         <table className="sheet-table">
+          <colgroup>
+            <col style={{ width: "24px" }} />
+            <col />
+            <col style={{ width: "60px" }} />
+            <col style={{ width: "90px" }} />
+            <col style={{ width: "60px" }} />
+          </colgroup>
           <thead><tr><th /><th>Skill</th><th>Ranks</th><th>Ability</th><th>Total</th></tr></thead>
           <tbody>
             {skillEntries.map(([name, s]) => (
@@ -325,6 +346,14 @@ export default function CharacterSheet({ character, patch }) {
 
           <h3>All equipment</h3>
           <table className="sheet-table">
+            <colgroup>
+              <col />
+              <col />
+              <col style={{ width: "50px" }} />
+              <col style={{ width: "56px" }} />
+              <col style={{ width: "76px" }} />
+              <col style={{ width: "76px" }} />
+            </colgroup>
             <thead><tr><th>Name</th><th>Details</th><th>Qty</th><th>Bulk</th><th>Equipped</th><th>Stashed</th></tr></thead>
             <tbody>
               {equipment.map((it) => (
