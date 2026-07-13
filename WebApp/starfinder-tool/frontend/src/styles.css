@@ -90,6 +90,25 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 .display-full.scenic img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .caption { color: #cfd6dd; font-size: 22px; font-style: italic; margin: 8px; text-align: center; }
 
+/* Compendium */
+.compendium { padding: 16px 24px; }
+.compendium header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.compendium header h2 { margin: 0; }
+.compendium-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.compendium-filters select { background: #12181e; color: #e6e9ec; border: 1px solid #33414f; border-radius: 6px; padding: 6px 8px; }
+.compendium-filters input { width: auto; min-width: 220px; }
+.compendium-body { display: flex; gap: 20px; align-items: flex-start; }
+.compendium-list { list-style: none; padding: 0; margin: 0; flex: 1; max-width: 480px; max-height: 70vh; overflow-y: auto; }
+.compendium-list li { padding: 6px 0; border-bottom: 1px solid #1d2833; }
+.compendium-list button.active { color: #fff; text-decoration: underline; }
+.compendium-detail {
+  flex: 1; min-width: 280px; max-width: 480px;
+  background: #12181e; border: 1px solid #1d2833; border-radius: 8px;
+  padding: 16px; position: sticky; top: 16px;
+}
+.compendium-detail h3 { margin: 8px 0 4px; }
+.compendium-detail p { margin: 6px 0; line-height: 1.4; }
+
 /* Tablet mood */
 .tablet-mood {
   position: fixed; inset: 0;

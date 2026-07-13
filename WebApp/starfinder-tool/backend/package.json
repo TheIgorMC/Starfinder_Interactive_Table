@@ -4,11 +4,17 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "scrape:aon": "node scripts/scrape-aon.js",
+    "validate:aon": "node scripts/validate-aon-cache.js",
+    "import:aon": "node scripts/import-aon-cache.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "pg": "^8.12.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "cheerio": "1.0.0-rc.12"
   }
 }

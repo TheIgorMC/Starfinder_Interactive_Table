@@ -28,6 +28,7 @@ not part of this stack — it doesn't run on the Pi.
 | `/player` | Player tablet / mobile — character sheets |
 | `/tablet` | GM tablet — mood board (scenario art, featured characters), driven from `/gm` |
 | `/display` | Projector — fullscreen read-only battle map, auto-follows the latest active session |
+| `/compendium` | Any device — searchable rules lookup (feats/spells/races/classes) over `/api/aon`, filterable by category and source book |
 
 ## Mini tracker protocol (placeholder)
 
@@ -63,5 +64,7 @@ cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 - [x] Minimal character sheet (abilities, pools, defenses) with live +/- editing
 - [x] Scene module: projector/tablet channels, mood presets, ESP32 light node registry
 - [x] Content module: serves SDF data packs (see docs/06-data-format-sdf.md)
-- [ ] AoN scraper (table `aon_entries` is ready; importer is next task)
+- [x] AoN scraper + validator + importer, with per-entry source book/page (`backend/scripts/`, Feats + Spells + Races + Classes; see docs/04-data-pipeline-aon.md)
+- [x] `/api/aon` search endpoint — filter by category, source book, name (`backend/src/routes/aon.js`)
+- [x] Compendium view (`/compendium`): browse/search/filter imported AoN data by category and source book (`frontend/src/views/Compendium.jsx`)
 - [ ] ESP32 firmware (spec in docs/07-modules-and-peripherals.md)

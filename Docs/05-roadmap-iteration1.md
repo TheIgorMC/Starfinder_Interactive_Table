@@ -25,9 +25,9 @@ feature completeness.
    - [ ] POSTs to `/api/battlemap/.../position`, confirms `/display` updates live
 
 5. **Data pipeline proof of concept**
-   - [ ] Scraper pulls one category (e.g. Feats) from aonsrd.com
-   - [ ] Normalized JSON stored in `aon-cache/`
-   - [ ] Imported into DB, queryable from a basic search endpoint
+   - [x] Scraper pulls categories (Feats 477, Spells 615, Races 143, Classes 14) from aonsrd.com, incl. per-entry source book/page
+   - [x] Normalized JSON stored in `aon-cache/`
+   - [x] Imported into DB, queryable from `/api/aon` (filter by category/source/name)
 
 6. **Character sheet (minimal)**
    - [ ] Create a character with core fields (abilities, class, level, HP)
