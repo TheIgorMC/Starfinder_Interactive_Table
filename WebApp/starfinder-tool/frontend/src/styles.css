@@ -152,12 +152,12 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .sheet-table td:has(> input[type="checkbox"]) { text-align: center; }
 
 .sheet-list { list-style: none; padding: 0; margin: 0 0 14px; }
-.sheet-list > li { padding: 4px 0; }
+.sheet-list > li:not(.sheet-card) { padding: 4px 0; }
 .sheet-card {
   background: #0e1319; border: 1px solid #1d2833; border-radius: 8px;
-  padding: 10px 12px; margin-bottom: 8px;
+  padding: 16px 18px; margin-bottom: 10px;
 }
-.sheet-card h3, .sheet-card h4 { margin: 0 0 6px; }
+.sheet-card h3, .sheet-card h4 { margin: 0 0 10px; line-height: 1.3; }
 .sheet-card p { margin: 4px 0; line-height: 1.4; }
 
 .conditions-list { columns: 2; column-gap: 20px; }
