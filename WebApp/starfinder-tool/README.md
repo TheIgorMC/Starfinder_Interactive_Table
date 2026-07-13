@@ -77,9 +77,12 @@ The GM console's Campaign → Characters tab can import a character JSON
 exported from [Hephaistos](https://hephaistos.online), a popular SF1e
 character builder — either upload the `.json` file or paste its contents.
 Maps ability scores, HP/SP/RP, EAC/KAC, saves, BAB, initiative, speed,
-skills, feats, and inventory onto our `characters` schema. Optionally
-assign the imported character directly to an existing player account (skip
-this for NPCs, or when the player will self-link it by logging in first).
+skills (with ranks/ability/class-skill flag), feats, per-class spell slots
+(known/per-day, all starting unused), full inventory (weapons/armor/
+ammunition/gear with equip and stash state), credits, and conditions onto
+our `characters` schema. Optionally assign the imported character directly
+to an existing player account (skip this for NPCs, or when the player will
+self-link it by logging in first).
 
 ## On "automatic" rule effects
 
@@ -159,7 +162,7 @@ cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 - [x] React routes `/gm` `/player` `/display` with live WS sync
 - [x] Battle map grid, token add/move (click-to-move), projector auto-sync
 - [x] Web Serial tracker hook + `/tracker/position` endpoint
-- [x] Minimal character sheet (abilities, pools, defenses) with live +/- editing
+- [x] Full character sheet — abilities/pools/defenses, skills (ranks/ability/class-skill), feats (benefit text), spells (per-class slots with cast/rest tracking), inventory (equip/stash toggles, live bulk total), equipped weapons with linked-ammo fire/reload, standalone ammo tracking, conditions checklist, notes; shared by the player's own sheet and the GM's read/write view from Campaign → Characters (`frontend/src/components/CharacterSheet.jsx`, `frontend/src/views/Player.jsx`, `008_character_sheet.sql`)
 - [x] Scene module: projector/tablet channels, mood presets, ESP32 light node registry
 - [x] Content module: serves SDF data packs (see docs/06-data-format-sdf.md)
 - [x] AoN scraper + validator + importer, with per-entry source book/page and full rules text (`backend/scripts/`, Feats + Spells + Races + Classes; see docs/04-data-pipeline-aon.md)

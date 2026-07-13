@@ -21,11 +21,38 @@ export function mapHephaistosCharacter(json) {
   const health = json.vitals?.health ?? {};
   const resolve = json.vitals?.resolve ?? {};
 
+  // Kept as {total, ranks, ability, classSkill, notes} rather than flattened
+  // to a bare number — the sheet UI wants to show ranks and highlight class
+  // skills, not just the final total.
   const skills = {};
   for (const s of json.skills ?? []) {
     const key = s.name ? `${s.skill} (${s.name})` : s.skill;
-    if (key) skills[key] = s.total;
+    if (key) {
+      skills[key] = {
+        total: s.total ?? 0,
+        ranks: s.ranks ?? 0,
+        ability: s.ability ?? "",
+        classSkill: !!s.classSkill,
+        notes: s.notes ?? "",
+      };
+    }
   }
+
+  // Per-class known-spell list *and* slot counts — Hephaistos indexes
+  // `spellsKnown`/`spellsPerDay` by spell level (0-6). `spellsUsed` isn't
+  // part of the Hephaistos export (it has no notion of slots already spent
+  // this session) — start every slot unused; the sheet's cast/rest buttons
+  // maintain it from here.
+  const spells = {
+    classes: classes.map((c) => ({
+      name: c.name,
+      spellsKnown: c.spellsKnown ?? [],
+      spellsPerDay: c.spellsPerDay ?? [],
+      spellsUsed: (c.spellsPerDay ?? []).map(() => 0),
+      spells: c.spells ?? [],
+    })),
+    additional: json.additionalSpells ?? [],
+  };
 
   const notes = [json.description, json.quickNotes, json.campaignNotes].filter(Boolean).join("\n\n");
 
@@ -53,8 +80,12 @@ export function mapHephaistosCharacter(json) {
     speed: json.speed?.land ?? 30,
     skills,
     feats: json.feats?.acquiredFeats ?? [],
-    spells: classes.flatMap((c) => c.spells ?? []),
+    spells,
     equipment: json.inventory ?? [],
     notes,
+    credits: json.credits ?? 0,
+    // Hephaistos's own shape is already exactly {conditionKey: {active,
+    // notes}} for the standard SF1e condition list — pass it through as-is.
+    conditions: json.conditions ?? {},
   };
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
+import CharacterSheet from "./CharacterSheet.jsx";
 
 const TYPES = [
   { key: "event", label: "Events" },
@@ -78,6 +79,7 @@ export default function Campaign() {
   const [linkTargetId, setLinkTargetId] = useState("");
   const [relation, setRelation] = useState("");
   const [characters, setCharacters] = useState([]);
+  const [viewingChar, setViewingChar] = useState(null);
 
   const load = () => api(`/campaign?type=${type}`).then(setEntries);
   useEffect(() => { load(); }, [type]);
@@ -88,6 +90,10 @@ export default function Campaign() {
 
   const loadCharacters = () => api("/characters").then(setCharacters);
   useEffect(() => { if (type === "npc") loadCharacters(); }, [type]);
+
+  const openCharacter = (c) => api(`/characters/${c.id}`).then(setViewingChar);
+  const patchCharacter = (fields) =>
+    api(`/characters/${viewingChar.id}`, { method: "PATCH", body: fields }).then((c) => { setViewingChar(c); loadCharacters(); });
 
   const openEntry = async (entry) => {
     const full = entry.id ? await api(`/campaign/${entry.id}`) : entry;
@@ -144,12 +150,22 @@ export default function Campaign() {
           <ul className="campaign-pc-list">
             {characters.map((c) => (
               <li key={c.id}>
-                {c.portrait_url && <img src={c.portrait_url} alt="" />}
-                <strong>{c.name}</strong> <span className="muted">{c.race} {c.class} {c.level}</span>
+                <button className="link campaign-pc-row" onClick={() => openCharacter(c)}>
+                  {c.portrait_url && <img src={c.portrait_url} alt="" />}
+                  <strong>{c.name}</strong> <span className="muted">{c.race} {c.class} {c.level}</span>
+                </button>
               </li>
             ))}
             {characters.length === 0 && <li className="muted">No player characters yet.</li>}
           </ul>
+
+          {viewingChar && (
+            <div className="campaign-character-sheet">
+              <button className="link" onClick={() => setViewingChar(null)}>✕ Close sheet</button>
+              <CharacterSheet key={viewingChar.id} character={viewingChar} patch={patchCharacter} />
+            </div>
+          )}
+
           <h3>NPCs</h3>
         </div>
       )}

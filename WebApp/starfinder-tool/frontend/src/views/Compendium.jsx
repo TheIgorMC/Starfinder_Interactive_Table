@@ -336,6 +336,30 @@ function ExpandedRow({ row, columns }) {
   );
 }
 
+// Two overlapping native <input type="range"> elements — the standard
+// dependency-free way to get a draggable two-handle slider: each track is
+// transparent and pointer-events:none except its own thumb (see the CSS),
+// so both handles stay independently grabbable even when they overlap.
+function DualRangeSlider({ min, max, value, onChange }) {
+  if (min >= max) return null;
+  const pct = (v) => ((v - min) / (max - min)) * 100;
+  return (
+    <div className="dual-range">
+      <div className="dual-range-track">
+        <div className="dual-range-fill" style={{ left: `${pct(value.min)}%`, right: `${100 - pct(value.max)}%` }} />
+      </div>
+      <input
+        type="range" min={min} max={max} value={value.min}
+        onChange={(e) => onChange({ min: Math.min(Number(e.target.value), value.max), max: value.max })}
+      />
+      <input
+        type="range" min={min} max={max} value={value.max}
+        onChange={(e) => onChange({ min: value.min, max: Math.max(Number(e.target.value), value.min) })}
+      />
+    </div>
+  );
+}
+
 export default function Compendium() {
   const [sectionKey, setSectionKey] = useState(SECTIONS[0].key);
   const [categoryCounts, setCategoryCounts] = useState({});
@@ -401,8 +425,8 @@ export default function Compendium() {
     return out;
   }, [rows, section]);
 
-  // Min/max actually present in the section, shown as input placeholders
-  // so "Level" / "Price" read as a hint rather than a blank box.
+  // Min/max actually present in the section — the full extent of each
+  // slider, and its default (untouched) handle positions.
   const rangeBounds = useMemo(() => {
     const out = {};
     for (const rf of section.ranges) {
@@ -422,14 +446,17 @@ export default function Compendium() {
       if (val) list = list.filter((r) => f.get(r) === val);
     }
     for (const rf of section.ranges) {
-      const bounds = rangeValues[rf.key];
-      if (!bounds || (bounds.min === "" && bounds.max === "")) continue;
+      const bounds = rangeBounds[rf.key];
+      if (!bounds) continue;
+      // No explicit value yet = handles at the full extent = no filtering
+      // (computed live from current bounds, not snapshotted into state, so
+      // there's no stale-bounds race when bounds change between renders —
+      // e.g. right after switching to a section with a different range).
+      const val = rangeValues[rf.key] || bounds;
+      if (val.min <= bounds.min && val.max >= bounds.max) continue; // untouched — don't exclude nulls either
       list = list.filter((r) => {
         const v = rf.get(r);
-        if (v == null) return false;
-        if (bounds.min !== "" && v < Number(bounds.min)) return false;
-        if (bounds.max !== "" && v > Number(bounds.max)) return false;
-        return true;
+        return v != null && v >= val.min && v <= val.max;
       });
     }
     if (q) {
@@ -437,7 +464,7 @@ export default function Compendium() {
       list = list.filter((r) => r.name.toLowerCase().includes(needle));
     }
     return list;
-  }, [rows, typeFilter, sourceFilter, onlyOwned, ownedSources, facetValues, rangeValues, q, section]);
+  }, [rows, typeFilter, sourceFilter, onlyOwned, ownedSources, facetValues, rangeValues, rangeBounds, q, section]);
 
   const sortedRows = useMemo(() => {
     const column = section.columns.find((c) => c.key === sortKey);
@@ -491,19 +518,14 @@ export default function Compendium() {
 
         {section.ranges.map((rf) => {
           const bounds = rangeBounds[rf.key];
-          const val = rangeValues[rf.key] || { min: "", max: "" };
-          const setVal = (patch) => setRangeValues((v) => ({ ...v, [rf.key]: { ...val, ...patch } }));
+          if (!bounds) return null;
+          const val = rangeValues[rf.key] || bounds;
           return (
-            <div className="compendium-range" key={rf.key} title={bounds ? `${rf.label}: ${bounds.min}–${bounds.max}` : rf.label}>
-              <span className="compendium-range-label">{rf.label}</span>
-              <input
-                type="number" placeholder={bounds ? String(bounds.min) : "min"}
-                value={val.min} onChange={(e) => setVal({ min: e.target.value })}
-              />
-              <span>–</span>
-              <input
-                type="number" placeholder={bounds ? String(bounds.max) : "max"}
-                value={val.max} onChange={(e) => setVal({ max: e.target.value })}
+            <div className="compendium-range" key={rf.key}>
+              <span className="compendium-range-label">{rf.label}: {val.min}–{val.max}</span>
+              <DualRangeSlider
+                min={bounds.min} max={bounds.max} value={val}
+                onChange={(v) => setRangeValues((prev) => ({ ...prev, [rf.key]: v }))}
               />
             </div>
           );

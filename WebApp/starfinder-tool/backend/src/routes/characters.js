@@ -12,7 +12,9 @@ const FIELDS = [
   "hp_max","hp_cur","sp_max","sp_cur","rp_max","rp_cur",
   "eac","kac","bab","save_fort","save_ref","save_will",
   "init_bonus","speed","skills","feats","spells","equipment","notes","portrait_url",
+  "credits","conditions",
 ];
+const JSON_FIELDS = new Set(["skills", "feats", "spells", "equipment", "conditions"]);
 
 const forId = (req) => req.params.id;
 
@@ -42,7 +44,7 @@ r.post("/import/hephaistos", requireGM, async (req, res) => {
 
   const cols = FIELDS.filter((f) => mapped[f] !== undefined);
   const vals = cols.map((f) =>
-    ["skills","feats","spells","equipment"].includes(f) ? JSON.stringify(mapped[f]) : mapped[f]
+    JSON_FIELDS.has(f) ? JSON.stringify(mapped[f]) : mapped[f]
   );
   const params = cols.map((_, i) => `$${i + 1}`).join(",");
   const { rows } = await pool.query(
@@ -76,7 +78,7 @@ r.post("/", async (req, res) => {
   if (!b.name) return res.status(400).json({ error: "name required" });
   const cols = FIELDS.filter((f) => b[f] !== undefined);
   const vals = cols.map((f) =>
-    ["skills","feats","spells","equipment"].includes(f) ? JSON.stringify(b[f]) : b[f]
+    JSON_FIELDS.has(f) ? JSON.stringify(b[f]) : b[f]
   );
   const params = cols.map((_, i) => `$${i + 1}`).join(",");
   const { rows } = await pool.query(
@@ -107,7 +109,7 @@ r.patch("/:id", requireGmOrOwnCharacter(forId), async (req, res) => {
   if (!cols.length) return res.status(400).json({ error: "no fields" });
   const sets = cols.map((f, i) => `${f}=$${i + 1}`).join(",");
   const vals = cols.map((f) =>
-    ["skills","feats","spells","equipment"].includes(f) ? JSON.stringify(b[f]) : b[f]
+    JSON_FIELDS.has(f) ? JSON.stringify(b[f]) : b[f]
   );
   const { rows } = await pool.query(
     `UPDATE characters SET ${sets}, updated_at=now() WHERE id=$${cols.length + 1} RETURNING *`,

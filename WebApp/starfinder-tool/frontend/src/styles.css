@@ -123,8 +123,44 @@ textarea { resize: vertical; }
   background: #12181e; border: 1px solid #1d2833; border-radius: 8px; padding: 6px 12px;
 }
 .campaign-pc-list img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.campaign-pc-row { display: flex; align-items: center; gap: 8px; }
 .hephaistos-import { display: flex; flex-direction: column; gap: 6px; }
 .hephaistos-import textarea { font-family: monospace; font-size: 11px; }
+.campaign-character-sheet {
+  margin-top: 12px; padding: 16px;
+  background: #12181e; border: 1px solid #1d2833; border-radius: 10px;
+}
+
+/* Character sheet (shared by Player view and the GM's Campaign PC panel) */
+.sheet-header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.sheet-header h2 { margin: 0; }
+.sheet-portrait { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #0b0e11; }
+.sheet-credits { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.sheet-credits label { font-size: 11px; color: #7c8894; }
+.sheet-credits input { width: 100px; text-align: right; }
+
+.sheet-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 10px 0 14px; border-bottom: 1px solid #1d2833; padding-bottom: 2px; }
+.sheet-tabs button { background: none; border: none; border-radius: 0; color: #a9b4bd; padding: 6px 10px; border-bottom: 2px solid transparent; font-size: 13px; }
+.sheet-tabs button:hover { background: #0e1319; color: #e6e9ec; }
+.sheet-tabs button.active { color: #e6e9ec; border-bottom-color: #4f8ef7; }
+
+.sheet-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
+.sheet-table th, .sheet-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #161c22; }
+.sheet-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #7c8894; }
+.sheet-table tr.class-skill td:nth-child(2) { font-weight: 600; }
+
+.sheet-list { list-style: none; padding: 0; margin: 0 0 14px; }
+.sheet-list > li { padding: 4px 0; }
+.sheet-card {
+  background: #0e1319; border: 1px solid #1d2833; border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.sheet-card h3, .sheet-card h4 { margin: 0 0 6px; }
+.sheet-card p { margin: 4px 0; line-height: 1.4; }
+
+.conditions-list { columns: 2; column-gap: 20px; }
+.conditions-list li { break-inside: avoid; }
+.conditions-list input[type="text"], .conditions-list input:not([type="checkbox"]) { width: 120px; margin-left: 8px; }
 
 /* Display (projector) */
 .display-full { position: fixed; inset: 0; background: #000; }
@@ -196,12 +232,32 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 .checkbox-inline { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9b4bd; white-space: nowrap; }
 .checkbox-inline input { width: auto; margin: 0; }
 
-.compendium-range { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #a9b4bd; white-space: nowrap; }
+.compendium-range { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #a9b4bd; white-space: nowrap; }
 .compendium-range-label { font-size: 12px; }
-.compendium-range input {
-  width: 64px; min-width: 0; flex: none;
-  background: #0b0e11; color: #e6e9ec; border: 1px solid #33414f;
-  border-radius: 6px; padding: 6px 8px; font-size: 13px;
+
+/* Two overlapping native range inputs form a draggable double slider: the
+   track/thumb of each is transparent except the thumb itself, so both
+   handles stay independently grabbable even where they overlap. */
+.dual-range { position: relative; width: 140px; height: 20px; }
+.dual-range-track {
+  position: absolute; top: 50%; left: 0; right: 0; height: 4px; margin-top: -2px;
+  background: #1d2833; border-radius: 2px;
+}
+.dual-range-fill { position: absolute; top: 0; bottom: 0; background: #4f8ef7; border-radius: 2px; }
+.dual-range input[type="range"] {
+  position: absolute; top: 0; left: 0; width: 100%; min-width: 0; flex: none; height: 20px; margin: 0;
+  background: none; appearance: none; -webkit-appearance: none; pointer-events: none;
+}
+.dual-range input[type="range"]::-webkit-slider-runnable-track { background: transparent; height: 20px; }
+.dual-range input[type="range"]::-moz-range-track { background: transparent; height: 20px; border: none; }
+.dual-range input[type="range"]::-webkit-slider-thumb {
+  pointer-events: auto; -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%; margin-top: 3px;
+  background: #4f8ef7; border: 2px solid #0b0e11; cursor: pointer;
+}
+.dual-range input[type="range"]::-moz-range-thumb {
+  pointer-events: auto; width: 14px; height: 14px; border-radius: 50%;
+  background: #4f8ef7; border: 2px solid #0b0e11; cursor: pointer;
 }
 
 .compendium-table-wrap { overflow-x: auto; border: 1px solid #1d2833; border-radius: 10px; }

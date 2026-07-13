@@ -1,11 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, useWs } from "../api.js";
 import { useAuth } from "../auth.jsx";
-
-const mod = (score) => Math.floor((score - 10) / 2);
-const fmt = (n) => (n >= 0 ? `+${n}` : `${n}`);
-
-const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
+import CharacterSheet from "../components/CharacterSheet.jsx";
 
 export default function Player() {
   const { user, logout, refresh } = useAuth();
@@ -50,50 +46,13 @@ export default function Player() {
 
   if (!char) return <div className="player">Loading…</div>;
 
-  const Pool = ({ label, cur, max, curKey }) => (
-    <div className="pool">
-      <span>{label}</span>
-      <button onClick={() => patch({ [curKey]: Math.max(0, char[curKey] - 1) })}>−</button>
-      <strong>{cur} / {max}</strong>
-      <button onClick={() => patch({ [curKey]: Math.min(max, char[curKey] + 1) })}>+</button>
-    </div>
-  );
-
   return (
     <div className="player">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <span className="muted">{user.username}</span>
         <button className="link" onClick={logout}>Sign out</button>
       </div>
-      <h2>{char.name}</h2>
-      <p className="muted">{char.race} {char.theme} {char.class} — level {char.level}</p>
-
-      <section className="grid-6">
-        {ABILITIES.map((a) => (
-          <div key={a} className="stat">
-            <label>{a.toUpperCase()}</label>
-            <strong>{char[a]}</strong>
-            <span>{fmt(mod(char[a]))}</span>
-          </div>
-        ))}
-      </section>
-
-      <section className="pools">
-        <Pool label="SP" cur={char.sp_cur} max={char.sp_max} curKey="sp_cur" />
-        <Pool label="HP" cur={char.hp_cur} max={char.hp_max} curKey="hp_cur" />
-        <Pool label="RP" cur={char.rp_cur} max={char.rp_max} curKey="rp_cur" />
-      </section>
-
-      <section className="grid-6">
-        <div className="stat"><label>EAC</label><strong>{char.eac}</strong></div>
-        <div className="stat"><label>KAC</label><strong>{char.kac}</strong></div>
-        <div className="stat"><label>BAB</label><strong>{fmt(char.bab)}</strong></div>
-        <div className="stat"><label>Fort</label><strong>{fmt(char.save_fort)}</strong></div>
-        <div className="stat"><label>Ref</label><strong>{fmt(char.save_ref)}</strong></div>
-        <div className="stat"><label>Will</label><strong>{fmt(char.save_will)}</strong></div>
-        <div className="stat"><label>Init</label><strong>{fmt(char.init_bonus)}</strong></div>
-        <div className="stat"><label>Speed</label><strong>{char.speed} ft</strong></div>
-      </section>
+      <CharacterSheet character={char} patch={patch} />
     </div>
   );
 }
