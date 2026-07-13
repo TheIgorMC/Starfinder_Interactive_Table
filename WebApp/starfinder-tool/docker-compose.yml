@@ -1,0 +1,43 @@
+name: starfinder-tool
+
+services:
+  backend:
+    build: ./backend
+    container_name: sf-backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://sf:${DB_PASSWORD:-sf}@db:5432/sf
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/uploads:/app/uploads
+      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/aon-cache:/app/aon-cache
+      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/content:/app/content
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: sf-frontend
+    restart: unless-stopped
+    ports:
+      - "7600:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:16-alpine
+    container_name: sf-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=sf
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-sf}
+      - POSTGRES_DB=sf
+    volumes:
+      - /mnt/data_ssd/nas_share/Archivio_V2/SIT/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
