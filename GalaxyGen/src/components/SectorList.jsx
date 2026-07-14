@@ -8,6 +8,9 @@ export default function SectorList({
   onFocusChange,
   onDelete,
   pendingPoints,
+  pendingClosed,
+  onClosePending,
+  onReopenPending,
   onCommitPending,
   onCancelPending,
 }) {
@@ -18,6 +21,9 @@ export default function SectorList({
       {pendingPoints && pendingPoints.length > 0 && (
         <PendingSectorForm
           pointCount={pendingPoints.length}
+          closed={pendingClosed}
+          onClose={onClosePending}
+          onReopen={onReopenPending}
           onCommit={onCommitPending}
           onCancel={onCancelPending}
         />
@@ -51,34 +57,50 @@ export default function SectorList({
   );
 }
 
-function PendingSectorForm({ pointCount, onCommit, onCancel }) {
-  const canFinish = pointCount >= 3;
+function PendingSectorForm({ pointCount, closed, onClose, onReopen, onCommit, onCancel }) {
+  const canClose = pointCount >= 3;
+
+  if (!closed) {
+    return (
+      <div className="gg-new-form">
+        <p className="small muted">
+          Drawing boundary — {pointCount} point{pointCount === 1 ? "" : "s"} placed.
+          {!canClose && " Need at least 3."}
+        </p>
+        <button disabled={!canClose} onClick={onClose}>
+          Close boundary
+        </button>
+        <button className="gg-danger" onClick={onCancel} style={{ marginTop: 6 }}>Cancel</button>
+      </div>
+    );
+  }
+
   return (
     <div className="gg-new-form">
-      <p className="small muted">
-        Drawing boundary — {pointCount} point{pointCount === 1 ? "" : "s"} placed.
-        {!canFinish && " Need at least 3."}
-      </p>
-      <PendingFields onCommit={onCommit} canFinish={canFinish} />
-      <button className="gg-danger" onClick={onCancel}>Cancel</button>
+      <p className="small muted">Boundary closed ({pointCount} vertices) — name it below.</p>
+      <PendingFields onCommit={onCommit} />
+      <div className="gg-tool-row">
+        <button onClick={onReopen}>Edit boundary</button>
+        <button className="gg-danger" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }
 
-function PendingFields({ onCommit, canFinish }) {
+function PendingFields({ onCommit }) {
   const [name, setName] = useState("");
   const [focus, setFocus] = useState(SECTOR_FOCI[0]);
   return (
     <>
       <label className="small muted">Name</label>
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Vast Expanse" />
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Vast Expanse" autoFocus />
       <label className="small muted">Focus</label>
       <select value={focus} onChange={(e) => setFocus(e.target.value)}>
         {SECTOR_FOCI.map((f) => (
           <option key={f} value={f}>{f}</option>
         ))}
       </select>
-      <button disabled={!canFinish || !name.trim()} onClick={() => onCommit(name.trim(), focus)}>
+      <button disabled={!name.trim()} onClick={() => onCommit(name.trim(), focus)}>
         Create sector
       </button>
     </>

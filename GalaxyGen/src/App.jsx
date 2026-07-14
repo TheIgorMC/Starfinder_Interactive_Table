@@ -31,6 +31,7 @@ export default function App() {
   const [constrainToSector, setConstrainToSector] = useState(false);
   const [selectedSectorId, setSelectedSectorId] = useState(null);
   const [pendingPoints, setPendingPoints] = useState(null);
+  const [pendingClosed, setPendingClosed] = useState(false);
   const [hoverInfo, setHoverInfo] = useState(null);
   const [exportStatus, setExportStatus] = useState("");
 
@@ -68,7 +69,19 @@ export default function App() {
     setPendingPoints((pts) => [...(pts || []), [wx, wy]]);
   }, []);
 
-  const handleCancelSectorDraft = useCallback(() => setPendingPoints(null), []);
+  const handleCloseSectorDraft = useCallback(() => {
+    setPendingPoints((pts) => {
+      if (pts && pts.length >= 3) setPendingClosed(true);
+      return pts;
+    });
+  }, []);
+
+  const handleReopenSectorDraft = useCallback(() => setPendingClosed(false), []);
+
+  const handleCancelSectorDraft = useCallback(() => {
+    setPendingPoints(null);
+    setPendingClosed(false);
+  }, []);
 
   const handleCommitSector = useCallback(
     (name, focus) => {
@@ -85,6 +98,7 @@ export default function App() {
         return { ...p, sectors: [...p.sectors, sector] };
       });
       setPendingPoints(null);
+      setPendingClosed(false);
       setTool("select");
     },
     [pendingPoints],
@@ -111,6 +125,7 @@ export default function App() {
     setProject(createDefaultProject(seed || undefined, Number(width) || 1000, Number(height) || 1000));
     setSelectedSectorId(null);
     setPendingPoints(null);
+    setPendingClosed(false);
   }, [project.sectors.length]);
 
   const handleImportProject = useCallback(async (file) => {
@@ -119,6 +134,7 @@ export default function App() {
       setProject(imported);
       setSelectedSectorId(null);
       setPendingPoints(null);
+      setPendingClosed(false);
     } catch (err) {
       window.alert(`Could not load project: ${err.message}`);
     }
@@ -170,8 +186,10 @@ export default function App() {
           showSectors={showSectors}
           selectedSectorId={selectedSectorId}
           pendingPoints={pendingPoints}
+          pendingClosed={pendingClosed}
           onPaint={handlePaint}
           onAddSectorPoint={handleAddSectorPoint}
+          onCloseSectorDraft={handleCloseSectorDraft}
           onCancelSectorDraft={handleCancelSectorDraft}
           onSelectSector={setSelectedSectorId}
           onHover={(wx, wy, value) => setHoverInfo(wx == null ? null : { wx, wy, value })}
@@ -183,6 +201,9 @@ export default function App() {
           onFocusChange={handleFocusChange}
           onDelete={handleDeleteSector}
           pendingPoints={pendingPoints}
+          pendingClosed={pendingClosed}
+          onClosePending={handleCloseSectorDraft}
+          onReopenPending={handleReopenSectorDraft}
           onCommitPending={handleCommitSector}
           onCancelPending={handleCancelSectorDraft}
         />

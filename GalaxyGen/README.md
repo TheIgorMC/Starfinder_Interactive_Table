@@ -60,22 +60,26 @@ Opens on `http://localhost:5174` (see `vite.config.js`).
 | Select | Click a sector to select it — needed to enable "constrain to selected sector" for the brush, or before deleting/editing it. |
 | Pan | Left-drag to move the view. (Middle-mouse-drag pans in any tool; scroll wheel always zooms.) |
 
-**Drawing a sector**
+**Drawing a sector** — drawing and naming are two separate steps, so you
+can lay out the shape first and only decide the name/focus once it's done:
 1. Switch to the Sector tool and click to drop vertices — the Sectors
-   panel (right) shows a live point count and a name/focus form once
-   you've placed at least one.
+   panel (right) shows a live point count (need 3+) and a **Close
+   boundary** button. No name/focus fields yet at this stage.
 2. A faint dashed line always previews the closing edge back to your
    first point, and that first point gets a highlighted ring once you
    have 3+ vertices.
 3. Hovering near any existing vertex — your own first point, or another
    sector's corner — shows a colored ring: **green** means clicking there
-   closes your current shape (instead of adding a stray duplicate point on
-   top of it); **amber** means clicking there snaps onto that neighboring
-   sector's exact vertex, so the two sectors share a clean border with no
-   gap.
-4. Fill in the Name and Focus in the sidebar and click **Create sector**.
-   Escape cancels a boundary mid-draw; the × button in the sector list
-   deletes an existing one.
+   closes your current shape (same as pressing Enter, or the sidebar's
+   **Close boundary** button); **amber** means clicking there snaps onto
+   that neighboring sector's exact vertex, so the two sectors share a
+   clean border with no gap.
+4. Once closed, the sidebar switches to "Boundary closed (N vertices)" and
+   *now* shows the Name/Focus form. Fill it in and click **Create
+   sector** — or **Edit boundary** to reopen and keep adding points if you
+   closed it too early.
+5. Escape cancels the whole draft at any point (before or after closing);
+   the × button in the sector list deletes an existing sector.
 
 **Saving your work**
 - Everything autosaves to the browser's local storage as you go (per

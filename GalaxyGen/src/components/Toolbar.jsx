@@ -52,7 +52,7 @@ export default function Toolbar({
         <p className="muted small">
           {tool === "brush" && "Left-drag to paint, Shift+drag to erase."}
           {tool === "sector" &&
-            "Click to place vertices (3+). Green ring = click to close the shape; amber ring = snaps onto a neighboring sector's vertex. Then name & create it in the Sectors panel. Escape cancels."}
+            "Click to place vertices (3+). Amber ring = snaps onto a neighboring sector's vertex. Click the green-ringed first point (or Enter, or \"Close boundary\" in the Sectors panel) to finish the shape — then name it and confirm its focus. Escape cancels."}
           {tool === "select" && "Click a sector to select it."}
           {tool === "pan" && "Left-drag to pan. (Middle-drag pans in any tool.)"}
         </p>

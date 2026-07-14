@@ -15,8 +15,10 @@ export default function GalaxyCanvas({
   showSectors,
   selectedSectorId,
   pendingPoints,
+  pendingClosed,
   onPaint,
   onAddSectorPoint,
+  onCloseSectorDraft,
   onCancelSectorDraft,
   onSelectSector,
   onHover,
@@ -167,45 +169,64 @@ export default function GalaxyCanvas({
     if (pendingPoints && pendingPoints.length > 0) {
       const pts = pendingPoints.map(([x, y]) => worldToScreen(x, y));
 
-      // Closing preview: a faint line back to the start, always visible
-      // once there's enough of a shape to close, so the eventual boundary
-      // is legible while still drawing it.
-      if (pts.length >= 2) {
+      if (pendingClosed) {
+        // Boundary is finalized (not yet named/committed) — draw it as a
+        // real closed shape, no rubber-band/cursor tracking anymore.
         ctx.beginPath();
-        ctx.moveTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
-        ctx.lineTo(pts[0][0], pts[0][1]);
-        ctx.strokeStyle = "rgba(79,142,247,0.35)";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 5]);
-        ctx.stroke();
-      }
-
-      // Rubber-band from the last placed vertex to the live cursor.
-      ctx.beginPath();
-      pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-      if (cursor) ctx.lineTo(cursor.sx, cursor.sy);
-      ctx.strokeStyle = "#4f8ef7";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      pts.forEach(([x, y], i) => {
-        const isCloseTarget = i === 0 && pts.length >= 3;
-        ctx.beginPath();
-        ctx.arc(x, y, isCloseTarget ? 7 : 4, 0, Math.PI * 2);
-        ctx.fillStyle = "#4f8ef7";
+        pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
+        ctx.fillStyle = "rgba(79,142,247,0.18)";
         ctx.fill();
-        if (isCloseTarget) {
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "#4f8ef7";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        pts.forEach(([x, y]) => {
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#4f8ef7";
+          ctx.fill();
+        });
+      } else {
+        // Still drawing: a faint closing preview back to the start, always
+        // visible once there's enough of a shape to close, plus a
+        // rubber-band from the last vertex to the live cursor.
+        if (pts.length >= 2) {
+          ctx.beginPath();
+          ctx.moveTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+          ctx.lineTo(pts[0][0], pts[0][1]);
+          ctx.strokeStyle = "rgba(79,142,247,0.35)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 5]);
           ctx.stroke();
         }
-      });
+
+        ctx.beginPath();
+        pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        if (cursor) ctx.lineTo(cursor.sx, cursor.sy);
+        ctx.strokeStyle = "#4f8ef7";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        pts.forEach(([x, y], i) => {
+          const isCloseTarget = i === 0 && pts.length >= 3;
+          ctx.beginPath();
+          ctx.arc(x, y, isCloseTarget ? 7 : 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#4f8ef7";
+          ctx.fill();
+          if (isCloseTarget) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        });
+      }
     }
 
     // Snap target highlight — a vertex (this boundary's own start, or
-    // another sector's corner) the next click will lock onto.
+    // another sector's corner) the next click will lock onto. Only
+    // relevant while still placing points (state is cleared once closed).
     if (snapPreview) {
       const [sx, sy] = worldToScreen(...snapPreview.world);
       ctx.beginPath();
@@ -224,7 +245,7 @@ export default function GalaxyCanvas({
       ctx.stroke();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, view, size, activeField, showSectors, selectedSectorId, pendingPoints, cursor, snapPreview, tool, brush.radius]);
+  }, [project, view, size, activeField, showSectors, selectedSectorId, pendingPoints, pendingClosed, cursor, snapPreview, tool, brush.radius]);
 
   // --- Interaction ---
   const handleWheel = (e) => {
@@ -260,8 +281,12 @@ export default function GalaxyCanvas({
       return;
     }
     if (tool === "sector" && e.button === 0) {
+      if (pendingClosed) return; // boundary is locked — use the Sectors panel to edit/create/cancel
       const snap = findSnapCandidate(sx, sy);
-      if (snap?.isCloseVertex) return; // clicking back near the start just finishes the shape
+      if (snap?.isCloseVertex) {
+        onCloseSectorDraft();
+        return;
+      }
       const [px, py] = snap ? snap.world : [wx, wy];
       onAddSectorPoint(px, py);
       return;
@@ -278,7 +303,7 @@ export default function GalaxyCanvas({
     const sy = e.clientY - rect.top;
     setCursor({ sx, sy });
     const [wx, wy] = screenToWorld(sx, sy);
-    setSnapPreview(tool === "sector" ? findSnapCandidate(sx, sy) : null);
+    setSnapPreview(tool === "sector" && !pendingClosed ? findSnapCandidate(sx, sy) : null);
 
     const drag = dragState.current;
     if (drag?.mode === "pan") {
@@ -307,7 +332,9 @@ export default function GalaxyCanvas({
   };
 
   const handleKeyDown = (e) => {
-    if (tool === "sector" && e.key === "Escape") onCancelSectorDraft();
+    if (tool !== "sector") return;
+    if (e.key === "Escape") onCancelSectorDraft();
+    if (e.key === "Enter" && pendingPoints?.length >= 3 && !pendingClosed) onCloseSectorDraft();
   };
 
   return (
