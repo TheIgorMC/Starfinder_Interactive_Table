@@ -1,0 +1,14 @@
+{
+  "_provenance": "Standard d20/SF1e size category ladder (Fine through Colossal). High confidence — also the exact list already locked into schema/race.schema.json's size enum.",
+  "values": [
+    "fine",
+    "diminutive",
+    "tiny",
+    "small",
+    "medium",
+    "large",
+    "huge",
+    "gargantuan",
+    "colossal"
+  ]
+}

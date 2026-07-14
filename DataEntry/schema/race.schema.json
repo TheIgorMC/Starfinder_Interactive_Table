@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "race.schema.json",
+  "title": "Starfinder Race",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "type", "size", "hp", "ability_modifiers", "trait", "description_rulebook"],
+  "definitions": {
+    "abilityValue": {
+      "description": "A fixed racial modifier, or \"any\" if the player assigns it freely (see ability_modifiers.special for the amount).",
+      "oneOf": [
+        { "type": "integer" },
+        { "const": "any" }
+      ]
+    },
+    "abilityModifiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["str", "dex", "con", "int", "wis", "cha", "special"],
+      "properties": {
+        "str": { "$ref": "#/definitions/abilityValue" },
+        "dex": { "$ref": "#/definitions/abilityValue" },
+        "con": { "$ref": "#/definitions/abilityValue" },
+        "int": { "$ref": "#/definitions/abilityValue" },
+        "wis": { "$ref": "#/definitions/abilityValue" },
+        "cha": { "$ref": "#/definitions/abilityValue" },
+        "special": {
+          "type": "integer",
+          "description": "Amount applied to each ability marked \"any\" (0 if none are \"any\")."
+        }
+      }
+    },
+    "bonusEffect": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["skill", "ability", "save", "condition"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "skill" } } },
+          "then": {
+            "required": ["value", "qty"],
+            "properties": {
+              "value": { "type": "string", "description": "Skill slug -- must match a `slug` in lookups/skills.json, e.g. culture, life_science." },
+              "qty": { "type": "integer" },
+              "notes": { "type": ["string", "null"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "ability" } } },
+          "then": {
+            "required": ["id", "mode"],
+            "properties": {
+              "id": { "type": "string", "description": "Special-ability slug, e.g. lowlight_vision, darkvision. Open-ended (not in lookups/) -- racial special abilities aren't a closed set; grows as new races need one." },
+              "mode": { "enum": ["add"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "save" } } },
+          "then": {
+            "required": ["id", "qty"],
+            "properties": {
+              "id": { "enum": ["fortitude", "reflex", "will"] },
+              "qty": { "type": "integer" },
+              "target": { "type": "string", "description": "Optional situational tag, e.g. environmental_hazard, radiation." }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "condition" } } },
+          "then": {
+            "required": ["value", "mode", "qty"],
+            "properties": {
+              "value": { "type": "string", "description": "Condition slug -- must match a `key` in lookups/conditions.json, e.g. sickened, flatFooted." },
+              "mode": { "enum": ["reduce", "immune"] },
+              "qty": { "type": "integer" }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "name": { "type": "string", "description": "Slug/id, lowercase, matches the filename (human.json -> \"human\")." },
+    "type": {
+      "description": "Creature type -- keep this enum in sync with lookups/creature_types.json (that file is the single source of truth; unverified against a rulebook, see its _provenance note).",
+      "enum": ["aberration", "animal", "construct", "dragon", "fey", "humanoid", "magical_beast", "monstrous_humanoid", "ooze", "outsider", "plant", "undead", "vermin"]
+    },
+    "subtype": { "type": "string", "description": "Free text -- race lineage tag (e.g. \"human\", \"vesk\"), not a closed vocabulary like type." },
+    "size": { "enum": ["fine", "diminutive", "tiny", "small", "medium", "large", "huge", "gargantuan", "colossal"] },
+    "hp": { "type": "integer", "minimum": 0 },
+    "ability_modifiers": { "$ref": "#/definitions/abilityModifiers" },
+    "bonus_feats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["qty", "condition", "description"],
+      "properties": {
+        "qty": { "type": "integer" },
+        "condition": { "enum": ["level", "always"] },
+        "condition_spec": { "type": "integer", "description": "e.g. the level number, when condition is \"level\"." },
+        "description": { "type": "string" }
+      }
+    },
+    "trait": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description"],
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "alternate_abilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "id", "description", "ability_modifiers"],
+        "properties": {
+          "name": { "type": "string" },
+          "id": { "type": "string" },
+          "source": { "type": "string", "description": "Sourcebook short code -- should match a `code` in lookups/sourcebooks.json, e.g. CRB, COM, AA2." },
+          "page": { "type": "integer" },
+          "description": { "type": "string" },
+          "ability_modifiers": { "$ref": "#/definitions/abilityModifiers" }
+        }
+      }
+    },
+    "alternate_traits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "description", "bonus", "replaces"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "source": { "type": "string", "description": "Sourcebook short code -- should match a `code` in lookups/sourcebooks.json, e.g. CRB, COM, AA2." },
+          "page": { "type": "integer" },
+          "description": { "type": "string" },
+          "bonus": { "type": "array", "items": { "$ref": "#/definitions/bonusEffect" } },
+          "replaces": { "type": "string", "description": "id of the trait or alternate_trait this one swaps out." }
+        }
+      }
+    },
+    "description_rulebook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["race_description", "description_physical", "home_world", "society_alignment", "relations", "adventurers", "names"],
+      "properties": {
+        "race_description": { "type": "string" },
+        "race_likely": { "type": "array", "items": { "type": "string" } },
+        "race_seen_by_others": { "type": "array", "items": { "type": "string" } },
+        "description_physical": { "type": "string" },
+        "home_world": { "type": "string" },
+        "society_alignment": { "type": "string" },
+        "relations": { "type": "string" },
+        "adventurers": { "type": "string" },
+        "names": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "_provenance": "Names + key_ability match WebApp/starfinder-tool/frontend/src/lib/sfCalc.js SKILLS exactly (SF1e Core Rulebook pg. 20, 20 skills). `slug` is a new convention introduced here (lowercase, spaces -> underscore) for use as bonus[].value in alternate_traits, e.g. race.schema.json's bonusEffect — the one reference file (human.json) only ever used single-word skill slugs (\"culture\", \"disguise\", \"perception\"), so this extends that same convention to multi-word names consistently.",
+  "notes": "Profession's key ability isn't actually fixed by the rules -- it varies per the specific profession chosen at character creation (Profession (Merchant) might key off Int, Profession (Diplomat) off Cha, etc). key_ability here is \"wis\" only because that's the app's own default fallback (see sfCalc.js comment) -- don't treat it as authoritative for Profession specifically.",
+  "values": [
+    { "name": "Acrobatics", "slug": "acrobatics", "key_ability": "dex" },
+    { "name": "Athletics", "slug": "athletics", "key_ability": "str" },
+    { "name": "Bluff", "slug": "bluff", "key_ability": "cha" },
+    { "name": "Computers", "slug": "computers", "key_ability": "int" },
+    { "name": "Culture", "slug": "culture", "key_ability": "int" },
+    { "name": "Diplomacy", "slug": "diplomacy", "key_ability": "cha" },
+    { "name": "Disguise", "slug": "disguise", "key_ability": "cha" },
+    { "name": "Engineering", "slug": "engineering", "key_ability": "int" },
+    { "name": "Intimidate", "slug": "intimidate", "key_ability": "cha" },
+    { "name": "Life Science", "slug": "life_science", "key_ability": "int" },
+    { "name": "Medicine", "slug": "medicine", "key_ability": "int" },
+    { "name": "Mysticism", "slug": "mysticism", "key_ability": "wis" },
+    { "name": "Perception", "slug": "perception", "key_ability": "wis" },
+    { "name": "Physical Science", "slug": "physical_science", "key_ability": "int" },
+    { "name": "Piloting", "slug": "piloting", "key_ability": "dex" },
+    { "name": "Profession", "slug": "profession", "key_ability": "wis" },
+    { "name": "Sense Motive", "slug": "sense_motive", "key_ability": "wis" },
+    { "name": "Sleight of Hand", "slug": "sleight_of_hand", "key_ability": "dex" },
+    { "name": "Stealth", "slug": "stealth", "key_ability": "dex" },
+    { "name": "Survival", "slug": "survival", "key_ability": "wis" }
+  ]
+}

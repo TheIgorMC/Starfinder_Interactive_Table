@@ -1,0 +1,18 @@
+{
+  "_provenance": "UNVERIFIED against this repo or your source PDFs — nothing in the codebase enumerates creature types (the Foundry importer and AoN scraper both pass type/subtype through as free text, never validated). This list is from general SF1e Core Rulebook / Alien Archive knowledge, not scraped from a canonical source here. Treat as a starting point: confirm against your actual rulebooks and edit this file directly as you hit exceptions — races.type is the field this backs.",
+  "values": [
+    "aberration",
+    "animal",
+    "construct",
+    "dragon",
+    "fey",
+    "humanoid",
+    "magical_beast",
+    "monstrous_humanoid",
+    "ooze",
+    "outsider",
+    "plant",
+    "undead",
+    "vermin"
+  ]
+}

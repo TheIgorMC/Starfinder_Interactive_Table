@@ -1,0 +1,8 @@
+{
+  "_provenance": "Long-word keys (\"fortitude\"/\"reflex\"/\"will\") match how human.json itself writes alternate_traits[].bonus[].id for type=\"save\", and race.schema.json's bonusEffect enum. NOTE: this is inconsistent with the rest of the app, which mostly uses short keys (fort/ref/will, e.g. sfCalc.js save_fort/save_ref/save_will, CharacterSheet.jsx labels). Kept as long words here because that's what the hand-authored race reference already does -- if a later category needs to interoperate with the app's short-key convention, that's a deliberate translation point, not a bug.",
+  "values": [
+    { "key": "fortitude", "label": "Fortitude" },
+    { "key": "reflex", "label": "Reflex" },
+    { "key": "will", "label": "Will" }
+  ]
+}

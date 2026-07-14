@@ -1,0 +1,21 @@
+{
+  "_provenance": "Derived from WebApp/starfinder-tool/backend/src/foundry-import.js SOURCE_BOOKS (lines 114-126) -- the same map the Foundry importer uses to expand short codes into full titles, so a race's alternate_abilities[].source / alternate_traits[].source lines up with what the rest of the app already recognizes. Dropped the redundant \"Core Rulebook\"/\"AA\" full-title aliases from the original map (they point at the same book as CRB/AA1) since a picker should offer one code per book, not two.",
+  "values": [
+    { "code": "CRB", "name": "Starfinder Core Rulebook" },
+    { "code": "COM", "name": "Character Operations Manual" },
+    { "code": "EN", "name": "Starfinder Enhanced" },
+    { "code": "AA1", "name": "Alien Archive" },
+    { "code": "AA2", "name": "Alien Archive 2" },
+    { "code": "AA3", "name": "Alien Archive 3" },
+    { "code": "AA4", "name": "Alien Archive 4" },
+    { "code": "PW", "name": "Pact Worlds" },
+    { "code": "NS", "name": "Near Space" },
+    { "code": "GM", "name": "Galactic Magic" },
+    { "code": "GEM", "name": "Galaxy Exploration Manual" },
+    { "code": "SOM", "name": "Ship Operations Manual" },
+    { "code": "IS", "name": "Interstellar Species" },
+    { "code": "DC", "name": "Drift Crisis" },
+    { "code": "AR", "name": "Armory" },
+    { "code": "TR", "name": "Tech Revolution" }
+  ]
+}

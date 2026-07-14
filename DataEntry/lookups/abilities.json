@@ -1,0 +1,11 @@
+{
+  "_provenance": "Matches WebApp/starfinder-tool/frontend/src/lib/sfCalc.js (ABILITIES/ABILITY_LABELS) and CharacterSheet.jsx line 5 exactly — short keys are the app's canonical form for character-sheet/state fields. Order (Str, Dex, Con, Int, Wis, Cha) is the app's fixed display order everywhere.",
+  "values": [
+    { "key": "str", "label": "Strength" },
+    { "key": "dex", "label": "Dexterity" },
+    { "key": "con", "label": "Constitution" },
+    { "key": "int", "label": "Intelligence" },
+    { "key": "wis", "label": "Wisdom" },
+    { "key": "cha", "label": "Charisma" }
+  ]
+}
