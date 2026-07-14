@@ -3,6 +3,7 @@ import { api, useWs } from "../api.js";
 import BattleMap from "../components/BattleMap.jsx";
 import ScenePanel from "../components/ScenePanel.jsx";
 import SourcesConfig from "../components/SourcesConfig.jsx";
+import WealthLimitConfig from "../components/WealthLimitConfig.jsx";
 import MediaLibrary from "../components/MediaLibrary.jsx";
 import Campaign from "../components/Campaign.jsx";
 import { useAuth } from "../auth.jsx";
@@ -236,6 +237,7 @@ export default function GM() {
         {tab === "sources" && (
           <div className="gm-panel">
             <SourcesConfig />
+            <WealthLimitConfig />
           </div>
         )}
       </div>

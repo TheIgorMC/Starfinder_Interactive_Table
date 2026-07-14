@@ -188,6 +188,41 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
   border-radius: 8px; padding: 8px 12px;
 }
 
+/* Character creation wizard */
+.wizard { display: flex; flex-direction: column; max-width: 640px; margin: 0 auto; }
+.wizard-steps {
+  display: flex; gap: 2px; overflow-x: auto; margin-bottom: 12px;
+  border-bottom: 1px solid #1d2833; padding-bottom: 2px;
+}
+.wizard-steps button {
+  background: none; border: none; border-radius: 0; color: #a9b4bd;
+  padding: 8px 10px; border-bottom: 2px solid transparent; font-size: 12px; white-space: nowrap;
+}
+.wizard-steps button:disabled { color: #4a545d; cursor: default; }
+.wizard-steps button.active { color: #e6e9ec; border-bottom-color: #4f8ef7; }
+.wizard-body { padding-bottom: 70px; }
+.wizard-step label { display: block; font-size: 11px; color: #7c8894; margin-top: 10px; }
+.wizard-any-ability { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+.wizard-any-ability label { margin: 0; }
+.wizard-any-ability select { width: auto; }
+
+.wizard-picker { margin: 8px 0; }
+.wizard-picker-list { max-height: 260px; overflow-y: auto; }
+.wizard-pick-card { cursor: pointer; padding: 10px 14px; margin-bottom: 6px; }
+.wizard-pick-card:hover { background: #16202a; }
+.wizard-pick-card.active { border-color: #4f8ef7; background: #16202a; }
+
+.wizard-equipment select { width: auto; }
+.wizard-equipment .row input { flex: 1; }
+
+/* Sticky Back/Next bar — the wizard is meant to be used on a phone/tablet at
+   the table, so the nav has to stay reachable without scrolling back up. */
+.wizard-nav {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; background: #0e1319; border-top: 1px solid #1d2833;
+}
+
 /* Scene panel */
 .scene-panel { margin-top: 16px; border-top: 1px solid #1d2833; padding-top: 8px; }
 .scene-panel h3 { margin: 10px 0 6px; font-size: 13px; color: #7c8894; text-transform: uppercase; }
