@@ -18,6 +18,12 @@ export const SECTOR_FOCI = [
   "research",
   "trade hub",
   "frontier",
+  "administrative",
+  "military",
+  "residential",
+  "logistics",
+  "medical",
+  "cultural",
 ];
 
 function randomSeed() {
@@ -30,6 +36,17 @@ export function createDefaultProject(seed = randomSeed(), width = 1000, height =
     seed,
     bounds: { width, height },
     sectors: [],
+    systems: [],
+    hyperlanes: [],
+    factions: [],
     fields: Object.fromEntries(FIELD_DEFS.map((f) => [f.key, createGrid(GRID_SIZE)])),
   };
+}
+
+// Older saved projects (pre-system-generation, pre-hyperlane-generation, or
+// pre-faction-generation) won't have a `systems`/`hyperlanes`/`factions`
+// array — normalize on load/import so the rest of the app can assume they
+// always exist.
+export function normalizeProject(project) {
+  return { systems: [], hyperlanes: [], factions: [], ...project };
 }

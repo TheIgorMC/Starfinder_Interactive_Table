@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { GRID_SIZE, getCell, worldToGrid } from "../lib/grid.js";
+import { GRID_SIZE, getCell, worldToGrid, gridToWorld } from "../lib/grid.js";
 import { centroid, pointInPolygon, distance } from "../lib/geometry.js";
 import { FIELD_DEFS } from "../lib/project.js";
+import { computeControlShares, hexToRgba } from "../lib/factionGen.js";
 
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 8;
 const SNAP_PX = 12; // screen-space snap radius, so it stays easy to hit at any zoom
+const SYSTEM_HIT_PX = 8; // screen-space click radius for selecting a system
+const FACTION_HIT_PX = 9; // screen-space click radius for selecting a faction seed
+const SYSTEM_LABEL_MIN_SCALE = 0.45; // below this zoom, only selected systems show a label
 
 export default function GalaxyCanvas({
   project,
@@ -13,14 +17,22 @@ export default function GalaxyCanvas({
   activeField,
   brush,
   showSectors,
+  showFactions,
   selectedSectorId,
+  selectedSystemId,
+  selectedFactionId,
   pendingPoints,
   pendingClosed,
+  pendingFactionSeed,
   onPaint,
   onAddSectorPoint,
   onCloseSectorDraft,
   onCancelSectorDraft,
+  onAddFactionSeed,
+  onCancelFactionSeed,
   onSelectSector,
+  onSelectSystem,
+  onSelectFaction,
   onHover,
 }) {
   const canvasRef = useRef(null);
@@ -138,6 +150,26 @@ export default function GalaxyCanvas({
       }
     }
 
+    // Faction territory overlay (Docs/10-galaxy-mapgen.md §4) — a coarse
+    // read of the same weighted-Voronoi control contest used at generation
+    // time, sampled on the fly at grid resolution rather than persisted.
+    if (showFactions && project.factions.length > 0) {
+      const cellW = (bx1 - bx0) / GRID_SIZE;
+      const cellH = (by1 - by0) / GRID_SIZE;
+      for (let gy = 0; gy < GRID_SIZE; gy++) {
+        for (let gx = 0; gx < GRID_SIZE; gx++) {
+          const [wx, wy] = gridToWorld(gx + 0.5, gy + 0.5, project.bounds, GRID_SIZE);
+          const shares = computeControlShares(wx, wy, project.factions);
+          const top = shares[0];
+          if (!top || top.share < 0.05) continue;
+          const faction = project.factions.find((f) => f.slug === top.slug);
+          if (!faction) continue;
+          ctx.fillStyle = hexToRgba(faction.color, Math.min(0.55, top.share * 0.55));
+          ctx.fillRect(bx0 + gx * cellW, by0 + gy * cellH, cellW + 0.5, cellH + 0.5);
+        }
+      }
+    }
+
     // Bounds border.
     ctx.strokeStyle = "#33414f";
     ctx.lineWidth = 1;
@@ -162,6 +194,100 @@ export default function GalaxyCanvas({
         ctx.font = "12px system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(`${sector.name} (${sector.focus})`, cx, cy);
+      }
+    }
+
+    // Hyperlanes (Docs/10-galaxy-mapgen.md §3 stage 6) — drawn under the
+    // system dots so the nodes read cleanly on top of the line ends.
+    if (project.hyperlanes && project.hyperlanes.length > 0) {
+      const byId = new Map(project.systems.map((s) => [s.id, s]));
+      for (const edge of project.hyperlanes) {
+        const a = byId.get(edge.a);
+        const b = byId.get(edge.b);
+        if (!a || !b) continue;
+        const [ax, ay] = worldToScreen(a.position.x, a.position.y);
+        const [bx, by] = worldToScreen(b.position.x, b.position.y);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        if (edge.capacity === "major trade route") {
+          ctx.strokeStyle = "rgba(120,200,255,0.55)";
+          ctx.lineWidth = 1.6;
+        } else if (edge.capacity === "backwater spur") {
+          ctx.strokeStyle = "rgba(120,140,150,0.25)";
+          ctx.lineWidth = 0.75;
+        } else {
+          ctx.strokeStyle = "rgba(150,170,185,0.35)";
+          ctx.lineWidth = 1;
+        }
+        ctx.stroke();
+      }
+    }
+
+    // Systems (Docs/10-galaxy-mapgen.md §3 stage 4-5).
+    for (const system of project.systems) {
+      const [sx, sy] = worldToScreen(system.position.x, system.position.y);
+      const selected = system.id === selectedSystemId;
+      ctx.beginPath();
+      ctx.arc(sx, sy, selected ? 5 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = system.stationOnly ? "#8a97a3" : "#f2e6b3";
+      ctx.fill();
+      if (selected) {
+        ctx.strokeStyle = "#6db3f2";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      // Contested systems (§4) are a first-class state — flag them right on
+      // the map, not just in the inspector.
+      if (system.control && !system.control.owner && system.control.contestedBy?.length > 0) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, (selected ? 5 : 3) + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = "#f2b537";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([2, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      if (selected || view.scale >= SYSTEM_LABEL_MIN_SCALE) {
+        ctx.fillStyle = "#e6e9ec";
+        ctx.font = "11px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(system.name, sx, sy - (selected ? 10 : 7));
+      }
+    }
+
+    // Faction control seeds (§4) — drawn as diamonds so they read distinctly
+    // from system dots even when a faction sits near/inside a sector.
+    if (showFactions) {
+      for (const faction of project.factions) {
+        const [fx, fy] = worldToScreen(faction.seed.x, faction.seed.y);
+        const selected = faction.id === selectedFactionId;
+        const r = selected ? 7 : 5;
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = faction.color;
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        if (selected) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(-r, -r, r * 2, r * 2);
+        }
+        ctx.restore();
+        ctx.fillStyle = "#e6e9ec";
+        ctx.font = "11px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(faction.name, fx, fy - r - 6);
+      }
+
+      if (pendingFactionSeed) {
+        const [px, py] = worldToScreen(pendingFactionSeed.x, pendingFactionSeed.y);
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = "#4f8ef7";
+        ctx.fillRect(-6, -6, 12, 12);
+        ctx.restore();
       }
     }
 
@@ -245,7 +371,7 @@ export default function GalaxyCanvas({
       ctx.stroke();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, view, size, activeField, showSectors, selectedSectorId, pendingPoints, pendingClosed, cursor, snapPreview, tool, brush.radius]);
+  }, [project, view, size, activeField, showSectors, showFactions, selectedSectorId, selectedSystemId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, cursor, snapPreview, tool, brush.radius]);
 
   // --- Interaction ---
   const handleWheel = (e) => {
@@ -291,9 +417,29 @@ export default function GalaxyCanvas({
       onAddSectorPoint(px, py);
       return;
     }
+    if (tool === "faction" && e.button === 0) {
+      onAddFactionSeed(wx, wy);
+      return;
+    }
     if (tool === "select" && e.button === 0) {
-      const hit = project.sectors.find((s) => pointInPolygon(wx, wy, s.points));
-      onSelectSector(hit ? hit.id : null);
+      const systemHit = project.systems.find((s) => {
+        const [px, py] = worldToScreen(s.position.x, s.position.y);
+        return distance(px, py, sx, sy) <= SYSTEM_HIT_PX;
+      });
+      if (systemHit) {
+        onSelectSystem(systemHit.id);
+        return;
+      }
+      const factionHit = project.factions.find((f) => {
+        const [px, py] = worldToScreen(f.seed.x, f.seed.y);
+        return distance(px, py, sx, sy) <= FACTION_HIT_PX;
+      });
+      if (factionHit) {
+        onSelectFaction(factionHit.id);
+        return;
+      }
+      const sectorHit = project.sectors.find((s) => pointInPolygon(wx, wy, s.points));
+      onSelectSector(sectorHit ? sectorHit.id : null);
     }
   };
 
@@ -332,9 +478,11 @@ export default function GalaxyCanvas({
   };
 
   const handleKeyDown = (e) => {
-    if (tool !== "sector") return;
-    if (e.key === "Escape") onCancelSectorDraft();
-    if (e.key === "Enter" && pendingPoints?.length >= 3 && !pendingClosed) onCloseSectorDraft();
+    if (tool === "sector") {
+      if (e.key === "Escape") onCancelSectorDraft();
+      if (e.key === "Enter" && pendingPoints?.length >= 3 && !pendingClosed) onCloseSectorDraft();
+    }
+    if (tool === "faction" && e.key === "Escape" && pendingFactionSeed) onCancelFactionSeed();
   };
 
   return (

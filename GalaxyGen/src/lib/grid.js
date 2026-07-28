@@ -21,6 +21,26 @@ export function gridToWorld(gx, gy, bounds, size = GRID_SIZE) {
   return [(gx / size) * bounds.width, (gy / size) * bounds.height];
 }
 
+// Bilinear-samples a field at an arbitrary world point (Docs/10-galaxy-mapgen.md
+// §2.2: "generation bilinear-samples the grid at any point"). Cell (gx, gy)
+// is treated as centered at grid-space (gx+0.5, gy+0.5).
+export function sampleBilinear(grid, size, worldX, worldY, bounds) {
+  let [gx, gy] = worldToGrid(worldX, worldY, bounds, size);
+  gx -= 0.5;
+  gy -= 0.5;
+  const x0 = Math.floor(gx);
+  const y0 = Math.floor(gy);
+  const tx = gx - x0;
+  const ty = gy - y0;
+  const c00 = getCell(grid, size, x0, y0);
+  const c10 = getCell(grid, size, x0 + 1, y0);
+  const c01 = getCell(grid, size, x0, y0 + 1);
+  const c11 = getCell(grid, size, x0 + 1, y0 + 1);
+  const a = c00 + (c10 - c00) * tx;
+  const b = c01 + (c11 - c01) * tx;
+  return a + (b - a) * ty;
+}
+
 // Smoothstep falloff brush: blends every cell within `radiusWorld` of
 // (worldX, worldY) toward 1 (or 0 if `erase`), weighted by distance.
 // `containsPoint(worldX, worldY) -> bool` optionally restricts painting to

@@ -266,7 +266,8 @@ generation gap.)
 - A sector is a hand-drawn polygon boundary on the galaxy map (GM tool:
   draw/edit vertices, like a simple polygon editor) with a name and a
   **focus** tag (e.g. `mining`, `agriculture`, `industry`, `research`,
-  `trade hub`, `frontier`).
+  `trade hub`, `frontier`, `administrative`, `military`, `residential`,
+  `logistics`, `medical`, `cultural`).
 - Sector focus is metadata that propagates downward: any system (and, once
   §8 lands, any planet) whose position falls inside the sector polygon
   inherits the focus as a default for its own generation — a `mining`

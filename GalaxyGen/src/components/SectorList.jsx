@@ -7,6 +7,18 @@ export default function SectorList({
   onSelect,
   onFocusChange,
   onDelete,
+  selectedSystem,
+  onDeselectSystem,
+  factions,
+  selectedFactionId,
+  selectedFaction,
+  onSelectFaction,
+  onDeselectFaction,
+  onUpdateFaction,
+  onDeleteFaction,
+  pendingFactionSeed,
+  onCommitFaction,
+  onCancelFactionSeed,
   pendingPoints,
   pendingClosed,
   onClosePending,
@@ -16,6 +28,8 @@ export default function SectorList({
 }) {
   return (
     <aside className="gg-sectors">
+      {selectedSystem && <SystemCard system={selectedSystem} onClose={onDeselectSystem} />}
+
       <h3>Sectors</h3>
 
       {pendingPoints && pendingPoints.length > 0 && (
@@ -53,7 +67,125 @@ export default function SectorList({
           </li>
         ))}
       </ul>
+
+      <h3 style={{ marginTop: 18 }}>Factions</h3>
+
+      {pendingFactionSeed && (
+        <PendingFactionForm onCommit={onCommitFaction} onCancel={onCancelFactionSeed} />
+      )}
+
+      {factions.length === 0 && !pendingFactionSeed && (
+        <p className="muted small">
+          None yet. Switch to the Faction tool and click to drop a control
+          seed for a major power — small border factions fill the gaps
+          automatically when you generate.
+        </p>
+      )}
+
+      <ul className="gg-sector-list">
+        {factions.map((f) => (
+          <li key={f.id} className={f.id === selectedFactionId ? "active" : ""}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 12,
+                height: 12,
+                borderRadius: 3,
+                background: f.color,
+                flex: "0 0 auto",
+              }}
+            />
+            <button className="gg-sector-select" onClick={() => onSelectFaction(f.id)} title={f.government}>
+              {f.name}{f.origin === "generated" ? " (auto)" : ""}
+            </button>
+            <button className="gg-danger" onClick={() => onDeleteFaction(f.id)} title="Delete faction">
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {selectedFaction && (
+        <FactionCard faction={selectedFaction} onUpdate={onUpdateFaction} onClose={onDeselectFaction} />
+      )}
     </aside>
+  );
+}
+
+function SystemCard({ system, onClose }) {
+  return (
+    <div className="gg-new-form">
+      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+        <strong>{system.name}</strong>
+        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+      </div>
+      <p className="small muted">
+        {system.starType} · {system.population}
+        {system.stationOnly ? " · station/outpost, no colony" : ""}
+      </p>
+      <p className="small muted">Sector: {system.sector}</p>
+      <p className="small muted">Dominion security: {system.security.dominion.toFixed(2)}</p>
+      {system.control && (
+        <p className="small muted">
+          Control:{" "}
+          {system.control.owner
+            ? system.control.owner === "dominion"
+              ? "Dominion (uncontested)"
+              : system.control.owner
+            : system.control.contestedBy.length > 0
+              ? `contested — ${system.control.contestedBy.map((c) => `${c.faction} ${(c.share * 100).toFixed(0)}%`).join(", ")}`
+              : "unclaimed"}
+        </p>
+      )}
+      {system.security.faction != null && (
+        <p className="small muted">Faction security: {system.security.faction.toFixed(2)}</p>
+      )}
+      {system.warChance != null && (
+        <p className="small muted">War chance: {(system.warChance * 100).toFixed(0)}%</p>
+      )}
+      <p className="small muted">Export: {system.export.join(", ")}</p>
+      <p className="small muted">Import: {system.import.join(", ")}</p>
+      <p className="small muted">
+        Hyperlanes: {system.hyperlanes.length > 0 ? system.hyperlanes.join(", ") : "none yet"}
+      </p>
+      {system.note && <p className="small muted">{system.note}</p>}
+    </div>
+  );
+}
+
+function FactionCard({ faction, onUpdate, onClose }) {
+  return (
+    <div className="gg-new-form">
+      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+        <strong>{faction.name}</strong>
+        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+      </div>
+      <p className="small muted">
+        {faction.government}{faction.origin === "generated" ? " · auto-seeded border faction" : ""}
+      </p>
+      <label className="small muted">Aggression ({faction.aggression.toFixed(2)})</label>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={faction.aggression}
+        onChange={(e) => onUpdate(faction.id, { aggression: Number(e.target.value) })}
+      />
+      <label className="small muted">Strength ({faction.strength.toFixed(2)})</label>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={faction.strength}
+        onChange={(e) => onUpdate(faction.id, { strength: Number(e.target.value) })}
+      />
+      <p className="small muted">
+        Changes here don't move existing borders until you click Generate
+        factions again.
+      </p>
+    </div>
   );
 }
 
@@ -104,5 +236,37 @@ function PendingFields({ onCommit }) {
         Create sector
       </button>
     </>
+  );
+}
+
+function PendingFactionForm({ onCommit, onCancel }) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#4f8ef7");
+  const [government, setGovernment] = useState("");
+  const [aggression, setAggression] = useState(0.3);
+  const [strength, setStrength] = useState(0.5);
+  return (
+    <div className="gg-new-form">
+      <p className="small muted">Faction seed placed — name it below.</p>
+      <label className="small muted">Name</label>
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Free Traders Coalition" autoFocus />
+      <label className="small muted">Color</label>
+      <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+      <label className="small muted">Government (flavor tag)</label>
+      <input value={government} onChange={(e) => setGovernment(e.target.value)} placeholder="e.g. confederation" />
+      <label className="small muted">Aggression ({aggression.toFixed(2)})</label>
+      <input type="range" min="0" max="1" step="0.05" value={aggression} onChange={(e) => setAggression(Number(e.target.value))} />
+      <label className="small muted">Strength/reach ({strength.toFixed(2)})</label>
+      <input type="range" min="0" max="1" step="0.05" value={strength} onChange={(e) => setStrength(Number(e.target.value))} />
+      <div className="gg-tool-row">
+        <button
+          disabled={!name.trim()}
+          onClick={() => onCommit(name.trim(), color, government.trim() || "unspecified", aggression, strength)}
+        >
+          Create faction
+        </button>
+        <button className="gg-danger" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
   );
 }

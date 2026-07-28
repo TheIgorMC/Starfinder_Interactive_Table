@@ -4,6 +4,7 @@ import { FIELD_DEFS } from "../lib/project.js";
 const TOOLS = [
   { key: "brush", label: "Brush" },
   { key: "sector", label: "Sector" },
+  { key: "faction", label: "Faction" },
   { key: "select", label: "Select" },
   { key: "pan", label: "Pan" },
 ];
@@ -18,10 +19,20 @@ export default function Toolbar({
   setBrush,
   showSectors,
   setShowSectors,
+  showFactions,
+  setShowFactions,
   constrainToSector,
   setConstrainToSector,
   selectedSectorId,
   hoverInfo,
+  spacing,
+  setSpacing,
+  systemCount,
+  onGenerateSystems,
+  hyperlaneCount,
+  onGenerateHyperlanes,
+  factionCount,
+  onGenerateFactions,
   onNewProject,
   onDownloadProject,
   onImportProject,
@@ -53,7 +64,9 @@ export default function Toolbar({
           {tool === "brush" && "Left-drag to paint, Shift+drag to erase."}
           {tool === "sector" &&
             "Click to place vertices (3+). Amber ring = snaps onto a neighboring sector's vertex. Click the green-ringed first point (or Enter, or \"Close boundary\" in the Sectors panel) to finish the shape — then name it and confirm its focus. Escape cancels."}
-          {tool === "select" && "Click a sector to select it."}
+          {tool === "faction" &&
+            "Click to drop a faction's control seed — click again to reposition before naming it in the Factions panel."}
+          {tool === "select" && "Click a system, faction seed, or a sector to select it (systems, then factions, take priority when close together)."}
           {tool === "pan" && "Left-drag to pan. (Middle-drag pans in any tool.)"}
         </p>
       </section>
@@ -103,10 +116,68 @@ export default function Toolbar({
       )}
 
       <section>
+        <h3>Generate</h3>
+        <label className="small muted">Min spacing ({spacing.min} units)</label>
+        <input
+          type="range"
+          min="5"
+          max={spacing.max - 5}
+          value={spacing.min}
+          onChange={(e) => setSpacing((s) => ({ ...s, min: Number(e.target.value) }))}
+        />
+        <label className="small muted">Max spacing ({spacing.max} units)</label>
+        <input
+          type="range"
+          min={spacing.min + 5}
+          max="200"
+          value={spacing.max}
+          onChange={(e) => setSpacing((s) => ({ ...s, max: Number(e.target.value) }))}
+        />
+        <p className="small muted">
+          Spacing between systems, densest (population 1.0) to sparsest
+          (population 0). Placement only happens inside drawn sectors.
+        </p>
+        <button disabled={project.sectors.length === 0} onClick={onGenerateSystems}>
+          Generate systems
+        </button>
+        <p className="small muted">{systemCount} system{systemCount === 1 ? "" : "s"} placed.</p>
+      </section>
+
+      <section>
+        <h3>Hyperlanes</h3>
+        <p className="small muted">
+          Delaunay + Gabriel-graph pruning between systems, thickened in
+          areas where the Hyperlane density field is painted high, with a
+          connectivity guarantee so nothing is stranded.
+        </p>
+        <button disabled={systemCount < 2} onClick={onGenerateHyperlanes}>
+          Generate hyperlanes
+        </button>
+        <p className="small muted">{hyperlaneCount} hyperlane{hyperlaneCount === 1 ? "" : "s"}.</p>
+      </section>
+
+      <section>
+        <h3>Factions</h3>
+        <p className="small muted">
+          Place major faction seeds with the Faction tool, then generate to
+          auto-seed small border factions in any low-coverage gaps and
+          recompute every system's control, security, and war-chance.
+        </p>
+        <button disabled={systemCount === 0} onClick={onGenerateFactions}>
+          Generate factions
+        </button>
+        <p className="small muted">{factionCount} faction{factionCount === 1 ? "" : "s"}.</p>
+      </section>
+
+      <section>
         <h3>Layers</h3>
         <label className="gg-checkbox">
           <input type="checkbox" checked={showSectors} onChange={(e) => setShowSectors(e.target.checked)} />
           Show sector boundaries
+        </label>
+        <label className="gg-checkbox">
+          <input type="checkbox" checked={showFactions} onChange={(e) => setShowFactions(e.target.checked)} />
+          Show faction territory
         </label>
       </section>
 
@@ -160,7 +231,7 @@ export default function Toolbar({
           </div>
         )}
         <button onClick={onExportSDF} style={{ marginTop: 8 }}>
-          Export sectors (SDF)
+          Export SDF
         </button>
         {exportStatus && <p className="small muted">{exportStatus}</p>}
       </section>
