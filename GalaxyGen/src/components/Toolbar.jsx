@@ -21,6 +21,8 @@ export default function Toolbar({
   setShowSectors,
   showFactions,
   setShowFactions,
+  showFieldOverlay,
+  setShowFieldOverlay,
   constrainToSector,
   setConstrainToSector,
   selectedSectorId,
@@ -65,7 +67,7 @@ export default function Toolbar({
           {tool === "sector" &&
             "Click to place vertices (3+). Amber ring = snaps onto a neighboring sector's vertex. Click the green-ringed first point (or Enter, or \"Close boundary\" in the Sectors panel) to finish the shape — then name it and confirm its focus. Escape cancels."}
           {tool === "faction" &&
-            "Click to drop a faction's control seed — click again to reposition before naming it in the Factions panel."}
+            "Click to drop a faction's control seed — click again to reposition before naming it in the Factions panel. Click near an existing system (violet ring) to anchor the faction there instead: an anchored faction holds that one system outright, no contest."}
           {tool === "select" && "Click a system, faction seed, or a sector to select it (systems, then factions, take priority when close together)."}
           {tool === "pan" && "Left-drag to pan. (Middle-drag pans in any tool.)"}
         </p>
@@ -78,6 +80,14 @@ export default function Toolbar({
             <option key={f.key} value={f.key}>{f.label}</option>
           ))}
         </select>
+        <label className="gg-checkbox">
+          <input
+            type="checkbox"
+            checked={showFieldOverlay}
+            onChange={(e) => setShowFieldOverlay(e.target.checked)}
+          />
+          Show field heatmap
+        </label>
       </section>
 
       {tool === "brush" && (

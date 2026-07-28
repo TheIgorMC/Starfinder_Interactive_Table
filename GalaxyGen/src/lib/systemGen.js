@@ -128,6 +128,8 @@ export function generateSystems(project, options = {}) {
         tags: [sector.focus, ...(trade.tags || [])],
         note: trade.note || null,
         security: { dominion: Number(securityDensity.toFixed(2)) },
+        // Manual, GM-set only — no rule auto-flags a system as important.
+        important: false,
         // Filled in by later phases (Docs/10-galaxy-mapgen.md §7): faction
         // control/war-chance need Phase 3, hyperlanes need the graph pass.
         control: null,

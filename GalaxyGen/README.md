@@ -53,8 +53,10 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   to plain Dominion territory
 - Border-fragmentation auto-seed pass: fully automatic, no per-faction
   approval — finds contiguous colonized regions where no authored faction
-  clears a 50% share and drops one small local faction (a "(auto)" tag in
-  the list) per region above a minimum size
+  clears a 50% share and scatters small local factions across each region
+  (roughly one per ~900 uncovered grid cells, spread out via farthest-point
+  sampling so a single huge gap gets several minors, not one giant "minor"
+  faction swallowing the whole thing), tagged "(auto)" in the list
 - Dual security + war-chance (§4): faction security derives from how
   solidly the locally dominant faction holds a point and how strong it is
   overall; `war_chance` combines the two top contesting factions'
@@ -67,6 +69,25 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
 - Click a faction seed (Select tool) to inspect/tune its aggression and
   strength inline, or delete it
 - "Export SDF" now also writes a `factions/` entry tree
+- System names are now editable inline in the inspector (slug stays fixed,
+  so hyperlane/control references elsewhere never go stale) — lets a GM
+  hand-curate any generated system without full manual placement tooling
+- A "Show field heatmap" toggle (Field section) hides the density-field
+  overlay so the map underneath — sectors, systems, hyperlanes, faction
+  territory — reads cleanly without the paint layer in the way
+- Faction seeds can anchor directly to a system: click near an existing
+  system with the Faction tool (violet ring) instead of open ground. An
+  anchored faction holds that one system outright — `control.owner` is
+  forced to that faction, no external contest, regardless of how strong a
+  rival seed sits nearby — matching a deliberately-placed capital rather
+  than just "closest/strongest seed wins the point" (§4). Un-anchored
+  automatically if its home system is ever removed (sector deletion or a
+  full system regen)
+- Systems carry an `important` flag (checkbox in the inspector): important
+  systems always show their name label on the map regardless of zoom,
+  where ordinary systems only reveal a label once zoomed in far enough —
+  keeps a big galaxy from turning into a wall of overlapping names while
+  still letting a GM flag the handful of places that matter
 
 Not yet built: actors, organizations, events, broadcasts, the AI
 interface, planet/surface generation — see §13 for the full phase
@@ -112,6 +133,16 @@ breakdown.
 - No `tolerated_crimes` or `relationships` editing UI yet — both exist on
   the data shape (and export) but are always empty until hand-edited in a
   saved project file or a future UI pass.
+- Renaming a system is not the same as hand-placing one — there's still no
+  tool to drop a brand-new system at an arbitrary point or lock it against
+  a future "Generate systems" regen (§3 stage 4's "GM can hand-place/lock
+  individual systems" isn't built yet). Renaming just lets a GM claim an
+  already-generated system as a specific named place.
+- Nothing stops two different factions from anchoring to the same system;
+  if it happens, whichever faction comes later in the list wins that
+  system outright the next time you generate. Anchoring also can't be
+  edited after the fact (no "un-anchor this faction" button) — delete and
+  recreate it to change or remove an anchor.
 
 ## Running it
 
@@ -131,7 +162,7 @@ Opens on `http://localhost:5174` (see `vite.config.js`).
 |---|---|
 | Brush | Left-drag to paint the selected Field onto the map; Shift+drag erases. Pick the field (Population, Export, Import, Hyperlane density, Dominion security), radius, and strength above it. |
 | Sector | Click to place boundary vertices (need 3+). See "Drawing a sector" below. |
-| Faction | Click to drop a faction's control seed (a diamond marker) — click again to reposition before naming it in the Factions panel. |
+| Faction | Click to drop a faction's control seed (a diamond marker) — click again to reposition before naming it in the Factions panel. Click near an existing system instead to anchor the faction to it (violet ring) — that system is then held outright by that faction. |
 | Select | Click a system, faction seed, or a sector to select it (systems, then factions, take priority when they're close together) — needed to inspect a system/faction, enable "constrain to selected sector" for the brush, or before deleting/editing a sector. |
 | Pan | Left-drag to move the view. (Middle-mouse-drag pans in any tool; scroll wheel always zooms.) |
 
@@ -170,7 +201,8 @@ can lay out the shape first and only decide the name/focus once it's done:
    you like while still tuning the fields/spacing.
 4. Switch to the Select tool and click a system to see its rolled details
    (star type, population band, export/import goods — biased by its
-   sector's focus) in the sidebar.
+   sector's focus) in the sidebar. The name field there is editable —
+   handy for claiming a specific generated system as a named place.
 
 **Generating hyperlanes**
 1. Generate systems first — hyperlanes connect existing systems, so there's
@@ -192,19 +224,33 @@ can lay out the shape first and only decide the name/focus once it's done:
    Strength governs territory *size* (how far its influence carries), not
    how solidly it holds its own capital — every faction fully controls its
    own seed point regardless of strength.
-2. Repeat for as many major powers as you want, then click **Generate
+2. To make a faction's capital a specific system instead of an arbitrary
+   point, click near that system — a violet ring shows it'll anchor there.
+   An anchored faction holds that one system outright (`control.owner`
+   forced to it, no contest) no matter how strong a rival seed happens to
+   sit nearby.
+3. Repeat for as many major powers as you want, then click **Generate
    factions**. This auto-seeds small local factions into any colonized
    area where none of your majors clear a meaningful share (tagged
    "(auto)" in the list) and recomputes every system's `control`,
    `security.faction`, and `war_chance` from the full set.
-3. Turn on **Show faction territory** (Layers) to see the soft territory
+4. Turn on **Show faction territory** (Layers) to see the soft territory
    overlay and each faction's seed marker; contested systems (no single
-   faction at ~85%+ share) get a dashed amber ring right on the map.
-4. Select a system to see its control breakdown (owner, or contested-by
+   faction at ~85%+ share) get a dashed amber ring right on the map, and an
+   anchored faction's home system gets a solid ring in that faction's
+   color.
+5. Select a system to see its control breakdown (owner, or contested-by
    with shares), faction security, and war chance in the sidebar; select a
    faction seed to tweak its aggression/strength inline or delete it.
    Re-click **Generate factions** after any tweak to see it take effect —
    nothing recomputes live as you drag a slider.
+
+**Marking important systems**
+- Select any system and check **Important** in the inspector. Important
+  systems always show their name on the map no matter the zoom level;
+  ordinary systems only reveal their label once you zoom in past a
+  threshold, so a large galaxy doesn't turn into a wall of overlapping
+  text until you actually want to see everything.
 
 **Saving your work**
 - Everything autosaves to the browser's local storage as you go (per

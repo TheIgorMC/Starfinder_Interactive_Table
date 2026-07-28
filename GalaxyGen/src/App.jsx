@@ -42,6 +42,7 @@ export default function App() {
   const [exportStatus, setExportStatus] = useState("");
   const [spacing, setSpacing] = useState({ min: 20, max: 70 });
   const [showFactions, setShowFactions] = useState(true);
+  const [showFieldOverlay, setShowFieldOverlay] = useState(true);
 
   // Autosave (debounced) so a reload never loses work.
   useEffect(() => {
@@ -121,6 +122,16 @@ export default function App() {
     }));
   }, []);
 
+  // Used for rename + the "important" flag — slug stays put either way, so
+  // hyperlane/control references elsewhere (which key off slug, not name)
+  // never go stale.
+  const handleUpdateSystem = useCallback((id, patch) => {
+    setProject((p) => ({
+      ...p,
+      systems: p.systems.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    }));
+  }, []);
+
   const handleDeleteSector = useCallback(
     (id) => {
       setProject((p) => {
@@ -139,6 +150,10 @@ export default function App() {
             hyperlanes: s.hyperlanes.filter((slug) => !removedSlugs.has(slug)),
           })),
           hyperlanes: p.hyperlanes.filter((e) => keptIds.has(e.a) && keptIds.has(e.b)),
+          // Un-anchor any faction whose home system just got removed with it.
+          factions: p.factions.map((f) =>
+            f.homeSystem && removedSlugs.has(f.homeSystem) ? { ...f, homeSystem: null } : f,
+          ),
         };
       });
       if (selectedSectorId === id) setSelectedSectorId(null);
@@ -147,12 +162,20 @@ export default function App() {
   );
 
   const handleGenerateSystems = useCallback(() => {
-    if (project.systems.length > 0 && !window.confirm("Regenerate systems? This replaces every system currently placed.")) {
+    if (project.systems.length > 0 && !window.confirm("Regenerate systems? This replaces every system currently placed and un-anchors any faction seeded directly in one of them.")) {
       return;
     }
     // Positions are about to change, so any existing hyperlane graph would
     // reference stale coordinates — clear it, re-roll via its own button.
-    setProject((p) => ({ ...p, systems: generateSystems(p, spacing), hyperlanes: [] }));
+    // Factions anchored to a system (homeSystem) lose that anchor too since
+    // the system it pointed at no longer exists; their seed position and
+    // stats are untouched, they just compete normally again.
+    setProject((p) => ({
+      ...p,
+      systems: generateSystems(p, spacing),
+      hyperlanes: [],
+      factions: p.factions.map((f) => (f.homeSystem ? { ...f, homeSystem: null } : f)),
+    }));
     setSelectedSystemId(null);
   }, [project.systems.length, spacing]);
 
@@ -167,8 +190,11 @@ export default function App() {
     });
   }, [project.systems.length, project.hyperlanes.length]);
 
-  const handleAddFactionSeed = useCallback((wx, wy) => {
-    setPendingFactionSeed({ x: wx, y: wy });
+  // homeSystemSlug/homeSystemName are set when the click snapped onto an
+  // existing system (Faction tool anchoring, §4 "seed IN a system") — null
+  // for a plain seed placed on open ground.
+  const handleAddFactionSeed = useCallback((wx, wy, homeSystemSlug = null, homeSystemName = null) => {
+    setPendingFactionSeed({ x: wx, y: wy, homeSystem: homeSystemSlug, homeSystemName });
   }, []);
 
   const handleCancelFactionSeed = useCallback(() => setPendingFactionSeed(null), []);
@@ -185,7 +211,11 @@ export default function App() {
           government,
           aggression,
           strength,
-          seed: { ...pendingFactionSeed },
+          seed: { x: pendingFactionSeed.x, y: pendingFactionSeed.y },
+          // A faction anchored to a system holds it outright, no matter what
+          // the usual distance-based contest would say (§4) — see
+          // resolveFactions in factionGen.js.
+          homeSystem: pendingFactionSeed.homeSystem ?? null,
           toleratedCrimes: [],
           relationships: {},
           origin: "authored",
@@ -304,6 +334,8 @@ export default function App() {
           setShowSectors={setShowSectors}
           showFactions={showFactions}
           setShowFactions={setShowFactions}
+          showFieldOverlay={showFieldOverlay}
+          setShowFieldOverlay={setShowFieldOverlay}
           constrainToSector={constrainToSector}
           setConstrainToSector={setConstrainToSector}
           selectedSectorId={selectedSectorId}
@@ -329,6 +361,7 @@ export default function App() {
           brush={brush}
           showSectors={showSectors}
           showFactions={showFactions}
+          showFieldOverlay={showFieldOverlay}
           selectedSectorId={selectedSectorId}
           selectedSystemId={selectedSystemId}
           selectedFactionId={selectedFactionId}
@@ -354,6 +387,7 @@ export default function App() {
           onDelete={handleDeleteSector}
           selectedSystem={selectedSystem}
           onDeselectSystem={() => setSelectedSystemId(null)}
+          onUpdateSystem={handleUpdateSystem}
           factions={project.factions}
           selectedFactionId={selectedFactionId}
           selectedFaction={selectedFaction}

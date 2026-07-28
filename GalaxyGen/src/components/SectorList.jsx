@@ -9,6 +9,7 @@ export default function SectorList({
   onDelete,
   selectedSystem,
   onDeselectSystem,
+  onUpdateSystem,
   factions,
   selectedFactionId,
   selectedFaction,
@@ -28,7 +29,9 @@ export default function SectorList({
 }) {
   return (
     <aside className="gg-sectors">
-      {selectedSystem && <SystemCard system={selectedSystem} onClose={onDeselectSystem} />}
+      {selectedSystem && (
+        <SystemCard system={selectedSystem} onClose={onDeselectSystem} onUpdate={onUpdateSystem} />
+      )}
 
       <h3>Sectors</h3>
 
@@ -71,7 +74,11 @@ export default function SectorList({
       <h3 style={{ marginTop: 18 }}>Factions</h3>
 
       {pendingFactionSeed && (
-        <PendingFactionForm onCommit={onCommitFaction} onCancel={onCancelFactionSeed} />
+        <PendingFactionForm
+          pendingFactionSeed={pendingFactionSeed}
+          onCommit={onCommitFaction}
+          onCancel={onCancelFactionSeed}
+        />
       )}
 
       {factions.length === 0 && !pendingFactionSeed && (
@@ -112,13 +119,26 @@ export default function SectorList({
   );
 }
 
-function SystemCard({ system, onClose }) {
+function SystemCard({ system, onClose, onUpdate }) {
   return (
     <div className="gg-new-form">
-      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-        <strong>{system.name}</strong>
+      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <input
+          value={system.name}
+          onChange={(e) => onUpdate(system.id, { name: e.target.value })}
+          style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
+          title="Rename this system — handy for hand-curating a specific system rather than leaving it procedurally named"
+        />
         <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
       </div>
+      <label className="gg-checkbox">
+        <input
+          type="checkbox"
+          checked={!!system.important}
+          onChange={(e) => onUpdate(system.id, { important: e.target.checked })}
+        />
+        Important (always show its label on the map)
+      </label>
       <p className="small muted">
         {system.starType} · {system.population}
         {system.stationOnly ? " · station/outpost, no colony" : ""}
@@ -163,6 +183,11 @@ function FactionCard({ faction, onUpdate, onClose }) {
       <p className="small muted">
         {faction.government}{faction.origin === "generated" ? " · auto-seeded border faction" : ""}
       </p>
+      {faction.homeSystem && (
+        <p className="small muted">
+          Home system: {faction.homeSystem} (held outright, no external contest)
+        </p>
+      )}
       <label className="small muted">Aggression ({faction.aggression.toFixed(2)})</label>
       <input
         type="range"
@@ -239,7 +264,7 @@ function PendingFields({ onCommit }) {
   );
 }
 
-function PendingFactionForm({ onCommit, onCancel }) {
+function PendingFactionForm({ pendingFactionSeed, onCommit, onCancel }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("#4f8ef7");
   const [government, setGovernment] = useState("");
@@ -247,7 +272,11 @@ function PendingFactionForm({ onCommit, onCancel }) {
   const [strength, setStrength] = useState(0.5);
   return (
     <div className="gg-new-form">
-      <p className="small muted">Faction seed placed — name it below.</p>
+      <p className="small muted">
+        {pendingFactionSeed.homeSystem
+          ? `Anchored to ${pendingFactionSeed.homeSystemName} — this faction will hold that system outright. Name it below.`
+          : "Faction seed placed — name it below."}
+      </p>
       <label className="small muted">Name</label>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Free Traders Coalition" autoFocus />
       <label className="small muted">Color</label>

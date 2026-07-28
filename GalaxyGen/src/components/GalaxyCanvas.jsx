@@ -9,7 +9,8 @@ const MAX_SCALE = 8;
 const SNAP_PX = 12; // screen-space snap radius, so it stays easy to hit at any zoom
 const SYSTEM_HIT_PX = 8; // screen-space click radius for selecting a system
 const FACTION_HIT_PX = 9; // screen-space click radius for selecting a faction seed
-const SYSTEM_LABEL_MIN_SCALE = 0.45; // below this zoom, only selected systems show a label
+const SYSTEM_LABEL_MIN_SCALE = 0.45; // below this zoom, only selected/important systems show a label
+const FACTION_SEED_SNAP_PX = 12; // screen-space radius for snapping a new faction seed onto an existing system
 
 export default function GalaxyCanvas({
   project,
@@ -18,6 +19,7 @@ export default function GalaxyCanvas({
   brush,
   showSectors,
   showFactions,
+  showFieldOverlay,
   selectedSectorId,
   selectedSystemId,
   selectedFactionId,
@@ -41,6 +43,7 @@ export default function GalaxyCanvas({
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [cursor, setCursor] = useState(null); // {sx, sy} screen coords
   const [snapPreview, setSnapPreview] = useState(null); // { world: [x,y], isCloseVertex }
+  const [factionSystemSnap, setFactionSystemSnap] = useState(null); // system a new faction seed would anchor to
   const dragState = useRef(null); // { mode: "pan" | "paint", lastX, lastY }
 
   const fieldDef = FIELD_DEFS.find((f) => f.key === activeField);
@@ -107,6 +110,27 @@ export default function GalaxyCanvas({
     [project.sectors, pendingPoints, worldToScreen],
   );
 
+  // Finds the nearest system within snap range of a screen point — placing
+  // a faction seed there anchors the faction to that system instead of an
+  // arbitrary point (Docs/10-galaxy-mapgen.md §4 "seed IN a system": the
+  // anchored faction then holds that one system outright).
+  const findFactionSystemSnap = useCallback(
+    (sx, sy) => {
+      let best = null;
+      let bestDist = FACTION_SEED_SNAP_PX;
+      for (const system of project.systems) {
+        const [px, py] = worldToScreen(system.position.x, system.position.y);
+        const d = distance(px, py, sx, sy);
+        if (d <= bestDist) {
+          bestDist = d;
+          best = system;
+        }
+      }
+      return best;
+    },
+    [project.systems, worldToScreen],
+  );
+
   // --- Draw ---
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -131,7 +155,7 @@ export default function GalaxyCanvas({
     ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
 
     // Active field heatmap.
-    if (fieldDef) {
+    if (fieldDef && showFieldOverlay) {
       const grid = project.fields[activeField];
       const cellW = ((bx1 - bx0) / GRID_SIZE);
       const cellH = ((by1 - by0) / GRID_SIZE);
@@ -228,8 +252,9 @@ export default function GalaxyCanvas({
     for (const system of project.systems) {
       const [sx, sy] = worldToScreen(system.position.x, system.position.y);
       const selected = system.id === selectedSystemId;
+      const baseRadius = selected ? 5 : system.important ? 4 : 3;
       ctx.beginPath();
-      ctx.arc(sx, sy, selected ? 5 : 3, 0, Math.PI * 2);
+      ctx.arc(sx, sy, baseRadius, 0, Math.PI * 2);
       ctx.fillStyle = system.stationOnly ? "#8a97a3" : "#f2e6b3";
       ctx.fill();
       if (selected) {
@@ -241,18 +266,21 @@ export default function GalaxyCanvas({
       // the map, not just in the inspector.
       if (system.control && !system.control.owner && system.control.contestedBy?.length > 0) {
         ctx.beginPath();
-        ctx.arc(sx, sy, (selected ? 5 : 3) + 3, 0, Math.PI * 2);
+        ctx.arc(sx, sy, baseRadius + 3, 0, Math.PI * 2);
         ctx.strokeStyle = "#f2b537";
         ctx.lineWidth = 1.2;
         ctx.setLineDash([2, 2]);
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      if (selected || view.scale >= SYSTEM_LABEL_MIN_SCALE) {
+      // Important systems always show their label regardless of zoom, so
+      // the map isn't crowded with every generated name until the GM
+      // actually zooms in to see the full picture.
+      if (selected || system.important || view.scale >= SYSTEM_LABEL_MIN_SCALE) {
         ctx.fillStyle = "#e6e9ec";
         ctx.font = "11px system-ui, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(system.name, sx, sy - (selected ? 10 : 7));
+        ctx.fillText(system.name, sx, sy - (baseRadius + 4));
       }
     }
 
@@ -274,10 +302,36 @@ export default function GalaxyCanvas({
           ctx.strokeRect(-r, -r, r * 2, r * 2);
         }
         ctx.restore();
+        // A home-anchored faction (§4) gets a solid ring around its own
+        // system, distinct from the diamond, so "this is a capital" reads
+        // at a glance even unselected.
+        if (faction.homeSystem) {
+          const home = project.systems.find((s) => s.slug === faction.homeSystem);
+          if (home) {
+            const [hx, hy] = worldToScreen(home.position.x, home.position.y);
+            ctx.beginPath();
+            ctx.arc(hx, hy, 9, 0, Math.PI * 2);
+            ctx.strokeStyle = faction.color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        }
         ctx.fillStyle = "#e6e9ec";
         ctx.font = "11px system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(faction.name, fx, fy - r - 6);
+      }
+
+      // Snap target while placing a seed: hovering near a system shows a
+      // violet ring — clicking there anchors the faction to that system
+      // instead of dropping a plain seed on open ground.
+      if (tool === "faction" && factionSystemSnap) {
+        const [hx, hy] = worldToScreen(factionSystemSnap.position.x, factionSystemSnap.position.y);
+        ctx.beginPath();
+        ctx.arc(hx, hy, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = "#b56df2";
+        ctx.lineWidth = 2;
+        ctx.stroke();
       }
 
       if (pendingFactionSeed) {
@@ -288,6 +342,13 @@ export default function GalaxyCanvas({
         ctx.fillStyle = "#4f8ef7";
         ctx.fillRect(-6, -6, 12, 12);
         ctx.restore();
+        if (pendingFactionSeed.homeSystem) {
+          ctx.beginPath();
+          ctx.arc(px, py, 10, 0, Math.PI * 2);
+          ctx.strokeStyle = "#b56df2";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
       }
     }
 
@@ -371,7 +432,7 @@ export default function GalaxyCanvas({
       ctx.stroke();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, view, size, activeField, showSectors, showFactions, selectedSectorId, selectedSystemId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, cursor, snapPreview, tool, brush.radius]);
+  }, [project, view, size, activeField, showSectors, showFactions, showFieldOverlay, selectedSectorId, selectedSystemId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, cursor, snapPreview, factionSystemSnap, tool, brush.radius]);
 
   // --- Interaction ---
   const handleWheel = (e) => {
@@ -418,7 +479,12 @@ export default function GalaxyCanvas({
       return;
     }
     if (tool === "faction" && e.button === 0) {
-      onAddFactionSeed(wx, wy);
+      const systemSnap = findFactionSystemSnap(sx, sy);
+      if (systemSnap) {
+        onAddFactionSeed(systemSnap.position.x, systemSnap.position.y, systemSnap.slug, systemSnap.name);
+      } else {
+        onAddFactionSeed(wx, wy);
+      }
       return;
     }
     if (tool === "select" && e.button === 0) {
@@ -450,6 +516,7 @@ export default function GalaxyCanvas({
     setCursor({ sx, sy });
     const [wx, wy] = screenToWorld(sx, sy);
     setSnapPreview(tool === "sector" && !pendingClosed ? findSnapCandidate(sx, sy) : null);
+    setFactionSystemSnap(tool === "faction" ? findFactionSystemSnap(sx, sy) : null);
 
     const drag = dragState.current;
     if (drag?.mode === "pan") {
@@ -497,6 +564,7 @@ export default function GalaxyCanvas({
         onMouseLeave={() => {
           setCursor(null);
           setSnapPreview(null);
+          setFactionSystemSnap(null);
           dragState.current = null;
           onHover?.(null, null, null);
         }}

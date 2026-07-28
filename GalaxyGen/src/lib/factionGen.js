@@ -14,6 +14,8 @@ const OWNERSHIP_THRESHOLD = 0.85;
 const MIN_CONTEST_SHARE = 0.05;
 const FRAGMENT_THRESHOLD = 0.5; // below this max-share, a point counts as "uncovered" border territory
 const MIN_REGION_CELLS = 30; // skip noise-sized slivers (grid-quantization/boundary-clipping artifacts) when auto-seeding minors
+const TARGET_MINOR_AREA_CELLS = 900; // ~1 minor faction per this many uncovered grid cells, not 1 per region
+const MAX_MINORS_PER_REGION = 20; // safety valve against a single huge uncovered blob spawning dozens
 
 function uniqueSlug(base, usedSlugs) {
   if (!usedSlugs.has(base)) return base;
@@ -119,11 +121,44 @@ export function hexToRgba(hex, alpha) {
   return `rgba(${parseInt(r, 16)},${parseInt(g, 16)},${parseInt(b, 16)},${alpha})`;
 }
 
+// Greedy farthest-point sampling: spreads `count` picks across `cells`
+// (grid [x,y] pairs) so a single large uncovered region gets several
+// well-separated minor-faction seeds instead of one seed at its centroid
+// swallowing the whole area. `count === 1` just takes the centroid cell.
+function pickSpreadCells(cells, count, rng) {
+  if (count <= 1) {
+    const cx = Math.round(cells.reduce((s, [x]) => s + x, 0) / cells.length);
+    const cy = Math.round(cells.reduce((s, [, y]) => s + y, 0) / cells.length);
+    return [[cx, cy]];
+  }
+  const chosen = [cells[Math.floor(rng() * cells.length)]];
+  while (chosen.length < count) {
+    let best = null;
+    let bestDist = -1;
+    for (const cell of cells) {
+      let minDist = Infinity;
+      for (const c of chosen) {
+        const dx = cell[0] - c[0], dy = cell[1] - c[1];
+        const d2 = dx * dx + dy * dy;
+        if (d2 < minDist) minDist = d2;
+      }
+      if (minDist > bestDist) {
+        bestDist = minDist;
+        best = cell;
+      }
+    }
+    chosen.push(best);
+  }
+  return chosen;
+}
+
 // §3 stage 7 / §4 border fragmentation: fully-automatic second seeding
 // pass, no per-faction approval. Samples the same density-grid resolution
 // used elsewhere, finds contiguous colonized regions where no authored
-// faction clears the contest threshold, and drops one small local faction
-// per region above a minimum size.
+// faction clears the contest threshold, and scatters small local factions
+// across each region roughly every TARGET_MINOR_AREA_CELLS — a big empty
+// stretch of a sector gets several minors sprinkled through it, not one
+// giant "minor" faction covering the whole gap.
 function autoSeedBorderFactions(project, authoredFactions, rng) {
   const { bounds, sectors } = project;
   const size = GRID_SIZE;
@@ -169,25 +204,30 @@ function autoSeedBorderFactions(project, authoredFactions, rng) {
   const minors = [];
   for (const region of regions) {
     if (region.length < MIN_REGION_CELLS) continue;
-    const cx = region.reduce((s, [x]) => s + x, 0) / region.length;
-    const cy = region.reduce((s, [, y]) => s + y, 0) / region.length;
-    const [wx, wy] = gridToWorld(cx + 0.5, cy + 0.5, bounds, size);
-    const name = generateFactionName(rng);
-    const slug = uniqueSlug(slugify(name), usedSlugs);
-    usedSlugs.add(slug);
-    minors.push({
-      id: crypto.randomUUID(),
-      slug,
-      name,
-      color: randomFactionColor(rng),
-      government: MINOR_GOVERNMENTS[Math.floor(rng() * MINOR_GOVERNMENTS.length)],
-      aggression: Number(randRange(rng, 0.35, 0.85).toFixed(2)),
-      strength: Number(randRange(rng, 0.08, 0.25).toFixed(2)),
-      seed: { x: wx, y: wy },
-      toleratedCrimes: [],
-      relationships: {},
-      origin: "generated",
-    });
+    const count = Math.min(
+      MAX_MINORS_PER_REGION,
+      Math.max(1, Math.round(region.length / TARGET_MINOR_AREA_CELLS)),
+    );
+    const seedCells = pickSpreadCells(region, count, rng);
+    for (const [cx, cy] of seedCells) {
+      const [wx, wy] = gridToWorld(cx + 0.5, cy + 0.5, bounds, size);
+      const name = generateFactionName(rng);
+      const slug = uniqueSlug(slugify(name), usedSlugs);
+      usedSlugs.add(slug);
+      minors.push({
+        id: crypto.randomUUID(),
+        slug,
+        name,
+        color: randomFactionColor(rng),
+        government: MINOR_GOVERNMENTS[Math.floor(rng() * MINOR_GOVERNMENTS.length)],
+        aggression: Number(randRange(rng, 0.35, 0.85).toFixed(2)),
+        strength: Number(randRange(rng, 0.08, 0.25).toFixed(2)),
+        seed: { x: wx, y: wy },
+        toleratedCrimes: [],
+        relationships: {},
+        origin: "generated",
+      });
+    }
   }
   return minors;
 }
@@ -203,8 +243,24 @@ export function resolveFactions(project, authoredFactions) {
   const minors = autoSeedBorderFactions(project, authoredFactions, rng);
   const allFactions = [...authoredFactions, ...minors];
   const factionsBySlug = new Map(allFactions.map((f) => [f.slug, f]));
+  // A faction seeded directly IN a system (`homeSystem`, set by snapping the
+  // Faction tool onto it) holds that one system outright — it's home turf,
+  // not just the nearest seed. If two factions somehow claim the same
+  // system, whichever comes later in `allFactions` wins (last write).
+  const homeFactionBySystemSlug = new Map(
+    allFactions.filter((f) => f.homeSystem).map((f) => [f.homeSystem, f]),
+  );
 
   const systems = project.systems.map((s) => {
+    const homeFaction = homeFactionBySystemSlug.get(s.slug);
+    if (homeFaction) {
+      return {
+        ...s,
+        control: { owner: homeFaction.slug, contestedBy: [] },
+        security: { ...s.security, faction: Number(Math.max(0.85, homeFaction.strength).toFixed(2)) },
+        warChance: 0,
+      };
+    }
     const shares = computeControlShares(s.position.x, s.position.y, allFactions);
     const control = resolveControl(shares);
     const dominionSecurity = s.security?.dominion ?? 0;
