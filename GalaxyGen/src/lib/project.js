@@ -41,15 +41,27 @@ export function createDefaultProject(seed = randomSeed(), width = 1000, height =
     factions: [],
     actors: [],
     organizations: [],
+    events: [],
     fields: Object.fromEntries(FIELD_DEFS.map((f) => [f.key, createGrid(GRID_SIZE)])),
   };
 }
 
 // Older saved projects (pre-system-generation, pre-hyperlane-generation,
-// pre-faction-generation, or pre-actor-generation) won't have a
-// `systems`/`hyperlanes`/`factions`/`actors`/`organizations` array —
-// normalize on load/import so the rest of the app can assume they always
-// exist.
+// pre-faction-generation, pre-actor-generation, or pre-event-log) won't
+// have a `systems`/`hyperlanes`/`factions`/`actors`/`organizations`/
+// `events` array — normalize on load/import so the rest of the app can
+// assume they always exist. Likewise, entities from before the event log
+// (§9) existed won't carry `status`/`extraTags` — the effect engine (§9,
+// `set_system_status`/`add_tag`/`remove_tag`) needs both on every entity,
+// so backfill sane defaults here rather than special-casing "missing"
+// everywhere those are read.
 export function normalizeProject(project) {
-  return { systems: [], hyperlanes: [], factions: [], actors: [], organizations: [], ...project };
+  const p = { systems: [], hyperlanes: [], factions: [], actors: [], organizations: [], events: [], ...project };
+  return {
+    ...p,
+    systems: p.systems.map((s) => ({ status: "active", extraTags: [], ...s })),
+    factions: p.factions.map((f) => ({ extraTags: [], ...f })),
+    actors: p.actors.map((a) => ({ extraTags: [], ...a })),
+    organizations: p.organizations.map((o) => ({ extraTags: [], ...o })),
+  };
 }

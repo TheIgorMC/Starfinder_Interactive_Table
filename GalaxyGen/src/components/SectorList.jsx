@@ -6,7 +6,56 @@ const TABS = [
   { key: "factions", label: "Factions" },
   { key: "actors", label: "Actors" },
   { key: "organizations", label: "Organizations" },
+  { key: "events", label: "Events" },
 ];
+
+// Docs/10-galaxy-mapgen.md §9 — the closed effect-op vocabulary the event
+// form can build, one entry per op naming which typed-ref fields it needs
+// (so the form can render the right selects) and whether it takes a
+// magnitude-envelope-clamped `delta`.
+const EFFECT_SPECS = {
+  adjust_control: { label: "Adjust control (system, faction, delta)", refs: [["target", "system"], ["faction", "faction"]], delta: true },
+  set_owner: { label: "Set owner (flip ownership outright)", refs: [["target", "system"], ["faction", "faction"]], delta: true },
+  set_system_status: { label: "Set system status", refs: [["target", "system"]], status: "system" },
+  adjust_security: { label: "Adjust Dominion security", refs: [["target", "system"]], delta: true },
+  adjust_relationship: { label: "Adjust faction relationship", refs: [["a", "faction"], ["b", "faction"]], delta: true },
+  adjust_aggression: { label: "Adjust faction aggression", refs: [["faction", "faction"]], delta: true },
+  adjust_focus: { label: "Adjust sector focus", refs: [["target", "sector"]], focus: true },
+  adjust_influence: { label: "Adjust influence (actor or org)", refs: [["target", "actorOrOrg"]], delta: true },
+  set_affiliation: { label: "Set actor affiliation", refs: [["target", "actor"]], affiliation: true },
+  relocate: { label: "Relocate actor", refs: [["target", "actor"]], location: true },
+  set_status: { label: "Set actor status", refs: [["target", "actor"]], actorStatus: true },
+  adjust_reputation: { label: "Adjust actor reputation toward a faction", refs: [["actor", "actor"], ["faction", "faction"]], delta: true },
+  add_tag: { label: "Add tag", refs: [["target", "any"]], tag: true },
+  remove_tag: { label: "Remove tag", refs: [["target", "any"]], tag: true },
+};
+const SYSTEM_STATUSES = ["active", "destroyed", "quarantined", "uninhabitable"];
+const ACTOR_STATUSES = ["active", "deceased", "disbanded", "unknown"];
+const TIMESTEP_UNITS = ["day", "week", "month", "year"];
+const MAGNITUDES = ["minor", "moderate", "major", "historic"];
+
+function refOptions(kind, { sectors, systems, factions, actors, organizations }) {
+  switch (kind) {
+    case "sector": return sectors.map((s) => ({ value: `sector:${s.slug}`, label: s.name }));
+    case "system": return systems.map((s) => ({ value: `system:${s.slug}`, label: s.name }));
+    case "faction": return factions.map((f) => ({ value: `faction:${f.slug}`, label: f.name }));
+    case "actor": return actors.map((a) => ({ value: `actor:${a.slug}`, label: a.name }));
+    case "actorOrOrg":
+      return [
+        ...actors.map((a) => ({ value: `actor:${a.slug}`, label: `Actor: ${a.name}` })),
+        ...organizations.map((o) => ({ value: `party:${o.slug}`, label: `Org: ${o.name}` })),
+      ];
+    case "any":
+      return [
+        ...sectors.map((s) => ({ value: `sector:${s.slug}`, label: `Sector: ${s.name}` })),
+        ...systems.map((s) => ({ value: `system:${s.slug}`, label: `System: ${s.name}` })),
+        ...factions.map((f) => ({ value: `faction:${f.slug}`, label: `Faction: ${f.name}` })),
+        ...actors.map((a) => ({ value: `actor:${a.slug}`, label: `Actor: ${a.name}` })),
+        ...organizations.map((o) => ({ value: `party:${o.slug}`, label: `Org: ${o.name}` })),
+      ];
+    default: return [];
+  }
+}
 
 export default function SectorList({
   sectors,
@@ -50,6 +99,10 @@ export default function SectorList({
   onCreateOrganization,
   onUpdateOrganization,
   onDeleteOrganization,
+  events,
+  onPreviewEvent,
+  onCommitEvent,
+  onDeleteEvent,
 }) {
   const [activeTab, setActiveTab] = useState("sectors");
   const [showBackgroundActors, setShowBackgroundActors] = useState(false);
@@ -286,6 +339,30 @@ export default function SectorList({
               onClose={onDeselectOrg}
             />
           )}
+        </>
+      )}
+
+      {activeTab === "events" && (
+        <>
+          <h3>Events</h3>
+          <EventForm
+            entities={{ sectors, systems, factions, actors, organizations }}
+            onPreview={onPreviewEvent}
+            onCommit={onCommitEvent}
+          />
+          <h4 style={{ marginTop: 18, marginBottom: 6 }}>Journal</h4>
+          {events.length === 0 && (
+            <p className="muted small">
+              None yet. The journal is an append-only log — every committed
+              event stays here with the exact diff it applied, so the
+              galaxy's history is always browsable.
+            </p>
+          )}
+          <ul className="gg-sector-list" style={{ gap: 8 }}>
+            {[...events].reverse().map((ev) => (
+              <JournalEntry key={ev.id} event={ev} onDelete={() => onDeleteEvent(ev.id)} />
+            ))}
+          </ul>
         </>
       )}
     </aside>
@@ -891,5 +968,283 @@ function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose })
           : "none yet — set an actor's affiliation to this organization"}
       </p>
     </div>
+  );
+}
+
+function EffectRow({ effect, entities, onChange, onRemove }) {
+  const spec = EFFECT_SPECS[effect.op] || EFFECT_SPECS.adjust_control;
+
+  function setField(key, value) {
+    onChange({ ...effect, [key]: value });
+  }
+
+  return (
+    <div className="gg-new-form" style={{ marginBottom: 8 }}>
+      <div className="gg-tool-row" style={{ justifyContent: "space-between" }}>
+        {/* Resets to a bare { op } on switch — different ops have different
+            fields, carrying over the old ones would just be stale leftovers. */}
+        <select value={effect.op} onChange={(e) => onChange({ op: e.target.value })} style={{ flex: "1 1 auto" }}>
+          {Object.entries(EFFECT_SPECS).map(([op, s]) => (
+            <option key={op} value={op}>{s.label}</option>
+          ))}
+        </select>
+        <button className="gg-danger" onClick={onRemove} title="Remove effect">×</button>
+      </div>
+
+      {spec.refs.map(([key, kind]) => (
+        <select key={key} value={effect[key] || ""} onChange={(e) => setField(key, e.target.value)}>
+          <option value="">Select {key}…</option>
+          {refOptions(kind, entities).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      ))}
+
+      {spec.delta && (
+        <>
+          <label className="small muted">
+            Delta ({Number(effect.delta ?? 0).toFixed(2)})
+            {effect.op === "set_owner" && " — magnitude of the control shift being claimed"}
+          </label>
+          <input
+            type="range"
+            min="-1"
+            max="1"
+            step="0.01"
+            value={effect.delta ?? 0}
+            onChange={(e) => setField("delta", Number(e.target.value))}
+          />
+        </>
+      )}
+      {spec.status === "system" && (
+        <select value={effect.status || "active"} onChange={(e) => setField("status", e.target.value)}>
+          {SYSTEM_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      )}
+      {spec.actorStatus && (
+        <select value={effect.status || "active"} onChange={(e) => setField("status", e.target.value)}>
+          {ACTOR_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      )}
+      {spec.focus && (
+        <select value={effect.focus || SECTOR_FOCI[0]} onChange={(e) => setField("focus", e.target.value)}>
+          {SECTOR_FOCI.map((f) => <option key={f} value={f}>{f}</option>)}
+        </select>
+      )}
+      {spec.affiliation && (
+        <select value={effect.affiliation || ""} onChange={(e) => setField("affiliation", e.target.value || null)}>
+          {affiliationOptions(entities.factions, entities.organizations).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      )}
+      {spec.location && (
+        <select value={effect.location || ""} onChange={(e) => setField("location", e.target.value || null)}>
+          <option value="">Unplaced</option>
+          {entities.systems.map((s) => (
+            <option key={s.id} value={`system:${s.slug}`}>{s.name}</option>
+          ))}
+        </select>
+      )}
+      {spec.tag && (
+        <input value={effect.tag || ""} onChange={(e) => setField("tag", e.target.value)} placeholder="tag" />
+      )}
+    </div>
+  );
+}
+
+function EventForm({ entities, onPreview, onCommit }) {
+  const [name, setName] = useState("");
+  const [summary, setSummary] = useState("");
+  const [tagsText, setTagsText] = useState("");
+  const [timestamp, setTimestamp] = useState("");
+  const [timestepAmount, setTimestepAmount] = useState(1);
+  const [timestepUnit, setTimestepUnit] = useState("day");
+  const [magnitude, setMagnitude] = useState("minor");
+  const [scope, setScope] = useState([]);
+  const [effects, setEffects] = useState([]);
+  const [narrative, setNarrative] = useState("");
+  const [preview, setPreview] = useState(null); // { diffs } | { error }
+  const [status, setStatus] = useState("");
+
+  const scopeOptions = refOptions("any", entities);
+  const canSubmit = name.trim().length > 0 && effects.length > 0;
+  const requiresReview = magnitude !== "minor";
+
+  function buildDraft() {
+    return {
+      name: name.trim(),
+      summary: summary.trim(),
+      tags: tagsText.split(",").map((t) => t.trim()).filter(Boolean),
+      timestamp: timestamp.trim(),
+      timestep: { amount: Number(timestepAmount) || 1, unit: timestepUnit },
+      mode: "authored",
+      magnitude,
+      scope,
+      effects,
+      narrative: narrative.trim(),
+    };
+  }
+
+  function clearPreview() {
+    setPreview(null);
+  }
+
+  function resetForm() {
+    setName("");
+    setSummary("");
+    setTagsText("");
+    setTimestamp("");
+    setTimestepAmount(1);
+    setTimestepUnit("day");
+    setMagnitude("minor");
+    setScope([]);
+    setEffects([]);
+    setNarrative("");
+    setPreview(null);
+  }
+
+  function handlePreview() {
+    try {
+      const diffs = onPreview(buildDraft());
+      setPreview({ diffs });
+    } catch (err) {
+      setPreview({ error: err.message });
+    }
+  }
+
+  function handleCommit() {
+    try {
+      onCommit(buildDraft());
+      setStatus(`Committed "${name.trim()}".`);
+      resetForm();
+    } catch (err) {
+      setPreview({ error: err.message });
+    }
+  }
+
+  return (
+    <div className="gg-new-form">
+      <label className="small muted">Name</label>
+      <input
+        value={name}
+        onChange={(e) => { setName(e.target.value); clearPreview(); }}
+        placeholder="e.g. Battle of Kreel's Reach"
+        autoFocus
+      />
+      <label className="small muted">Summary</label>
+      <input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One line — what happened" />
+      <label className="small muted">Tags (comma-separated)</label>
+      <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} placeholder="e.g. conflict, border" />
+      <label className="small muted">Timestamp (in-fiction date)</label>
+      <input value={timestamp} onChange={(e) => setTimestamp(e.target.value)} placeholder="e.g. 3025-04-11" />
+      <label className="small muted">Timestep (elapsed in-fiction time)</label>
+      <div className="gg-tool-row">
+        <input
+          type="number"
+          min="1"
+          value={timestepAmount}
+          onChange={(e) => setTimestepAmount(e.target.value)}
+          style={{ width: 70 }}
+        />
+        <select value={timestepUnit} onChange={(e) => setTimestepUnit(e.target.value)}>
+          {TIMESTEP_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </div>
+      <label className="small muted">Magnitude</label>
+      <select value={magnitude} onChange={(e) => { setMagnitude(e.target.value); clearPreview(); }}>
+        {MAGNITUDES.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <p className="small muted">
+        {magnitude === "minor"
+          ? "Minor events auto-commit — no required review step (§9.2/§12), though Preview still works if you want to sanity-check first."
+          : "This magnitude requires a successful Preview before Confirm commit unlocks (§9 pipeline step 3)."}
+      </p>
+
+      <label className="small muted">Scope (every entity this event touches)</label>
+      <select
+        multiple
+        value={scope}
+        onChange={(e) => { setScope(Array.from(e.target.selectedOptions, (o) => o.value)); clearPreview(); }}
+        style={{ height: 100 }}
+      >
+        {scopeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+
+      <label className="small muted" style={{ marginTop: 8 }}>Effects</label>
+      {effects.length === 0 && <p className="muted small">None yet — add at least one below.</p>}
+      {effects.map((effect, i) => (
+        <EffectRow
+          key={i}
+          effect={effect}
+          entities={entities}
+          onChange={(next) => {
+            setEffects((list) => list.map((e, j) => (j === i ? next : e)));
+            clearPreview();
+          }}
+          onRemove={() => {
+            setEffects((list) => list.filter((_, j) => j !== i));
+            clearPreview();
+          }}
+        />
+      ))}
+      <button
+        style={{ width: "100%", marginBottom: 8 }}
+        onClick={() => { setEffects((list) => [...list, { op: "adjust_control", delta: 0 }]); clearPreview(); }}
+      >
+        + Add effect
+      </button>
+
+      <label className="small muted">Narrative (flavor/history — never read by the effect engine)</label>
+      <textarea value={narrative} onChange={(e) => setNarrative(e.target.value)} rows={3} />
+
+      {preview?.error && <p className="small" style={{ color: "#e6a3a3", marginTop: 8 }}>{preview.error}</p>}
+      {preview?.diffs && (
+        <div className="gg-diff-box">
+          {preview.diffs.length === 0 && <p className="small muted">No effects to apply.</p>}
+          {preview.diffs.map((d, i) => (
+            <p key={i} className="small muted">
+              {d.op} · {d.ref} · {d.field}: {JSON.stringify(d.before)} → {JSON.stringify(d.after)}
+            </p>
+          ))}
+        </div>
+      )}
+
+      <div className="gg-tool-row" style={{ marginTop: 8 }}>
+        <button disabled={!canSubmit} onClick={handlePreview}>Preview effects</button>
+        <button disabled={!canSubmit || (requiresReview && !preview?.diffs)} onClick={handleCommit}>
+          {magnitude === "minor" ? "Commit" : "Confirm commit"}
+        </button>
+      </div>
+      {status && <p className="small muted">{status}</p>}
+    </div>
+  );
+}
+
+function JournalEntry({ event, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <li style={{ flexDirection: "column", alignItems: "stretch" }}>
+      <div className="gg-tool-row" style={{ justifyContent: "space-between" }}>
+        <button className="gg-sector-select" onClick={() => setExpanded((e) => !e)} title={event.summary}>
+          {event.name} · {event.magnitude} · {event.timestamp || "undated"}
+        </button>
+        <button className="gg-danger" onClick={onDelete} title="Remove from log — does not undo its effects">
+          ×
+        </button>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 6 }}>
+          {event.summary && <p className="small muted">{event.summary}</p>}
+          <p className="small muted">Scope: {event.scope?.length ? event.scope.join(", ") : "none"}</p>
+          {(event.diffs || []).map((d, i) => (
+            <p key={i} className="small muted">
+              {d.op} · {d.ref} · {d.field}: {JSON.stringify(d.before)} → {JSON.stringify(d.after)}
+            </p>
+          ))}
+          {event.narrative && <p className="small muted">"{event.narrative}"</p>}
+        </div>
+      )}
+    </li>
   );
 }

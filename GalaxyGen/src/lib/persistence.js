@@ -1,3 +1,5 @@
+import { buildGalaxyIndexEnvelope } from "./aiIndex.js";
+
 const STORAGE_KEY = "galaxygen.project.v1";
 
 export function loadFromStorage() {
@@ -29,6 +31,14 @@ function triggerDownload(filename, contents, type = "application/json") {
 
 export function downloadProjectJSON(project) {
   triggerDownload(`galaxy-${project.seed}.json`, JSON.stringify(project, null, 2));
+}
+
+// A standalone download of just the compact index (Docs/11-AI-integration.md
+// §6.2) — lets a GM hand it straight to an LLM chat today (paste it in as
+// context) without needing the full SDF tree or any backend/tool-calling
+// wiring to exist yet.
+export function downloadGalaxyIndex(project) {
+  triggerDownload(`galaxy-index-${project.seed}.json`, JSON.stringify(buildGalaxyIndexEnvelope(project), null, 2));
 }
 
 export async function importProjectFile(file) {
@@ -64,12 +74,13 @@ function systemToEntry(system) {
     type: "system",
     name: system.name,
     summary: `${system.starType} system (${system.population}).`,
-    tags: system.tags,
+    tags: [...system.tags, ...(system.extraTags || [])],
     data: {
       position: { x: Math.round(system.position.x), y: Math.round(system.position.y) },
       star_type: system.starType,
       population: system.population,
       station_only: system.stationOnly,
+      status: system.status || "active",
       export: system.export,
       import: system.import,
       sector: system.sector,
@@ -95,7 +106,7 @@ function factionToEntry(faction) {
     type: "faction",
     name: faction.name,
     summary: `${faction.government} faction.`,
-    tags: [faction.government, faction.origin === "generated" ? "auto-seeded" : "authored"],
+    tags: [faction.government, faction.origin === "generated" ? "auto-seeded" : "authored", ...(faction.extraTags || [])],
     data: {
       color: faction.color,
       government: faction.government,
@@ -117,7 +128,7 @@ function actorToEntry(actor) {
     type: "actor",
     name: actor.name,
     summary: `${actor.role} (${actor.kind}).`,
-    tags: [actor.role, actor.kind],
+    tags: [actor.role, actor.kind, ...(actor.extraTags || [])],
     data: {
       kind: actor.kind,
       origin: actor.origin,
@@ -141,7 +152,7 @@ function organizationToEntry(org, actors) {
     type: "organization",
     name: org.name,
     summary: `${org.ideology} organization.`,
-    tags: [org.ideology, "organization"],
+    tags: [org.ideology, "organization", ...(org.extraTags || [])],
     data: {
       ideology: org.ideology,
       parent_faction: org.parentFaction,
@@ -149,6 +160,28 @@ function organizationToEntry(org, actors) {
       home_sector: org.homeSector,
       members: actors.filter((a) => a.affiliation === `party:${org.slug}`).map((a) => a.slug),
       local_influence: org.localInfluence,
+    },
+  };
+}
+
+// Docs/10-galaxy-mapgen.md §7, §9 pipeline step 5 — events/<slug>/entry.json
+// shape. Append-only: nothing in the app ever edits or re-derives an
+// existing event's own fields after commit, only removes it from the log.
+function eventToEntry(event) {
+  return {
+    sdf: 1,
+    type: "event",
+    name: event.name,
+    summary: event.summary,
+    tags: event.tags || [],
+    data: {
+      timestamp: event.timestamp,
+      timestep: event.timestep,
+      mode: event.mode,
+      magnitude: event.magnitude,
+      scope: event.scope,
+      effects: event.effects,
+      narrative: event.narrative,
     },
   };
 }
@@ -163,12 +196,30 @@ export async function exportGalaxySDF(project) {
   const factionCount = project.factions.length;
   const actorCount = project.actors.length;
   const organizationCount = project.organizations.length;
-  if (sectorCount === 0 && systemCount === 0 && factionCount === 0 && actorCount === 0 && organizationCount === 0) {
-    return { mode: "none", sectorCount, systemCount, factionCount, actorCount, organizationCount };
+  const eventCount = project.events.length;
+  if (
+    sectorCount === 0 &&
+    systemCount === 0 &&
+    factionCount === 0 &&
+    actorCount === 0 &&
+    organizationCount === 0 &&
+    eventCount === 0
+  ) {
+    return { mode: "none", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount };
   }
 
   if ("showDirectoryPicker" in window) {
     const root = await window.showDirectoryPicker();
+    // Docs/11-AI-integration.md §6.2 — the compact index a future AI
+    // layer's Pass 1 (broad/coherence, §9.3) reasons over, written once at
+    // the tree root rather than a per-category file since it spans all of
+    // them.
+    {
+      const fileHandle = await root.getFileHandle("index.json", { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(buildGalaxyIndexEnvelope(project), null, 2));
+      await writable.close();
+    }
     if (sectorCount > 0) {
       const sectorsDir = await root.getDirectoryHandle("sectors", { create: true });
       for (const sector of project.sectors) {
@@ -219,16 +270,28 @@ export async function exportGalaxySDF(project) {
         await writable.close();
       }
     }
-    return { mode: "fs", sectorCount, systemCount, factionCount, actorCount, organizationCount };
+    if (eventCount > 0) {
+      const eventsDir = await root.getDirectoryHandle("events", { create: true });
+      for (const event of project.events) {
+        const dir = await eventsDir.getDirectoryHandle(event.slug, { create: true });
+        const fileHandle = await dir.getFileHandle("entry.json", { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(eventToEntry(event), null, 2));
+        await writable.close();
+      }
+    }
+    return { mode: "fs", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount };
   }
 
   const combined = {
+    index: buildGalaxyIndexEnvelope(project),
     sectors: Object.fromEntries(project.sectors.map((s) => [s.slug, sectorToEntry(s)])),
     systems: Object.fromEntries(project.systems.map((s) => [s.slug, systemToEntry(s)])),
     factions: Object.fromEntries(project.factions.map((f) => [f.slug, factionToEntry(f)])),
     actors: Object.fromEntries(project.actors.map((a) => [a.slug, actorToEntry(a)])),
     organizations: Object.fromEntries(project.organizations.map((o) => [o.slug, organizationToEntry(o, project.actors)])),
+    events: Object.fromEntries(project.events.map((e) => [e.slug, eventToEntry(e)])),
   };
   triggerDownload("galaxy-sdf.json", JSON.stringify(combined, null, 2));
-  return { mode: "download", sectorCount, systemCount, factionCount, actorCount, organizationCount };
+  return { mode: "download", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount };
 }

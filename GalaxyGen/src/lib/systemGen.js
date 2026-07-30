@@ -190,6 +190,10 @@ export function generateSystems(project, options = {}) {
         export: exportGoods,
         import: importGoods,
         tags: [sector.focus, ...(trade.tags || [])],
+        // Event-effect (§9) `add_tag`/`remove_tag` targets — kept separate
+        // from the sector/trade-derived `tags` above so regen never wipes
+        // event history's own additions.
+        extraTags: [],
         note: trade.note || null,
         security: { dominion: Number(securityDensity.toFixed(2)) },
         // Overwritten below by assignImportance — placeholder only.
@@ -197,6 +201,9 @@ export function generateSystems(project, options = {}) {
         // Hand-editing a system (rename, importance tweak, or an explicit
         // lock toggle) sets this true so it survives future regens as-is.
         locked: false,
+        // §9 `set_system_status` — active | destroyed | quarantined |
+        // uninhabitable. Only the event effect engine ever changes this.
+        status: "active",
         // Filled in by later phases (Docs/10-galaxy-mapgen.md §7): faction
         // control/war-chance need Phase 3, hyperlanes need the graph pass.
         control: null,
@@ -261,10 +268,12 @@ export function placeSystemAt(project, x, y) {
     export: exportGoods,
     import: importGoods,
     tags: [sector.focus, ...(trade.tags || [])],
+    extraTags: [],
     note: trade.note || null,
     security: { dominion: Number(securityDensity.toFixed(2)) },
     important: 0.3,
     locked: true,
+    status: "active",
     control: null,
     warChance: null,
     hyperlanes: [],

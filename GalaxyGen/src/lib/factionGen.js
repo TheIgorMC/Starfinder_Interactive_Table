@@ -10,8 +10,8 @@ import { slugify } from "./slug.js";
 // own capital regardless of strength.
 const MAX_RANGE_FACTOR = 300;
 const MIN_RANGE = 15;
-const OWNERSHIP_THRESHOLD = 0.85;
-const MIN_CONTEST_SHARE = 0.05;
+export const OWNERSHIP_THRESHOLD = 0.85;
+export const MIN_CONTEST_SHARE = 0.05;
 const FRAGMENT_THRESHOLD = 0.5; // below this max-share, a point counts as "uncovered" border territory
 const MIN_REGION_CELLS = 30; // skip noise-sized slivers (grid-quantization/boundary-clipping artifacts) when auto-seeding minors
 const TARGET_MINOR_AREA_CELLS = 900; // ~1 minor faction per this many uncovered grid cells, not 1 per region
@@ -48,7 +48,7 @@ export function computeControlShares(x, y, factions) {
 // faction share; anywhere else with meaningful presence is contested, not
 // owned; nothing meaningful present at all falls back to the Dominion
 // baseline with no contest.
-function resolveControl(shares) {
+export function resolveControl(shares) {
   if (shares.length === 0 || shares[0].share < MIN_CONTEST_SHARE) {
     return { owner: "dominion", contestedBy: [] };
   }
@@ -65,7 +65,7 @@ function resolveControl(shares) {
 
 // §4 "faction security" — the locally dominant faction's own enforcement,
 // scaled by how solidly it holds the point and how strong it is overall.
-function factionSecurityFor(shares, factionsBySlug) {
+export function factionSecurityFor(shares, factionsBySlug) {
   if (!shares.length || shares[0].share < MIN_CONTEST_SHARE) return 0;
   const top = shares[0];
   const faction = factionsBySlug.get(top.slug);
@@ -77,7 +77,7 @@ function factionSecurityFor(shares, factionsBySlug) {
 // pushed up, combined security pushed down. Placeholder until Phase 6+
 // events can feed real faction relations in; deterministic from what
 // already exists (aggression, control shares, security).
-function warChanceFor(shares, factionsBySlug, dominionSecurity, factionSecurity) {
+export function warChanceFor(shares, factionsBySlug, dominionSecurity, factionSecurity) {
   const contestants = shares.filter((s) => s.share >= MIN_CONTEST_SHARE);
   if (contestants.length < 2) return 0;
   const [a, b] = contestants;
@@ -225,6 +225,7 @@ function autoSeedBorderFactions(project, authoredFactions, rng) {
         seed: { x: wx, y: wy },
         toleratedCrimes: [],
         relationships: {},
+        extraTags: [],
         origin: "generated",
       });
     }

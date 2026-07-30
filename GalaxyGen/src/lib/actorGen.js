@@ -78,6 +78,7 @@ export function generateBackgroundActors(project) {
         influence: Number(randRange(rng, 0.05, 0.25).toFixed(2)),
         status: "active",
         reputation: {},
+        extraTags: [],
         origin: "generated",
       });
     }

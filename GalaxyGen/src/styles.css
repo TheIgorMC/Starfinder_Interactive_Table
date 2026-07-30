@@ -169,3 +169,12 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
   padding: 0 4px;
   font-size: 12px;
 }
+
+.gg-diff-box {
+  background: #12181e;
+  border: 1px solid #33414f;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 6px 0;
+}
+.gg-diff-box p { margin: 2px 0; }

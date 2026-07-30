@@ -44,6 +44,7 @@ export default function Toolbar({
   onImportProject,
   onExportSDF,
   exportStatus,
+  onDownloadIndex,
 }) {
   const fileInputRef = useRef(null);
   const [newSeed, setNewSeed] = useState(project.seed);
@@ -268,6 +269,18 @@ export default function Toolbar({
           Export SDF
         </button>
         {exportStatus && <p className="small muted">{exportStatus}</p>}
+      </section>
+
+      <section>
+        <h3>AI index</h3>
+        <p className="small muted">
+          A compact per-entity summary (name, tags, rough stats — no full
+          records) for an LLM's broad/coherence pass (§9.3) to reason over
+          before drilling into specifics. Written automatically as
+          `index.json` alongside every "Export SDF", or grab it alone here
+          to paste straight into a chat today.
+        </p>
+        <button onClick={onDownloadIndex}>Download AI index</button>
       </section>
     </aside>
   );

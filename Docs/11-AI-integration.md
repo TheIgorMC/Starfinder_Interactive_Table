@@ -123,9 +123,10 @@ The frontend UI should include a **Model Settings Panel** to allow the GM to tog
 
 ## 6. Tool contract (§9.1 surface, firmed up against the current data model)
 
-**Status: spec only — none of these five tools are implemented yet.** This
-section freezes their request/response shapes against GalaxyGen's actual
-current data model (`GalaxyGen/src/lib/persistence.js`,
+**Status: mostly spec — `query_galaxy`'s `index` mode is implemented
+client-side (`GalaxyGen/src/lib/aiIndex.js`), the other four tools are not.**
+This section freezes their request/response shapes against GalaxyGen's
+actual current data model (`GalaxyGen/src/lib/persistence.js`,
 `Docs/10-galaxy-mapgen.md` §7) so Phase 5's effect engine and Phase 6's MCP
 server can be built directly against it without re-deriving field names
 from scratch. Field names below match the SDF export exactly — an
@@ -166,12 +167,35 @@ from an organization from an actor sharing a similar name:
 }
 ```
 `mode: "index"` returns the same `entities` shape but each `entry` is
-replaced with a compact `{ name, tags, summary }` triple (no full `data`
-block) — this is the "compact index" §9.3's pass 1 reasons over, scaled to
-the whole galaxy without blowing an 8B model's context. `scope` can also be
-the literal string `"all"` in index mode only, for a pass-1 call that needs
-the entire galaxy's index at once; `"all"` is rejected in `full` mode (too
-large — pass 2 must shortlist first).
+replaced with a compact `{ ref, name, tags, summary, stats }` row (no full
+`data` block) — this is the "compact index" §9.3's pass 1 reasons over,
+scaled to the whole galaxy without blowing an 8B model's context. `tags`
+carries cheap keyword signal (a system gets `"contested"`/`"landmark"`/
+`"station-only"` auto-appended on top of its normal tags; a faction gets
+`"anchored"` if it holds a home system; an actor gets `"background"` vs.
+`"curated"`); `stats` carries the handful of precise numbers/booleans a
+tag can't (system: `important`, `owner`, `contested`, `war_chance`;
+faction: `strength`, `aggression`, `home_system`; actor: `influence`,
+`status`, `affiliation`, `location`; organization: `local_influence`,
+`member_count`) — text alone loses "why," numbers alone lose "at a
+glance," so both travel on every row. `scope` can also be the literal
+string `"all"` in index mode only, for a pass-1 call that needs the entire
+galaxy's index at once; `"all"` is rejected in `full` mode (too large —
+pass 2 must shortlist first).
+
+**Implemented today**: `GalaxyGen/src/lib/aiIndex.js` exports
+`buildGalaxyIndex(project, scope)` (the `entities` array above — pass an
+array of typed refs to scope it, or omit for the `"all"` case) and
+`buildGalaxyIndexEnvelope(project)` (wraps it with `sdf`/`type`/
+`generated_at`/`seed`/`entity_count`, the shape actually written to disk).
+"Export SDF" now writes this envelope to `index.json` at the tree root
+automatically; a standalone **Download AI index** button (Toolbar → AI
+index) grabs just this file so it can be pasted into any LLM chat today,
+with no backend or tool-calling plumbing required yet. What's still
+missing is the live `query_galaxy` call itself (an actual request/response
+round-trip with an inference host) and `mode: "full"` — right now only the
+compact `entities` array exists; there's no handler that resolves a scope
+of typed refs back into full SDF entries on demand.
 
 ### 6.3 `create_actor`
 
@@ -223,6 +247,17 @@ always derived (§6.2), so passing it is a validation error.
 
 ### 6.5 `apply_event`
 
+**Status: implemented.** `GalaxyGen/src/lib/effectEngine.js` is a complete,
+tested implementation of this tool's actual mechanics — `applyEvent(project,
+draft)` runs every effect below through the magnitude envelope, the
+ownership-flip gate, and the derived-field re-computation, and the Events
+tab (§13 Phase 5) is a hand-authored client for it. What's still missing is
+the AI-facing wrapper: nothing yet turns natural-language text into an
+event draft, and there's no live request/response round-trip with an
+inference host — an AI layer calling this tool just needs to produce the
+same draft shape the Events form already builds and hands to
+`applyEvent`.
+
 ```json
 // Request — identical to the events/<slug>/entry.json data block (§7)
 {
@@ -262,7 +297,7 @@ outside this table cannot be expressed as an effect:
 | `op` | Applies to | Fields |
 |---|---|---|
 | `adjust_control` | system | `target`, `faction`, `delta` |
-| `set_owner` | system | `target`, `faction` (any magnitude can flip ownership, §9.2/§12 — not gated to `historic`) |
+| `set_owner` | system | `target`, `faction`, `delta` (the control-shift being claimed — any magnitude can flip ownership, §9.2/§12, not gated to `historic`, but `delta` must clear both the magnitude envelope *and* a separate fixed minimum, 0.15 by default, or the call is rejected outright) |
 | `set_system_status` | system | `target`, `status` (`active`\|`destroyed`\|`quarantined`\|`uninhabitable`) — `destroyed`/`quarantined` cascade: sever that system's hyperlane edges, force a security/`war_chance` re-derive on every former neighbor |
 | `adjust_security` | system | `target`, `delta` |
 | `adjust_relationship` | faction↔faction | `a`, `b`, `delta` (symmetric — same value written to both factions' `relationships`) |
@@ -284,7 +319,12 @@ that ceiling, not just max it out. Every effect's `confidence` (0–1) is
 used engine-side to pull low-confidence deltas toward a narrower
 sub-range automatically before the ceiling clamp — richly-detailed,
 high-confidence events get to use more of the envelope; a one-line rumor
-does not, even at the same nominal magnitude.
+does not, even at the same nominal magnitude. Implemented as
+`envelopeCap = base * (0.3 + 0.7 * confidence)` in `effectEngine.js` — a
+reasonable placeholder curve, not one derived from the design doc (which
+leaves the exact shape unspecified); confidence `1` (the only value
+hand-authored events ever pass) uses the full envelope, so this is
+currently inert until an AI layer starts passing anything lower.
 
 ### 6.6 `project_timestep`
 

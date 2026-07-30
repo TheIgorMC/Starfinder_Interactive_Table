@@ -10,10 +10,12 @@ import { generateSystems, placeSystemAt } from "./lib/systemGen.js";
 import { generateHyperlanes, buildEdge } from "./lib/hyperlaneGen.js";
 import { resolveFactions } from "./lib/factionGen.js";
 import { generateBackgroundActors } from "./lib/actorGen.js";
+import { applyEvent } from "./lib/effectEngine.js";
 import {
   loadFromStorage,
   saveToStorage,
   downloadProjectJSON,
+  downloadGalaxyIndex,
   importProjectFile,
   exportGalaxySDF,
 } from "./lib/persistence.js";
@@ -287,6 +289,7 @@ export default function App() {
           homeSystem: pendingFactionSeed.homeSystem ?? null,
           toleratedCrimes: [],
           relationships: {},
+          extraTags: [],
           origin: "authored",
         };
         setSelectedFactionId(faction.id);
@@ -390,6 +393,7 @@ export default function App() {
         influence: fields.influence,
         status: "active",
         reputation: {},
+        extraTags: [],
         origin: "authored",
       };
       setSelectedActorId(actor.id);
@@ -434,6 +438,7 @@ export default function App() {
         homeSystem: fields.homeSystem || null,
         homeSector: fields.homeSector || null,
         localInfluence: fields.localInfluence,
+        extraTags: [],
       };
       setSelectedOrgId(org.id);
       return { ...p, organizations: [...p.organizations, org] };
@@ -466,6 +471,37 @@ export default function App() {
     },
     [selectedOrgId],
   );
+
+  // §9 pipeline step 4 — computes an event's effect diff without
+  // committing anything, so the Events tab can show a review gate for
+  // moderate+ events before the GM confirms (minor events skip straight to
+  // commit, §9.2/§12). Throws on an invalid effect (bad ref, envelope
+  // violation, ownership-flip gate not cleared, ...) for the caller to
+  // catch and surface — nothing here ever touches `project`.
+  const handlePreviewEvent = useCallback((draft) => applyEvent(project, draft).diffs, [project]);
+
+  // §9 pipeline step 5 — commits an event: applies its effects (throws,
+  // untouched, if any effect is invalid) and appends the event itself
+  // (with its resolved diffs and a commit timestamp) to the append-only
+  // log in the same state update.
+  const handleCommitEvent = useCallback(
+    (draft) => {
+      const { project: nextProject, diffs } = applyEvent(project, draft);
+      const slug = uniqueSlug(slugify(draft.name), project.events);
+      const event = { id: crypto.randomUUID(), slug, ...draft, diffs, committedAt: new Date().toISOString() };
+      setProject({ ...nextProject, events: [...nextProject.events, event] });
+      return event;
+    },
+    [project],
+  );
+
+  // Removes an event from the log only — it does NOT revert the effects it
+  // already applied (there's no replay/undo engine yet, §10 of the design
+  // doc's roadmap notes this as a future "drop the last event, re-fold"
+  // capability, not something Phase 5 implements).
+  const handleDeleteEvent = useCallback((id) => {
+    setProject((p) => ({ ...p, events: p.events.filter((e) => e.id !== id) }));
+  }, []);
 
   const handleNewProject = useCallback((seed, width, height) => {
     const hasWork = project.sectors.length > 0;
@@ -503,9 +539,9 @@ export default function App() {
       const result = await exportGalaxySDF(project);
       if (result.mode === "none") setExportStatus("Nothing to export yet.");
       else if (result.mode === "fs") {
-        setExportStatus(`Wrote ${result.sectorCount} sector(s), ${result.systemCount} system(s), ${result.factionCount} faction(s), ${result.actorCount} actor(s), and ${result.organizationCount} organization(s) to content/.`);
+        setExportStatus(`Wrote ${result.sectorCount} sector(s), ${result.systemCount} system(s), ${result.factionCount} faction(s), ${result.actorCount} actor(s), ${result.organizationCount} organization(s), ${result.eventCount} event(s), and index.json to content/.`);
       } else {
-        setExportStatus(`Downloaded galaxy-sdf.json (${result.sectorCount} sector(s), ${result.systemCount} system(s), ${result.factionCount} faction(s), ${result.actorCount} actor(s), ${result.organizationCount} organization(s)) — split by hand for now.`);
+        setExportStatus(`Downloaded galaxy-sdf.json (${result.sectorCount} sector(s), ${result.systemCount} system(s), ${result.factionCount} faction(s), ${result.actorCount} actor(s), ${result.organizationCount} organization(s), ${result.eventCount} event(s), plus a compact index) — split by hand for now.`);
       }
     } catch (err) {
       if (err?.name !== "AbortError") setExportStatus(`Export failed: ${err.message}`);
@@ -516,7 +552,7 @@ export default function App() {
     <div className="galaxygen-app">
       <header className="gg-header">
         <h1>Galaxy MapGen</h1>
-        <span className="muted small">Phase 4 — actors &amp; organizations</span>
+        <span className="muted small">Phase 5 — events &amp; effect engine</span>
       </header>
       <div className="gg-body">
         <Toolbar
@@ -549,6 +585,7 @@ export default function App() {
           onGenerateBackgroundActors={handleGenerateBackgroundActors}
           onNewProject={handleNewProject}
           onDownloadProject={() => downloadProjectJSON(project)}
+          onDownloadIndex={() => downloadGalaxyIndex(project)}
           onImportProject={handleImportProject}
           onExportSDF={handleExportSDF}
           exportStatus={exportStatus}
@@ -622,6 +659,10 @@ export default function App() {
           onCreateOrganization={handleCreateOrganization}
           onUpdateOrganization={handleUpdateOrganization}
           onDeleteOrganization={handleDeleteOrganization}
+          events={project.events}
+          onPreviewEvent={handlePreviewEvent}
+          onCommitEvent={handleCommitEvent}
+          onDeleteEvent={handleDeleteEvent}
         />
       </div>
     </div>

@@ -11,7 +11,7 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
 (whose own future is undecided). Exports content following
 `../Docs/06-data-format-sdf.md`.
 
-## Status: Phase 4 done, curated + background actors (§13 of the design doc)
+## Status: Phase 5 done, manual event log & effect engine (§13 of the design doc)
 
 **Phase 1** — canvas, density fields, sectors:
 - Pan/zoom 2D canvas over the galaxy bounds
@@ -175,9 +175,62 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   vocabulary, matched field-for-field against the current SDF export —
   nothing implemented yet, but Phase 6 has a frozen contract to build
   against instead of re-deriving it from the design doc each time.
+- **First real slice of that contract is implemented**: `query_galaxy`'s
+  compact `"index"` mode (`GalaxyGen/src/lib/aiIndex.js`) — a per-entity
+  `{ ref, name, tags, summary, stats }` row for every sector/system/
+  faction/actor/organization, small enough to hand an LLM the whole
+  galaxy's shape at once for the broad/coherence pass (§9.3) before it
+  drills into anything specific. "Export SDF" now writes it to
+  `index.json` automatically; a standalone **Download AI index** button
+  (toolbar) grabs just that file to paste into any LLM chat today, no
+  backend required.
 
-Not yet built: events, broadcasts, the AI interface, planet/surface
-generation — see §13 for the full phase breakdown.
+**Phase 5 (manual event log & effect engine, no AI yet, done)**:
+- New **Events** tab: an event-authoring form (name, summary, tags,
+  in-fiction timestamp, elapsed timestep, magnitude, scope, one or more
+  effects, free-text narrative) plus a chronological, append-only
+  **Journal** of everything committed so far, each entry expandable to see
+  exactly what it changed.
+- A closed **effect vocabulary** (`GalaxyGen/src/lib/effectEngine.js`),
+  matching §9/§9.2 and `Docs/11-AI-integration.md` §6.5 exactly: `adjust_control`,
+  `set_owner`, `set_system_status`, `adjust_security`, `adjust_relationship`,
+  `adjust_aggression`, `adjust_focus`, `adjust_influence`, `set_affiliation`,
+  `relocate`, `set_status`, `adjust_reputation`, `add_tag`, `remove_tag` —
+  nothing outside this list can be expressed as an effect.
+- **Magnitude envelopes**: every numeric effect's delta is clamped to a
+  per-op, per-magnitude ceiling (`minor` caps small, `historic` allows the
+  full range) before it's applied — a GM can propose whatever number they
+  want, the engine enforces the actual ceiling.
+- **Ownership-flip gate** (§9.2): `set_owner` requires *both* the normal
+  envelope *and* a separate fixed minimum control-shift (0.15 by default)
+  — verified live: a 0.10 shift under `major` magnitude is rejected with an
+  explicit error, a 0.5 shift succeeds and flips the system outright.
+- **Review gate** (§9 pipeline step 3): `minor` events commit immediately;
+  `moderate`/`major`/`historic` events require a successful **Preview**
+  (showing the exact diff) before **Confirm commit** unlocks.
+- **Cascading `set_system_status`**: marking a system `destroyed`/
+  `quarantined` severs every hyperlane edge touching it (both ends) and
+  re-derives control/security/war-chance for every former neighbor against
+  the live faction set — verified live end-to-end.
+- Adjust-control/set-owner effects work as a hand-tunable *second layer* on
+  top of the geometric control contest, reusing the exact same ownership-
+  threshold/security/war-chance formulas `resolveFactions` uses (now
+  exported from `factionGen.js`), the same precedent as home-system
+  anchoring already overriding the geometric result outright.
+- Every entity type (system/faction/actor/organization) now has a stored
+  `extraTags` array so the generic `add_tag`/`remove_tag` ops have
+  somewhere to write — systems additionally got a stored `status` field
+  (`active | destroyed | quarantined | uninhabitable`).
+- "Export SDF" now also writes an `events/` entry tree; deleting a journal
+  entry only removes it from the log, it does not revert its effects
+  (there's no replay/undo engine yet — see known simplifications).
+
+Not yet built: broadcasts, the AI interface itself (query_galaxy/
+create_actor/create_organization/apply_event/project_timestep as live,
+callable tools), planet/surface generation — see §13 for the full phase
+breakdown. §9's `apply_event` tool contract is now backed by a real,
+tested implementation (this phase's effect engine) — an AI layer calling
+it just needs to produce the same event-draft shape a GM types by hand.
 
 ### Known simplifications so far
 
@@ -238,8 +291,10 @@ generation — see §13 for the full phase breakdown.
   detail, not a design question) — expect to retune `actorGen.js`'s
   constants once a full-scale galaxy is generated.
 - Promotion (a background actor flipping to `authored` when an event
-  elevates them) isn't implemented — there's no effect engine yet (Phase 5)
-  to trigger it.
+  elevates them) isn't implemented — nothing in the event form currently
+  triggers it automatically; a GM can still flip an actor's `origin` by
+  hand via `set_status`-adjacent editing if wanted, but there's no
+  dedicated "promote" action yet.
 - If a sector is deleted, any actor based in one of its systems is marked
   unplaced (`location: null`) rather than deleted outright, so the curated
   actor itself isn't lost — but it does need to be manually reassigned to
@@ -248,8 +303,38 @@ generation — see §13 for the full phase breakdown.
   What now exists is a frozen **tool contract spec** (`Docs/11-AI-integration.md`
   §6) for `query_galaxy`/`create_actor`/`create_organization`/`apply_event`/
   `project_timestep`, precisely matched against the current SDF field
-  names, so that phase can be implemented directly against it without
-  re-deriving the shapes.
+  names, plus a real, tested implementation of `query_galaxy`'s index mode
+  and the entire `apply_event` effect engine — Phase 6 mostly needs to
+  wire an LLM up to call these, not invent new logic.
+- No replay/undo engine: events apply directly to live state and are
+  logged append-only, but there's no "reconstruct the galaxy by replaying
+  every event from the base generation" capability yet (§9 pipeline step 5
+  frames this as a natural free side-effect of the append-only log, but
+  actually building the replay path is future work) — deleting a journal
+  entry removes it from the log only, it does **not** revert whatever it
+  changed.
+- Confidence-based delta narrowing exists in the effect engine
+  (`effectEngine.js`'s `envelopeCap`) but is inert for hand-authored events,
+  which always pass `confidence: 1` — there's no UI to set a lower
+  confidence by hand, since a GM typing an exact number isn't "uncertain"
+  the way an AI-classified event might be. The curve itself (confidence 0
+  shrinks the envelope to 30%) is a reasonable placeholder, not something
+  derived from the design doc, which leaves the exact formula unspecified.
+- A `set_system_status` cascade's neighbor re-derive uses the live
+  geometric control contest (`computeControlShares`), which will overwrite
+  any earlier event-driven `adjust_control`/`set_owner` override on those
+  *specific* neighboring systems — same behavior as clicking "Generate
+  factions" already has on hand-tuned control.
+- Destroyed/quarantined systems don't yet render any differently on the
+  map (no visual distinction from an active system) — only the stored
+  `status` field and the hyperlane-severing cascade are implemented.
+- Not every one of the 12 effect ops got an individual live end-to-end
+  test in the session that built this phase — `adjust_control`,
+  `adjust_security`, `adjust_relationship`, `adjust_focus`,
+  `adjust_influence`, `set_affiliation`, `set_status`, and `remove_tag`
+  share the exact same clamp-apply-diff code path as the ones that were
+  tested (`adjust_aggression`, `set_owner`, `set_system_status`, `add_tag`,
+  `relocate`), just against different fields.
 
 ## Running it
 
@@ -417,6 +502,36 @@ can lay out the shape first and only decide the name/focus once it's done:
    background actors" toggle; click through to inspect or delete an
    individual one like any other actor.
 
+**Authoring events**
+1. Switch to the **Events** tab. Fill in a name, summary, tags, an
+   in-fiction timestamp, and how much in-fiction time it spans (the
+   timestep) — this last one is purely descriptive and independent of how
+   big the effects are.
+2. Pick a **magnitude** (`minor`/`moderate`/`major`/`historic`) — this sets
+   the ceiling every numeric effect below gets clamped to, tightest at
+   `minor` and loosest at `historic`.
+3. Optionally set the **scope** (every entity this event touches — useful
+   later for "show every event that touched this system/faction/actor,"
+   though nothing browses by scope yet).
+4. Click **+ Add effect** for each mechanical change the event causes —
+   pick an op from the closed vocabulary (adjust control, set owner, set
+   system status, adjust security/relationship/aggression/focus/influence/
+   reputation, set affiliation, relocate, set status, add/remove tag), then
+   fill in whichever typed-ref/number/select fields that op needs.
+5. `minor` events: click **Commit** directly — no review step, per the
+   design doc's "low stakes, envelope-capped, never enough to flip
+   ownership" rule. Everything `moderate`+ requires **Preview effects**
+   first, showing the exact before/after diff for every effect, before
+   **Confirm commit** unlocks.
+6. `set_owner` has an extra gate on top of its magnitude envelope: the
+   control shift has to clear a fixed minimum (0.15) before it's allowed to
+   flip ownership at all — a small nudge under a `historic` event still
+   won't flip a system, it has to actually earn it.
+7. Every committed event appears in the **Journal** below the form
+   (append-only, newest first) — click one to expand its full diff and
+   narrative. Deleting one only removes it from the log; it does not
+   revert whatever it already changed.
+
 **Saving your work**
 - Everything autosaves to the browser's local storage as you go (per
   browser/profile — it won't follow you to a different machine).
@@ -425,7 +540,8 @@ can lay out the shape first and only decide the name/focus once it's done:
   portable file.
 - **Export SDF** writes real `sectors/<slug>/entry.json`,
   `systems/<slug>/entry.json`, `factions/<slug>/entry.json`,
-  `actors/<slug>/entry.json`, and `organizations/<slug>/entry.json` files
+  `actors/<slug>/entry.json`, `organizations/<slug>/entry.json`, and
+  `events/<slug>/entry.json` files, plus a top-level `index.json`
   (Chrome/Edge: pick a `content/` folder and it writes the tree directly;
   other browsers get a single combined JSON to split by hand).
 - **New** starts a fresh galaxy (asks for confirmation if you have
