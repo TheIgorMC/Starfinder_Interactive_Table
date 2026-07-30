@@ -256,6 +256,7 @@ export default function GalaxyCanvas({
     }
 
     // Systems (Docs/10-galaxy-mapgen.md §3 stage 4-5).
+    const systemsWithActors = new Set((project.actors || []).map((a) => a.location).filter(Boolean));
     for (const system of project.systems) {
       const [sx, sy] = worldToScreen(system.position.x, system.position.y);
       const selected = system.id === selectedSystemId;
@@ -294,6 +295,15 @@ export default function GalaxyCanvas({
         ctx.setLineDash([2, 2]);
         ctx.stroke();
         ctx.setLineDash([]);
+      }
+      // A notable person/group calls this system home (§6) — a small dot
+      // offset from the system marker itself, so it doesn't get confused
+      // with the security/contested rings which are centered and larger.
+      if (systemsWithActors.has(system.slug)) {
+        ctx.beginPath();
+        ctx.arc(sx + baseRadius + 2, sy - baseRadius - 2, 2, 0, Math.PI * 2);
+        ctx.fillStyle = "#7ee787";
+        ctx.fill();
       }
       if (showLabel) {
         ctx.fillStyle = "#e6e9ec";

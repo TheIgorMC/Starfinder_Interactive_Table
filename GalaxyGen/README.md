@@ -11,7 +11,7 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
 (whose own future is undecided). Exports content following
 `../Docs/06-data-format-sdf.md`.
 
-## Status: Phase 3, done (§13 of the design doc)
+## Status: Phase 4, curated half done (§13 of the design doc)
 
 **Phase 1** — canvas, density fields, sectors:
 - Pan/zoom 2D canvas over the galaxy bounds
@@ -108,9 +108,34 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   systems and places new ones in the gaps around locked ones — hand
   curation is no longer wiped out by every regen
 
-Not yet built: actors, organizations, events, broadcasts, the AI
-interface, planet/surface generation — see §13 for the full phase
-breakdown.
+**Phase 4 (notable actors & organizations, curated half done)**:
+- Actors (§6): notable people/groups that never hold territory but matter
+  for future event targeting — a governor, a pirate captain, a
+  corporation's local rep. Created via a form (name, individual/group,
+  role flavor tag, location anchored to an existing system, affiliation,
+  mobile flag, influence) — no canvas placement tool, since an actor's
+  "position" is just whatever system it's based at
+- Organizations (§6.2): non-territorial parties/guilds/movements — name,
+  ideology tag, a required parent faction (or Dominion) whose sphere they
+  operate within, an optional home system or sector (or neither, for a
+  galaxy-spanning movement), and local influence. No control field, no
+  aggression — they never enter the Faction contest (§4)
+- An actor's `affiliation` points at either `faction:<slug>` or
+  `party:<slug>` (or neither) — this is the single source of truth for
+  membership; an organization's member list is always derived by scanning
+  actors for it, so the two can never drift out of sync
+- Placing/relocating an actor onto a system locks that system too (same
+  "hand-curation protects it from regen" rule as renaming), and deleting a
+  faction/organization gracefully falls back any actor's affiliation or
+  organization's parent-faction reference rather than leaving it dangling
+- A small green dot marks any system with 1+ actors on the map itself; the
+  system inspector lists who's there
+- "Export SDF" now also writes `actors/` and `organizations/` entry trees
+
+Not yet built: background/bulk actor auto-seeding (§6.1 — the design doc's
+own roadmap calls this a follow-up slice of Phase 4 once the curated half
+is solid, not a separate phase), events, broadcasts, the AI interface,
+planet/surface generation — see §13 for the full phase breakdown.
 
 ### Known simplifications so far
 
@@ -166,6 +191,19 @@ breakdown.
   system outright the next time you generate. Anchoring also can't be
   edited after the fact (no "un-anchor this faction" button) — delete and
   recreate it to change or remove an anchor.
+- No background actor auto-seeding yet (§6.1) — every actor is hand-typed
+  one at a time. A galaxy with hundreds of systems will look sparsely
+  populated with actors until that follow-up slice exists.
+- Actor `reputation` (per-faction standing) exists on the data shape and
+  export but has no editing UI yet, same simplification already accepted
+  for faction `relationships`/`tolerated_crimes`.
+- If a sector is deleted, any actor based in one of its systems is marked
+  unplaced (`location: null`) rather than deleted outright, so the curated
+  actor itself isn't lost — but it does need to be manually reassigned to
+  a new system afterward.
+- An organization's `home_system`/`home_sector` are independent dropdowns
+  with no mutual-exclusivity enforcement — setting both is allowed even
+  though the design doc frames it as one-or-the-other-or-neither.
 
 ## Running it
 
@@ -285,6 +323,20 @@ can lay out the shape first and only decide the name/focus once it's done:
   Keeps a large galaxy from turning into a wall of overlapping text at the
   default view while still surfacing what matters first as you zoom in.
 
+**Adding actors and organizations**
+1. Generate at least one system first — actors are always anchored to an
+   existing system (or created "Unplaced" and assigned to one later).
+2. Click **+ New Organization** first if you want an actor to belong to a
+   local party rather than a faction directly — give it a name, ideology
+   tag, and a parent faction (or Dominion) whose sphere it operates within.
+3. Click **+ New Actor** — name, individual/group, a role flavor tag,
+   which system they're based at, and an affiliation (a faction, an
+   organization, or none). Placing them at a system locks that system.
+4. Select an actor or organization from its list to edit any field
+   afterward, or delete it. An organization's member list isn't edited
+   directly — it's always whichever actors currently have that
+   organization set as their affiliation.
+
 **Saving your work**
 - Everything autosaves to the browser's local storage as you go (per
   browser/profile — it won't follow you to a different machine).
@@ -292,7 +344,8 @@ can lay out the shape first and only decide the name/focus once it's done:
   project (seed, bounds, sectors, systems, all five field grids) as a
   portable file.
 - **Export SDF** writes real `sectors/<slug>/entry.json`,
-  `systems/<slug>/entry.json`, and `factions/<slug>/entry.json` files
+  `systems/<slug>/entry.json`, `factions/<slug>/entry.json`,
+  `actors/<slug>/entry.json`, and `organizations/<slug>/entry.json` files
   (Chrome/Edge: pick a `content/` folder and it writes the tree directly;
   other browsers get a single combined JSON to split by hand).
 - **New** starts a fresh galaxy (asks for confirmation if you have

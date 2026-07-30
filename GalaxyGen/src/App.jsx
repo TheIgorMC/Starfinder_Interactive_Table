@@ -35,6 +35,8 @@ export default function App() {
   const [selectedSectorId, setSelectedSectorId] = useState(null);
   const [selectedSystemId, setSelectedSystemId] = useState(null);
   const [selectedFactionId, setSelectedFactionId] = useState(null);
+  const [selectedActorId, setSelectedActorId] = useState(null);
+  const [selectedOrgId, setSelectedOrgId] = useState(null);
   const [pendingPoints, setPendingPoints] = useState(null);
   const [pendingClosed, setPendingClosed] = useState(false);
   const [pendingFactionSeed, setPendingFactionSeed] = useState(null);
@@ -53,6 +55,8 @@ export default function App() {
   const selectedSector = project.sectors.find((s) => s.id === selectedSectorId) || null;
   const selectedSystem = project.systems.find((s) => s.id === selectedSystemId) || null;
   const selectedFaction = project.factions.find((f) => f.id === selectedFactionId) || null;
+  const selectedActor = project.actors.find((a) => a.id === selectedActorId) || null;
+  const selectedOrg = project.organizations.find((o) => o.id === selectedOrgId) || null;
 
   const handlePaint = useCallback(
     (wx, wy, erase) => {
@@ -154,6 +158,11 @@ export default function App() {
           factions: p.factions.map((f) =>
             f.homeSystem && removedSlugs.has(f.homeSystem) ? { ...f, homeSystem: null } : f,
           ),
+          // Actors are anchored to a system (§6) — if theirs is gone, mark
+          // them unplaced rather than deleting the curated actor outright.
+          actors: p.actors.map((a) =>
+            a.location && removedSlugs.has(a.location) ? { ...a, location: null } : a,
+          ),
         };
       });
       if (selectedSectorId === id) setSelectedSectorId(null);
@@ -179,6 +188,9 @@ export default function App() {
         hyperlanes: p.hyperlanes.filter((e) => keptIds.has(e.a) && keptIds.has(e.b)),
         factions: p.factions.map((f) =>
           f.homeSystem && !keptSlugs.has(f.homeSystem) ? { ...f, homeSystem: null } : f,
+        ),
+        actors: p.actors.map((a) =>
+          a.location && !keptSlugs.has(a.location) ? { ...a, location: null } : a,
         ),
       };
     });
@@ -260,6 +272,15 @@ export default function App() {
             const contestedBy = (s.control.contestedBy || []).filter((c) => c.faction !== faction.slug);
             return { ...s, control: { owner, contestedBy } };
           }),
+          // Actors affiliated straight to this faction fall back to
+          // unaffiliated; organizations fall back to the Dominion (§6.2 —
+          // every organization must resolve to *some* existing faction).
+          actors: p.actors.map((a) =>
+            a.affiliation === `faction:${faction.slug}` ? { ...a, affiliation: null } : a,
+          ),
+          organizations: p.organizations.map((o) =>
+            o.parentFaction === faction.slug ? { ...o, parentFaction: "dominion" } : o,
+          ),
         };
       });
       if (selectedFactionId === id) setSelectedFactionId(null);
@@ -280,6 +301,100 @@ export default function App() {
     });
   }, [project.systems.length, project.factions]);
 
+  // Actors are anchored to an existing system (§6) — placing one there is
+  // a hand-curation signal just like renaming, so lock that system too.
+  const handleCreateActor = useCallback((fields) => {
+    setProject((p) => {
+      const slug = uniqueSlug(slugify(fields.name), p.actors);
+      const actor = {
+        id: crypto.randomUUID(),
+        slug,
+        name: fields.name,
+        kind: fields.kind,
+        role: fields.role,
+        affiliation: fields.affiliation || null,
+        location: fields.location || null,
+        mobile: fields.mobile,
+        influence: fields.influence,
+        status: "active",
+        reputation: {},
+        origin: "authored",
+      };
+      setSelectedActorId(actor.id);
+      return {
+        ...p,
+        actors: [...p.actors, actor],
+        systems: fields.location
+          ? p.systems.map((s) => (s.slug === fields.location ? { ...s, locked: true } : s))
+          : p.systems,
+      };
+    });
+  }, []);
+
+  const handleUpdateActor = useCallback((id, patch) => {
+    setProject((p) => ({
+      ...p,
+      actors: p.actors.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      // Relocating an actor onto a system locks it too, same as creation.
+      systems: patch.location
+        ? p.systems.map((s) => (s.slug === patch.location ? { ...s, locked: true } : s))
+        : p.systems,
+    }));
+  }, []);
+
+  const handleDeleteActor = useCallback(
+    (id) => {
+      setProject((p) => ({ ...p, actors: p.actors.filter((a) => a.id !== id) }));
+      if (selectedActorId === id) setSelectedActorId(null);
+    },
+    [selectedActorId],
+  );
+
+  const handleCreateOrganization = useCallback((fields) => {
+    setProject((p) => {
+      const slug = uniqueSlug(slugify(fields.name), p.organizations);
+      const org = {
+        id: crypto.randomUUID(),
+        slug,
+        name: fields.name,
+        ideology: fields.ideology,
+        parentFaction: fields.parentFaction,
+        homeSystem: fields.homeSystem || null,
+        homeSector: fields.homeSector || null,
+        localInfluence: fields.localInfluence,
+      };
+      setSelectedOrgId(org.id);
+      return { ...p, organizations: [...p.organizations, org] };
+    });
+  }, []);
+
+  const handleUpdateOrganization = useCallback((id, patch) => {
+    setProject((p) => ({
+      ...p,
+      organizations: p.organizations.map((o) => (o.id === id ? { ...o, ...patch } : o)),
+    }));
+  }, []);
+
+  const handleDeleteOrganization = useCallback(
+    (id) => {
+      setProject((p) => {
+        const org = p.organizations.find((o) => o.id === id);
+        if (!org) return p;
+        return {
+          ...p,
+          organizations: p.organizations.filter((o) => o.id !== id),
+          // Members fall back to unaffiliated rather than pointing at a
+          // party slug that no longer exists.
+          actors: p.actors.map((a) =>
+            a.affiliation === `party:${org.slug}` ? { ...a, affiliation: null } : a,
+          ),
+        };
+      });
+      if (selectedOrgId === id) setSelectedOrgId(null);
+    },
+    [selectedOrgId],
+  );
+
   const handleNewProject = useCallback((seed, width, height) => {
     const hasWork = project.sectors.length > 0;
     if (hasWork && !window.confirm("Discard the current galaxy and start a new one?")) return;
@@ -287,6 +402,8 @@ export default function App() {
     setSelectedSectorId(null);
     setSelectedSystemId(null);
     setSelectedFactionId(null);
+    setSelectedActorId(null);
+    setSelectedOrgId(null);
     setPendingPoints(null);
     setPendingClosed(false);
     setPendingFactionSeed(null);
@@ -299,6 +416,8 @@ export default function App() {
       setSelectedSectorId(null);
       setSelectedSystemId(null);
       setSelectedFactionId(null);
+      setSelectedActorId(null);
+      setSelectedOrgId(null);
       setPendingPoints(null);
       setPendingClosed(false);
       setPendingFactionSeed(null);
@@ -312,9 +431,9 @@ export default function App() {
       const result = await exportGalaxySDF(project);
       if (result.mode === "none") setExportStatus("Nothing to export yet.");
       else if (result.mode === "fs") {
-        setExportStatus(`Wrote ${result.sectorCount} sector(s), ${result.systemCount} system(s), and ${result.factionCount} faction(s) to content/.`);
+        setExportStatus(`Wrote ${result.sectorCount} sector(s), ${result.systemCount} system(s), ${result.factionCount} faction(s), ${result.actorCount} actor(s), and ${result.organizationCount} organization(s) to content/.`);
       } else {
-        setExportStatus(`Downloaded galaxy-sdf.json (${result.sectorCount} sector(s), ${result.systemCount} system(s), ${result.factionCount} faction(s)) — split by hand for now.`);
+        setExportStatus(`Downloaded galaxy-sdf.json (${result.sectorCount} sector(s), ${result.systemCount} system(s), ${result.factionCount} faction(s), ${result.actorCount} actor(s), ${result.organizationCount} organization(s)) — split by hand for now.`);
       }
     } catch (err) {
       if (err?.name !== "AbortError") setExportStatus(`Export failed: ${err.message}`);
@@ -325,7 +444,7 @@ export default function App() {
     <div className="galaxygen-app">
       <header className="gg-header">
         <h1>Galaxy MapGen</h1>
-        <span className="muted small">Phase 3 — factions &amp; war-chance</span>
+        <span className="muted small">Phase 4 — actors &amp; organizations</span>
       </header>
       <div className="gg-body">
         <Toolbar
@@ -380,9 +499,9 @@ export default function App() {
           onCancelSectorDraft={handleCancelSectorDraft}
           onAddFactionSeed={handleAddFactionSeed}
           onCancelFactionSeed={handleCancelFactionSeed}
-          onSelectSector={(id) => { setSelectedSectorId(id); setSelectedSystemId(null); setSelectedFactionId(null); }}
-          onSelectSystem={(id) => { setSelectedSystemId(id); setSelectedSectorId(null); setSelectedFactionId(null); }}
-          onSelectFaction={(id) => { setSelectedFactionId(id); setSelectedSectorId(null); setSelectedSystemId(null); }}
+          onSelectSector={(id) => { setSelectedSectorId(id); setSelectedSystemId(null); setSelectedFactionId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
+          onSelectSystem={(id) => { setSelectedSystemId(id); setSelectedSectorId(null); setSelectedFactionId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
+          onSelectFaction={(id) => { setSelectedFactionId(id); setSelectedSectorId(null); setSelectedSystemId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
           onHover={(wx, wy, value) => setHoverInfo(wx == null ? null : { wx, wy, value })}
         />
         <SectorList
@@ -394,6 +513,7 @@ export default function App() {
           selectedSystem={selectedSystem}
           onDeselectSystem={() => setSelectedSystemId(null)}
           onUpdateSystem={handleUpdateSystem}
+          systems={project.systems}
           factions={project.factions}
           selectedFactionId={selectedFactionId}
           selectedFaction={selectedFaction}
@@ -410,6 +530,22 @@ export default function App() {
           onReopenPending={handleReopenSectorDraft}
           onCommitPending={handleCommitSector}
           onCancelPending={handleCancelSectorDraft}
+          actors={project.actors}
+          selectedActorId={selectedActorId}
+          selectedActor={selectedActor}
+          onSelectActor={setSelectedActorId}
+          onDeselectActor={() => setSelectedActorId(null)}
+          onCreateActor={handleCreateActor}
+          onUpdateActor={handleUpdateActor}
+          onDeleteActor={handleDeleteActor}
+          organizations={project.organizations}
+          selectedOrgId={selectedOrgId}
+          selectedOrg={selectedOrg}
+          onSelectOrg={setSelectedOrgId}
+          onDeselectOrg={() => setSelectedOrgId(null)}
+          onCreateOrganization={handleCreateOrganization}
+          onUpdateOrganization={handleUpdateOrganization}
+          onDeleteOrganization={handleDeleteOrganization}
         />
       </div>
     </div>

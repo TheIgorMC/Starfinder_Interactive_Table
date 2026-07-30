@@ -109,6 +109,50 @@ function factionToEntry(faction) {
   };
 }
 
+// Docs/10-galaxy-mapgen.md §7 — actors/<slug>/entry.json shape. `origin` is
+// always "authored" until Phase 4's background auto-seeding pass exists.
+function actorToEntry(actor) {
+  return {
+    sdf: 1,
+    type: "actor",
+    name: actor.name,
+    summary: `${actor.role} (${actor.kind}).`,
+    tags: [actor.role, actor.kind],
+    data: {
+      kind: actor.kind,
+      origin: actor.origin,
+      affiliation: actor.affiliation,
+      location: actor.location,
+      mobile: actor.mobile,
+      influence: actor.influence,
+      status: actor.status,
+      reputation: actor.reputation,
+    },
+  };
+}
+
+// Docs/10-galaxy-mapgen.md §7 — organizations/<slug>/entry.json shape.
+// `members` is derived from every actor whose `affiliation` points here,
+// rather than a separately hand-maintained list, so it can never drift out
+// of sync with what the actors themselves say.
+function organizationToEntry(org, actors) {
+  return {
+    sdf: 1,
+    type: "organization",
+    name: org.name,
+    summary: `${org.ideology} organization.`,
+    tags: [org.ideology, "organization"],
+    data: {
+      ideology: org.ideology,
+      parent_faction: org.parentFaction,
+      home_system: org.homeSystem,
+      home_sector: org.homeSector,
+      members: actors.filter((a) => a.affiliation === `party:${org.slug}`).map((a) => a.slug),
+      local_influence: org.localInfluence,
+    },
+  };
+}
+
 // Writes the real SDF tree (sectors/<slug>/entry.json, systems/<slug>/entry.json)
 // via the File System Access API when the browser supports it (Chromium);
 // otherwise falls back to a single combined JSON download the GM can split
@@ -117,8 +161,10 @@ export async function exportGalaxySDF(project) {
   const sectorCount = project.sectors.length;
   const systemCount = project.systems.length;
   const factionCount = project.factions.length;
-  if (sectorCount === 0 && systemCount === 0 && factionCount === 0) {
-    return { mode: "none", sectorCount, systemCount, factionCount };
+  const actorCount = project.actors.length;
+  const organizationCount = project.organizations.length;
+  if (sectorCount === 0 && systemCount === 0 && factionCount === 0 && actorCount === 0 && organizationCount === 0) {
+    return { mode: "none", sectorCount, systemCount, factionCount, actorCount, organizationCount };
   }
 
   if ("showDirectoryPicker" in window) {
@@ -153,14 +199,36 @@ export async function exportGalaxySDF(project) {
         await writable.close();
       }
     }
-    return { mode: "fs", sectorCount, systemCount, factionCount };
+    if (actorCount > 0) {
+      const actorsDir = await root.getDirectoryHandle("actors", { create: true });
+      for (const actor of project.actors) {
+        const dir = await actorsDir.getDirectoryHandle(actor.slug, { create: true });
+        const fileHandle = await dir.getFileHandle("entry.json", { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(actorToEntry(actor), null, 2));
+        await writable.close();
+      }
+    }
+    if (organizationCount > 0) {
+      const orgsDir = await root.getDirectoryHandle("organizations", { create: true });
+      for (const org of project.organizations) {
+        const dir = await orgsDir.getDirectoryHandle(org.slug, { create: true });
+        const fileHandle = await dir.getFileHandle("entry.json", { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(organizationToEntry(org, project.actors), null, 2));
+        await writable.close();
+      }
+    }
+    return { mode: "fs", sectorCount, systemCount, factionCount, actorCount, organizationCount };
   }
 
   const combined = {
     sectors: Object.fromEntries(project.sectors.map((s) => [s.slug, sectorToEntry(s)])),
     systems: Object.fromEntries(project.systems.map((s) => [s.slug, systemToEntry(s)])),
     factions: Object.fromEntries(project.factions.map((f) => [f.slug, factionToEntry(f)])),
+    actors: Object.fromEntries(project.actors.map((a) => [a.slug, actorToEntry(a)])),
+    organizations: Object.fromEntries(project.organizations.map((o) => [o.slug, organizationToEntry(o, project.actors)])),
   };
   triggerDownload("galaxy-sdf.json", JSON.stringify(combined, null, 2));
-  return { mode: "download", sectorCount, systemCount, factionCount };
+  return { mode: "download", sectorCount, systemCount, factionCount, actorCount, organizationCount };
 }

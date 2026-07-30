@@ -10,6 +10,7 @@ export default function SectorList({
   selectedSystem,
   onDeselectSystem,
   onUpdateSystem,
+  systems,
   factions,
   selectedFactionId,
   selectedFaction,
@@ -26,11 +27,27 @@ export default function SectorList({
   onReopenPending,
   onCommitPending,
   onCancelPending,
+  actors,
+  selectedActorId,
+  selectedActor,
+  onSelectActor,
+  onDeselectActor,
+  onCreateActor,
+  onUpdateActor,
+  onDeleteActor,
+  organizations,
+  selectedOrgId,
+  selectedOrg,
+  onSelectOrg,
+  onDeselectOrg,
+  onCreateOrganization,
+  onUpdateOrganization,
+  onDeleteOrganization,
 }) {
   return (
     <aside className="gg-sectors">
       {selectedSystem && (
-        <SystemCard system={selectedSystem} onClose={onDeselectSystem} onUpdate={onUpdateSystem} />
+        <SystemCard system={selectedSystem} actors={actors} onClose={onDeselectSystem} onUpdate={onUpdateSystem} />
       )}
 
       <h3>Sectors</h3>
@@ -115,11 +132,82 @@ export default function SectorList({
       {selectedFaction && (
         <FactionCard faction={selectedFaction} onUpdate={onUpdateFaction} onClose={onDeselectFaction} />
       )}
+
+      <h3 style={{ marginTop: 18 }}>Actors</h3>
+
+      <NewActorForm factions={factions} organizations={organizations} systems={systems} onCreate={onCreateActor} />
+
+      {actors.length === 0 && (
+        <p className="muted small">
+          None yet. Notable people/groups — a governor, a pirate captain, a
+          corporation's local rep — give future events something specific
+          to point at besides "a faction."
+        </p>
+      )}
+
+      <ul className="gg-sector-list">
+        {actors.map((a) => (
+          <li key={a.id} className={a.id === selectedActorId ? "active" : ""}>
+            <button className="gg-sector-select" onClick={() => onSelectActor(a.id)} title={a.role}>
+              {a.name}
+            </button>
+            <button className="gg-danger" onClick={() => onDeleteActor(a.id)} title="Delete actor">
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {selectedActor && (
+        <ActorCard
+          actor={selectedActor}
+          factions={factions}
+          organizations={organizations}
+          systems={systems}
+          onUpdate={onUpdateActor}
+          onClose={onDeselectActor}
+        />
+      )}
+
+      <h3 style={{ marginTop: 18 }}>Organizations</h3>
+
+      <NewOrgForm factions={factions} sectors={sectors} systems={systems} onCreate={onCreateOrganization} />
+
+      {organizations.length === 0 && (
+        <p className="muted small">
+          None yet. Local parties, guilds, or movements that don't hold
+          territory — affiliate an actor to one from their card above.
+        </p>
+      )}
+
+      <ul className="gg-sector-list">
+        {organizations.map((o) => (
+          <li key={o.id} className={o.id === selectedOrgId ? "active" : ""}>
+            <button className="gg-sector-select" onClick={() => onSelectOrg(o.id)} title={o.ideology}>
+              {o.name}
+            </button>
+            <button className="gg-danger" onClick={() => onDeleteOrganization(o.id)} title="Delete organization">
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {selectedOrg && (
+        <OrgCard
+          org={selectedOrg}
+          actors={actors}
+          factions={factions}
+          onUpdate={onUpdateOrganization}
+          onClose={onDeselectOrg}
+        />
+      )}
     </aside>
   );
 }
 
-function SystemCard({ system, onClose, onUpdate }) {
+function SystemCard({ system, actors, onClose, onUpdate }) {
+  const localActors = actors.filter((a) => a.location === system.slug);
   return (
     <div className="gg-new-form">
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -187,6 +275,11 @@ function SystemCard({ system, onClose, onUpdate }) {
       <p className="small muted">
         Hyperlanes: {system.hyperlanes.length > 0 ? system.hyperlanes.join(", ") : "none yet"}
       </p>
+      {localActors.length > 0 && (
+        <p className="small muted">
+          Actors here: {localActors.map((a) => a.name).join(", ")}
+        </p>
+      )}
       {system.note && <p className="small muted">{system.note}</p>}
     </div>
   );
@@ -315,6 +408,274 @@ function PendingFactionForm({ pendingFactionSeed, onCommit, onCancel }) {
         </button>
         <button className="gg-danger" onClick={onCancel}>Cancel</button>
       </div>
+    </div>
+  );
+}
+
+// `party:<slug>` is added onto the faction-only affiliation options every
+// actor/organization-editing form shares (Docs/10-galaxy-mapgen.md §6.2 —
+// `affiliation` is a typed slug reference, `faction:` or `party:`).
+function affiliationOptions(factions, organizations) {
+  return [
+    { value: "", label: "Unaffiliated" },
+    ...factions.map((f) => ({ value: `faction:${f.slug}`, label: `Faction: ${f.name}` })),
+    ...organizations.map((o) => ({ value: `party:${o.slug}`, label: `Organization: ${o.name}` })),
+  ];
+}
+
+function NewActorForm({ factions, organizations, systems, onCreate }) {
+  const [show, setShow] = useState(false);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState("individual");
+  const [role, setRole] = useState("");
+  const [location, setLocation] = useState("");
+  const [affiliation, setAffiliation] = useState("");
+  const [mobile, setMobile] = useState(false);
+  const [influence, setInfluence] = useState(0.2);
+
+  if (!show) {
+    return (
+      <button style={{ width: "100%", marginBottom: 8 }} onClick={() => setShow(true)}>
+        + New Actor
+      </button>
+    );
+  }
+
+  return (
+    <div className="gg-new-form">
+      <label className="small muted">Name</label>
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Governor Yeselle Tarn" autoFocus />
+      <label className="small muted">Kind</label>
+      <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        <option value="individual">Individual</option>
+        <option value="group">Group</option>
+      </select>
+      <label className="small muted">Role (flavor tag)</label>
+      <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. garrison-captain" />
+      <label className="small muted">Location (system)</label>
+      <select value={location} onChange={(e) => setLocation(e.target.value)}>
+        <option value="">Unplaced</option>
+        {systems.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Affiliation</label>
+      <select value={affiliation} onChange={(e) => setAffiliation(e.target.value)}>
+        {affiliationOptions(factions, organizations).map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <label className="gg-checkbox">
+        <input type="checkbox" checked={mobile} onChange={(e) => setMobile(e.target.checked)} />
+        Mobile (location is last-known, not fixed)
+      </label>
+      <label className="small muted">Influence ({influence.toFixed(2)})</label>
+      <input type="range" min="0" max="1" step="0.05" value={influence} onChange={(e) => setInfluence(Number(e.target.value))} />
+      <div className="gg-tool-row">
+        <button
+          disabled={!name.trim()}
+          onClick={() => {
+            onCreate({
+              name: name.trim(),
+              kind,
+              role: role.trim() || "unspecified",
+              location: location || null,
+              affiliation: affiliation || null,
+              mobile,
+              influence,
+            });
+            setName("");
+            setRole("");
+            setLocation("");
+            setAffiliation("");
+            setMobile(false);
+            setInfluence(0.2);
+            setShow(false);
+          }}
+        >
+          Create actor
+        </button>
+        <button className="gg-danger" onClick={() => setShow(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function ActorCard({ actor, factions, organizations, systems, onUpdate, onClose }) {
+  const locationSystem = systems.find((s) => s.slug === actor.location);
+  return (
+    <div className="gg-new-form">
+      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <input
+          value={actor.name}
+          onChange={(e) => onUpdate(actor.id, { name: e.target.value })}
+          style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
+        />
+        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+      </div>
+      <p className="small muted">
+        {actor.kind} · {actor.role}{actor.origin === "generated" ? " · background" : ""}
+      </p>
+      <label className="small muted">Location</label>
+      <select value={actor.location || ""} onChange={(e) => onUpdate(actor.id, { location: e.target.value || null })}>
+        <option value="">Unplaced</option>
+        {systems.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      {actor.location && !locationSystem && (
+        <p className="small muted">Last known location "{actor.location}" no longer exists.</p>
+      )}
+      <label className="gg-checkbox">
+        <input
+          type="checkbox"
+          checked={!!actor.mobile}
+          onChange={(e) => onUpdate(actor.id, { mobile: e.target.checked })}
+        />
+        Mobile (location is last-known, not fixed)
+      </label>
+      <label className="small muted">Affiliation</label>
+      <select
+        value={actor.affiliation || ""}
+        onChange={(e) => onUpdate(actor.id, { affiliation: e.target.value || null })}
+      >
+        {affiliationOptions(factions, organizations).map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <label className="small muted">Influence ({actor.influence.toFixed(2)})</label>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={actor.influence}
+        onChange={(e) => onUpdate(actor.id, { influence: Number(e.target.value) })}
+      />
+      <label className="small muted">Status</label>
+      <select value={actor.status} onChange={(e) => onUpdate(actor.id, { status: e.target.value })}>
+        <option value="active">Active</option>
+        <option value="deceased">Deceased</option>
+        <option value="disbanded">Disbanded</option>
+        <option value="unknown">Unknown</option>
+      </select>
+    </div>
+  );
+}
+
+function NewOrgForm({ factions, sectors, systems, onCreate }) {
+  const [show, setShow] = useState(false);
+  const [name, setName] = useState("");
+  const [ideology, setIdeology] = useState("");
+  const [parentFaction, setParentFaction] = useState("dominion");
+  const [homeSystem, setHomeSystem] = useState("");
+  const [homeSector, setHomeSector] = useState("");
+  const [localInfluence, setLocalInfluence] = useState(0.2);
+
+  if (!show) {
+    return (
+      <button style={{ width: "100%", marginBottom: 8 }} onClick={() => setShow(true)}>
+        + New Organization
+      </button>
+    );
+  }
+
+  return (
+    <div className="gg-new-form">
+      <label className="small muted">Name</label>
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Vernak Libertarian Party" autoFocus />
+      <label className="small muted">Ideology (flavor tag)</label>
+      <input value={ideology} onChange={(e) => setIdeology(e.target.value)} placeholder="e.g. libertarian" />
+      <label className="small muted">Parent faction (whose sphere it operates within)</label>
+      <select value={parentFaction} onChange={(e) => setParentFaction(e.target.value)}>
+        <option value="dominion">Dominion</option>
+        {factions.map((f) => (
+          <option key={f.id} value={f.slug}>{f.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Home system (optional)</label>
+      <select value={homeSystem} onChange={(e) => setHomeSystem(e.target.value)}>
+        <option value="">None</option>
+        {systems.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Home sector (optional — a sector-wide movement)</label>
+      <select value={homeSector} onChange={(e) => setHomeSector(e.target.value)}>
+        <option value="">None</option>
+        {sectors.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Local influence ({localInfluence.toFixed(2)})</label>
+      <input type="range" min="0" max="1" step="0.05" value={localInfluence} onChange={(e) => setLocalInfluence(Number(e.target.value))} />
+      <div className="gg-tool-row">
+        <button
+          disabled={!name.trim()}
+          onClick={() => {
+            onCreate({
+              name: name.trim(),
+              ideology: ideology.trim() || "unspecified",
+              parentFaction,
+              homeSystem: homeSystem || null,
+              homeSector: homeSector || null,
+              localInfluence,
+            });
+            setName("");
+            setIdeology("");
+            setParentFaction("dominion");
+            setHomeSystem("");
+            setHomeSector("");
+            setLocalInfluence(0.2);
+            setShow(false);
+          }}
+        >
+          Create organization
+        </button>
+        <button className="gg-danger" onClick={() => setShow(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function OrgCard({ org, actors, factions, onUpdate, onClose }) {
+  const members = actors.filter((a) => a.affiliation === `party:${org.slug}`);
+  return (
+    <div className="gg-new-form">
+      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <input
+          value={org.name}
+          onChange={(e) => onUpdate(org.id, { name: e.target.value })}
+          style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
+        />
+        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+      </div>
+      <p className="small muted">{org.ideology}</p>
+      <label className="small muted">Parent faction</label>
+      <select value={org.parentFaction} onChange={(e) => onUpdate(org.id, { parentFaction: e.target.value })}>
+        <option value="dominion">Dominion</option>
+        {factions.map((f) => (
+          <option key={f.id} value={f.slug}>{f.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Local influence ({org.localInfluence.toFixed(2)})</label>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={org.localInfluence}
+        onChange={(e) => onUpdate(org.id, { localInfluence: Number(e.target.value) })}
+      />
+      <p className="small muted">
+        Home: {org.homeSystem || org.homeSector || "galaxy-spanning (no fixed base)"}
+      </p>
+      <p className="small muted">
+        Members:{" "}
+        {members.length > 0
+          ? members.map((a) => a.name).join(", ")
+          : "none yet — set an actor's affiliation to this organization"}
+      </p>
     </div>
   );
 }
