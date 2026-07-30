@@ -9,7 +9,12 @@ const MAX_SCALE = 8;
 const SNAP_PX = 12; // screen-space snap radius, so it stays easy to hit at any zoom
 const SYSTEM_HIT_PX = 8; // screen-space click radius for selecting a system
 const FACTION_HIT_PX = 9; // screen-space click radius for selecting a faction seed
-const SYSTEM_LABEL_MIN_SCALE = 0.45; // below this zoom, only selected/important systems show a label
+// A system's label needs the view zoomed to LABEL_ZOOM_MULTIPLIER times the
+// initial fit-to-bounds scale before it reveals, scaled down toward 0 by
+// importance (so a 1.0 landmark always shows). Anchored to the fit scale
+// rather than a fixed number so it isn't crowded at the default view
+// regardless of galaxy size/bounds/canvas dimensions.
+const LABEL_ZOOM_MULTIPLIER = 2.5;
 const FACTION_SEED_SNAP_PX = 12; // screen-space radius for snapping a new faction seed onto an existing system
 
 export default function GalaxyCanvas({
@@ -40,6 +45,7 @@ export default function GalaxyCanvas({
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const [view, setView] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
+  const [fitScale, setFitScale] = useState(1); // the zoom-to-fit scale, so label thresholds scale with it rather than a fixed number
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [cursor, setCursor] = useState(null); // {sx, sy} screen coords
   const [snapPreview, setSnapPreview] = useState(null); // { world: [x,y], isCloseVertex }
@@ -56,6 +62,7 @@ export default function GalaxyCanvas({
     const offsetX = (w - project.bounds.width * scale) / 2;
     const offsetY = (h - project.bounds.height * scale) / 2;
     setView({ scale, offsetX, offsetY });
+    setFitScale(scale);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.bounds.width, project.bounds.height, size.w, size.h]);
 
@@ -252,10 +259,25 @@ export default function GalaxyCanvas({
     for (const system of project.systems) {
       const [sx, sy] = worldToScreen(system.position.x, system.position.y);
       const selected = system.id === selectedSystemId;
-      const baseRadius = selected ? 5 : system.important ? 4 : 3;
+      const importance = Math.max(0, Math.min(1, Number(system.important) || 0));
+      const baseRadius = selected ? 4 : 1.5 + importance;
+
+      // Higher importance lowers the zoom level needed to reveal a label —
+      // a 1.0 landmark always shows (required scale 0), an unremarkable
+      // 0.0 system needs several times the initial fit-to-bounds zoom, and
+      // everything in between graduates smoothly, so the map isn't
+      // crowded with every generated name until the GM actually zooms in.
+      const requiredScale = fitScale * LABEL_ZOOM_MULTIPLIER * (1 - importance);
+      const showLabel = selected || view.scale >= requiredScale;
+
+      // Dim the dot itself once its label is showing (unless selected —
+      // that already has its own ring) so the name reads cleanly instead
+      // of competing with a bright dot sitting right under it.
+      const dotRgb = system.stationOnly ? "138,151,163" : "242,230,179";
+      const dotAlpha = showLabel && !selected ? 0.5 : 1;
       ctx.beginPath();
       ctx.arc(sx, sy, baseRadius, 0, Math.PI * 2);
-      ctx.fillStyle = system.stationOnly ? "#8a97a3" : "#f2e6b3";
+      ctx.fillStyle = `rgba(${dotRgb},${dotAlpha})`;
       ctx.fill();
       if (selected) {
         ctx.strokeStyle = "#6db3f2";
@@ -266,17 +288,14 @@ export default function GalaxyCanvas({
       // the map, not just in the inspector.
       if (system.control && !system.control.owner && system.control.contestedBy?.length > 0) {
         ctx.beginPath();
-        ctx.arc(sx, sy, baseRadius + 3, 0, Math.PI * 2);
+        ctx.arc(sx, sy, baseRadius + 2.5, 0, Math.PI * 2);
         ctx.strokeStyle = "#f2b537";
         ctx.lineWidth = 1.2;
         ctx.setLineDash([2, 2]);
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      // Important systems always show their label regardless of zoom, so
-      // the map isn't crowded with every generated name until the GM
-      // actually zooms in to see the full picture.
-      if (selected || system.important || view.scale >= SYSTEM_LABEL_MIN_SCALE) {
+      if (showLabel) {
         ctx.fillStyle = "#e6e9ec";
         ctx.font = "11px system-ui, sans-serif";
         ctx.textAlign = "center";
@@ -432,7 +451,7 @@ export default function GalaxyCanvas({
       ctx.stroke();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, view, size, activeField, showSectors, showFactions, showFieldOverlay, selectedSectorId, selectedSystemId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, cursor, snapPreview, factionSystemSnap, tool, brush.radius]);
+  }, [project, view, fitScale, size, activeField, showSectors, showFactions, showFieldOverlay, selectedSectorId, selectedSystemId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, cursor, snapPreview, factionSystemSnap, tool, brush.radius]);
 
   // --- Interaction ---
   const handleWheel = (e) => {

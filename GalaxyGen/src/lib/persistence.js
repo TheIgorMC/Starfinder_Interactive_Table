@@ -79,7 +79,7 @@ function systemToEntry(system) {
       security: { dominion: system.security.dominion, faction: system.security.faction ?? null },
       hyperlanes: system.hyperlanes,
       war_chance: system.warChance,
-      important: !!system.important,
+      important: Math.max(0, Math.min(1, Number(system.important) || 0)),
       bodies: [],
       ...(system.note ? { note: system.note } : {}),
     },

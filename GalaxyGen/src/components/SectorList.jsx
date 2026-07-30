@@ -125,7 +125,7 @@ function SystemCard({ system, onClose, onUpdate }) {
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <input
           value={system.name}
-          onChange={(e) => onUpdate(system.id, { name: e.target.value })}
+          onChange={(e) => onUpdate(system.id, { name: e.target.value, locked: true })}
           style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
           title="Rename this system — handy for hand-curating a specific system rather than leaving it procedurally named"
         />
@@ -134,11 +134,30 @@ function SystemCard({ system, onClose, onUpdate }) {
       <label className="gg-checkbox">
         <input
           type="checkbox"
-          checked={!!system.important}
-          onChange={(e) => onUpdate(system.id, { important: e.target.checked })}
+          checked={!!system.locked}
+          onChange={(e) => onUpdate(system.id, { locked: e.target.checked })}
         />
-        Important (always show its label on the map)
+        Locked (survives "Generate systems" — position, name, everything
+        stays put; new systems just fill in around it)
       </label>
+      <label className="small muted">
+        Importance ({(Number(system.important) || 0).toFixed(2)}) — higher
+        shows its label at a lower zoom; 1.00 always shows it
+      </label>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={Number(system.important) || 0}
+        onChange={(e) => onUpdate(system.id, { important: Number(e.target.value), locked: true })}
+      />
+      <button
+        style={{ width: "100%", marginBottom: 8 }}
+        onClick={() => onUpdate(system.id, { important: 1, locked: true })}
+      >
+        Mark as landmark (1.00)
+      </button>
       <p className="small muted">
         {system.starType} · {system.population}
         {system.stationOnly ? " · station/outpost, no colony" : ""}

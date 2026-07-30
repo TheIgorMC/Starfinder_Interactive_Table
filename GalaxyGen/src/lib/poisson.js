@@ -5,7 +5,11 @@ import { pointInPolygon } from "./geometry.js";
 // the local minimum spacing in world units — Docs/10-galaxy-mapgen.md §3
 // stage 4: "denser field = smaller minimum spacing, so cluster/void shape
 // follows the paint without manual placement."
-export function poissonDiscInPolygon({ polygon, bounds, radiusAt, rng, maxAttempts = 30 }) {
+// `existingPoints` (world [x,y] pairs, e.g. locked systems already placed
+// in this sector) seed the spacing grid as obstacles new points must
+// respect, but are never themselves included in the returned points —
+// callers already have the real objects for those.
+export function poissonDiscInPolygon({ polygon, bounds, radiusAt, rng, maxAttempts = 30, existingPoints = [] }) {
   const xs = polygon.map((p) => p[0]);
   const ys = polygon.map((p) => p[1]);
   const minX = Math.max(0, Math.min(...xs));
@@ -57,7 +61,14 @@ export function poissonDiscInPolygon({ polygon, bounds, radiusAt, rng, maxAttemp
     active.push(idx);
   }
 
-  let seeded = false;
+  for (const [ex, ey] of existingPoints) {
+    if (ex < minX || ex > maxX || ey < minY || ey > maxY) continue;
+    if (!pointInPolygon(ex, ey, polygon)) continue;
+    addPoint(ex, ey, radiusAt(ex, ey));
+  }
+  const existingCount = points.length;
+
+  let seeded = existingCount > 0;
   for (let i = 0; i < 60 && !seeded; i++) {
     const x = minX + rng() * (maxX - minX);
     const y = minY + rng() * (maxY - minY);
@@ -89,7 +100,7 @@ export function poissonDiscInPolygon({ polygon, bounds, radiusAt, rng, maxAttemp
     if (!found) active.splice(activeSlot, 1);
   }
 
-  return points;
+  return points.slice(existingCount);
 }
 
 function estimateMinRadius(radiusAt, minX, minY, maxX, maxY, samples = 25) {

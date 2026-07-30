@@ -83,11 +83,30 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   than just "closest/strongest seed wins the point" (§4). Un-anchored
   automatically if its home system is ever removed (sector deletion or a
   full system regen)
-- Systems carry an `important` flag (checkbox in the inspector): important
-  systems always show their name label on the map regardless of zoom,
-  where ordinary systems only reveal a label once zoomed in far enough —
-  keeps a big galaxy from turning into a wall of overlapping names while
-  still letting a GM flag the handful of places that matter
+- Systems carry an `important` value (0–1, slider in the inspector, "Mark
+  as landmark" sets it straight to 1.0): the zoom level needed to reveal a
+  system's name label scales down with importance, so a 1.0 landmark
+  always shows its label, a 0.0 system needs several times the initial
+  zoom-to-fit view before it appears, and everything between graduates
+  smoothly — keeps a big galaxy from turning into a wall of overlapping
+  names at the default view while still giving higher-importance systems
+  priority as you zoom in. The threshold scales off the actual fit-to-
+  bounds zoom rather than a fixed number, so it holds regardless of galaxy
+  size or window size. System dots are small to begin with, and dim
+  further once their label is showing (unless selected) so the name reads
+  cleanly instead of competing with a bright dot underneath it. System
+  generation also rolls a realistic importance
+  value per system automatically (mostly low, occasional standouts, biased
+  up slightly by population band), with a spatial pass that dampens a
+  system's roll near an already-important neighbor so landmarks don't
+  cluster next to each other
+- Systems can be **locked** (checkbox in the inspector — renaming or
+  tuning importance sets it automatically): a locked system's position,
+  name, and every other field survive a future "Generate systems" regen
+  untouched, and any hyperlane or faction anchor pointing at it survives
+  too, since its id/slug never change. Regeneration only replaces unlocked
+  systems and places new ones in the gaps around locked ones — hand
+  curation is no longer wiped out by every regen
 
 Not yet built: actors, organizations, events, broadcasts, the AI
 interface, planet/surface generation — see §13 for the full phase
@@ -100,12 +119,13 @@ breakdown.
 - Galaxy bounds (width/height) are only set when starting a new project,
   not editable live against existing painted data (avoids distorting
   already-painted grids).
-- "Generate systems" replaces every system in the project each time (with
-  a confirmation), and clears any existing hyperlane graph since it would
-  reference stale positions — no per-system lock/pin yet to protect
-  curated systems across a regen (planned per §3 stage 4, not built yet).
-  Any previously-resolved faction control/security/war-chance on those
-  systems is gone too until you click Generate factions again.
+- "Generate systems" replaces every *unlocked* system each time (confirms
+  first if any unlocked ones exist) and prunes any hyperlane/faction
+  anchor that pointed at one of them, since their id/slug are gone. Locked
+  systems, and anything referencing them, survive untouched. Freshly
+  regenerated (unlocked) systems still lose whatever `control`/`security.
+  faction`/`war_chance` they had — click Generate factions again to
+  re-resolve those for the new arrivals.
 - "Generate hyperlanes" likewise replaces the whole graph each time (with
   a confirmation) — no manual add/remove override of individual edges yet
   (planned per the design doc's tool palette, not built yet).
@@ -133,11 +153,14 @@ breakdown.
 - No `tolerated_crimes` or `relationships` editing UI yet — both exist on
   the data shape (and export) but are always empty until hand-edited in a
   saved project file or a future UI pass.
-- Renaming a system is not the same as hand-placing one — there's still no
-  tool to drop a brand-new system at an arbitrary point or lock it against
-  a future "Generate systems" regen (§3 stage 4's "GM can hand-place/lock
-  individual systems" isn't built yet). Renaming just lets a GM claim an
-  already-generated system as a specific named place.
+- Locking protects an *existing* generated system, but there's still no
+  tool to drop a brand-new system at an arbitrary point by hand (§3 stage
+  4's "GM can hand-place" half isn't built, only the "lock" half is).
+  Renaming/tuning/locking just lets a GM claim an already-generated system
+  as a specific curated place.
+- Deleting a sector still removes every system inside it, locked or not —
+  locking only protects against a *systems regen*, not a sector deletion,
+  since there'd be no sector left for it to belong to.
 - Nothing stops two different factions from anchoring to the same system;
   if it happens, whichever faction comes later in the list wins that
   system outright the next time you generate. Anchoring also can't be
@@ -196,13 +219,17 @@ can lay out the shape first and only decide the name/focus once it's done:
    (unpainted, population 0) vs. densest (fully painted, population 1)
    points. Painting the Population field (Brush tool) before generating is
    what actually shapes where systems cluster.
-3. Click **Generate systems**. This replaces every system currently in the
-   project (confirms first if any exist), so regenerate as many times as
-   you like while still tuning the fields/spacing.
+3. Click **Generate systems**. This replaces every *unlocked* system
+   currently in the project (confirms first if any unlocked ones exist),
+   so regenerate as many times as you like while still tuning the
+   fields/spacing — anything you've locked stays exactly where it is.
 4. Switch to the Select tool and click a system to see its rolled details
    (star type, population band, export/import goods — biased by its
-   sector's focus) in the sidebar. The name field there is editable —
-   handy for claiming a specific generated system as a named place.
+   sector's focus) in the sidebar. The name field there is editable, and
+   editing it (or the importance slider) automatically **locks** that
+   system — it and anything referencing it (hyperlanes, faction anchors)
+   will survive the next regen untouched. Toggle **Locked** directly to
+   lock/unlock without changing anything else.
 
 **Generating hyperlanes**
 1. Generate systems first — hyperlanes connect existing systems, so there's
@@ -246,11 +273,17 @@ can lay out the shape first and only decide the name/focus once it's done:
    nothing recomputes live as you drag a slider.
 
 **Marking important systems**
-- Select any system and check **Important** in the inspector. Important
-  systems always show their name on the map no matter the zoom level;
-  ordinary systems only reveal their label once you zoom in past a
-  threshold, so a large galaxy doesn't turn into a wall of overlapping
-  text until you actually want to see everything.
+- Every system rolls a realistic importance value automatically at
+  generation time (mostly low, rare standouts, nearby systems dampened so
+  landmarks don't cluster). Select any system to see/adjust its
+  **Importance** slider (0–1) in the inspector, or click **Mark as
+  landmark** to set it straight to 1.0 — either one locks the system too.
+- The zoom level needed to reveal a system's name scales down with its
+  importance, relative to the view's initial zoom-to-fit level: a 1.0
+  landmark always shows its label; a 0.0 system needs several times the
+  initial zoom before it appears; everything between graduates smoothly.
+  Keeps a large galaxy from turning into a wall of overlapping text at the
+  default view while still surfacing what matters first as you zoom in.
 
 **Saving your work**
 - Everything autosaves to the browser's local storage as you go (per

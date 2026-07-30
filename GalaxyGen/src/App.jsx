@@ -162,22 +162,28 @@ export default function App() {
   );
 
   const handleGenerateSystems = useCallback(() => {
-    if (project.systems.length > 0 && !window.confirm("Regenerate systems? This replaces every system currently placed and un-anchors any faction seeded directly in one of them.")) {
+    const hasUnlocked = project.systems.some((s) => !s.locked);
+    if (hasUnlocked && !window.confirm("Regenerate systems? This replaces every unlocked system — locked ones (renamed/hand-tuned) stay exactly as they are, new ones just fill in the gaps around them.")) {
       return;
     }
-    // Positions are about to change, so any existing hyperlane graph would
-    // reference stale coordinates — clear it, re-roll via its own button.
-    // Factions anchored to a system (homeSystem) lose that anchor too since
-    // the system it pointed at no longer exists; their seed position and
-    // stats are untouched, they just compete normally again.
-    setProject((p) => ({
-      ...p,
-      systems: generateSystems(p, spacing),
-      hyperlanes: [],
-      factions: p.factions.map((f) => (f.homeSystem ? { ...f, homeSystem: null } : f)),
-    }));
+    // Locked systems keep their id/slug/position, so hyperlanes and faction
+    // anchors pointing at them are still valid after this — only ones tied
+    // to a swept-away unlocked system need clearing.
+    setProject((p) => {
+      const systems = generateSystems(p, spacing);
+      const keptIds = new Set(systems.map((s) => s.id));
+      const keptSlugs = new Set(systems.map((s) => s.slug));
+      return {
+        ...p,
+        systems,
+        hyperlanes: p.hyperlanes.filter((e) => keptIds.has(e.a) && keptIds.has(e.b)),
+        factions: p.factions.map((f) =>
+          f.homeSystem && !keptSlugs.has(f.homeSystem) ? { ...f, homeSystem: null } : f,
+        ),
+      };
+    });
     setSelectedSystemId(null);
-  }, [project.systems.length, spacing]);
+  }, [project.systems, spacing]);
 
   const handleGenerateHyperlanes = useCallback(() => {
     if (project.systems.length < 2) return;
