@@ -1,5 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SECTOR_FOCI } from "../lib/project.js";
+
+const TABS = [
+  { key: "sectors", label: "Sectors" },
+  { key: "factions", label: "Factions" },
+  { key: "actors", label: "Actors" },
+  { key: "organizations", label: "Organizations" },
+];
 
 export default function SectorList({
   sectors,
@@ -44,163 +51,242 @@ export default function SectorList({
   onUpdateOrganization,
   onDeleteOrganization,
 }) {
+  const [activeTab, setActiveTab] = useState("sectors");
+  const [showBackgroundActors, setShowBackgroundActors] = useState(false);
+  // Curated (`authored`) actors are the GM's hand-placed content and always
+  // shown; background (`generated`) ones are bulk/cheap per §6.1 and stay
+  // collapsed by default so they don't bury the curated list.
+  const curatedActors = actors.filter((a) => a.origin !== "generated");
+  const backgroundActors = actors.filter((a) => a.origin === "generated");
+
+  // A selection or in-progress placement made on the canvas should jump the
+  // sidebar to the tab that can actually show it, regardless of which tab
+  // happened to be open.
+  useEffect(() => {
+    if (selectedSectorId || (pendingPoints && pendingPoints.length > 0)) setActiveTab("sectors");
+  }, [selectedSectorId, pendingPoints]);
+  useEffect(() => {
+    if (selectedFactionId || pendingFactionSeed) setActiveTab("factions");
+  }, [selectedFactionId, pendingFactionSeed]);
+  useEffect(() => {
+    if (selectedActorId) setActiveTab("actors");
+  }, [selectedActorId]);
+  useEffect(() => {
+    if (selectedOrgId) setActiveTab("organizations");
+  }, [selectedOrgId]);
+
   return (
     <aside className="gg-sectors">
       {selectedSystem && (
         <SystemCard system={selectedSystem} actors={actors} onClose={onDeselectSystem} onUpdate={onUpdateSystem} />
       )}
 
-      <h3>Sectors</h3>
-
-      {pendingPoints && pendingPoints.length > 0 && (
-        <PendingSectorForm
-          pointCount={pendingPoints.length}
-          closed={pendingClosed}
-          onClose={onClosePending}
-          onReopen={onReopenPending}
-          onCommit={onCommitPending}
-          onCancel={onCancelPending}
-        />
-      )}
-
-      {sectors.length === 0 && !pendingPoints && (
-        <p className="muted small">
-          None yet. Switch to the Sector tool and draw a boundary — most of
-          the galaxy stays unclaimed until you mark it colonized.
-        </p>
-      )}
-
-      <ul className="gg-sector-list">
-        {sectors.map((s) => (
-          <li key={s.id} className={s.id === selectedSectorId ? "active" : ""}>
-            <button className="gg-sector-select" onClick={() => onSelect(s.id)}>
-              {s.name}
-            </button>
-            <select value={s.focus} onChange={(e) => onFocusChange(s.id, e.target.value)}>
-              {SECTOR_FOCI.map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
-            <button className="gg-danger" onClick={() => onDelete(s.id)} title="Delete sector">
-              ×
-            </button>
-          </li>
+      <div className="gg-tab-row">
+        {TABS.map((t) => (
+          <button key={t.key} className={activeTab === t.key ? "active" : ""} onClick={() => setActiveTab(t.key)}>
+            {t.label}
+          </button>
         ))}
-      </ul>
+      </div>
 
-      <h3 style={{ marginTop: 18 }}>Factions</h3>
+      {activeTab === "sectors" && (
+        <>
+          <h3>Sectors</h3>
 
-      {pendingFactionSeed && (
-        <PendingFactionForm
-          pendingFactionSeed={pendingFactionSeed}
-          onCommit={onCommitFaction}
-          onCancel={onCancelFactionSeed}
-        />
-      )}
-
-      {factions.length === 0 && !pendingFactionSeed && (
-        <p className="muted small">
-          None yet. Switch to the Faction tool and click to drop a control
-          seed for a major power — small border factions fill the gaps
-          automatically when you generate.
-        </p>
-      )}
-
-      <ul className="gg-sector-list">
-        {factions.map((f) => (
-          <li key={f.id} className={f.id === selectedFactionId ? "active" : ""}>
-            <span
-              style={{
-                display: "inline-block",
-                width: 12,
-                height: 12,
-                borderRadius: 3,
-                background: f.color,
-                flex: "0 0 auto",
-              }}
+          {pendingPoints && pendingPoints.length > 0 && (
+            <PendingSectorForm
+              pointCount={pendingPoints.length}
+              closed={pendingClosed}
+              onClose={onClosePending}
+              onReopen={onReopenPending}
+              onCommit={onCommitPending}
+              onCancel={onCancelPending}
             />
-            <button className="gg-sector-select" onClick={() => onSelectFaction(f.id)} title={f.government}>
-              {f.name}{f.origin === "generated" ? " (auto)" : ""}
-            </button>
-            <button className="gg-danger" onClick={() => onDeleteFaction(f.id)} title="Delete faction">
-              ×
-            </button>
-          </li>
-        ))}
-      </ul>
+          )}
 
-      {selectedFaction && (
-        <FactionCard faction={selectedFaction} onUpdate={onUpdateFaction} onClose={onDeselectFaction} />
+          {sectors.length === 0 && !pendingPoints && (
+            <p className="muted small">
+              None yet. Switch to the Sector tool and draw a boundary — most
+              of the galaxy stays unclaimed until you mark it colonized.
+            </p>
+          )}
+
+          <ul className="gg-sector-list">
+            {sectors.map((s) => (
+              <li key={s.id} className={s.id === selectedSectorId ? "active" : ""}>
+                <button className="gg-sector-select" onClick={() => onSelect(s.id)}>
+                  {s.name}
+                </button>
+                <select value={s.focus} onChange={(e) => onFocusChange(s.id, e.target.value)}>
+                  {SECTOR_FOCI.map((f) => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+                <button className="gg-danger" onClick={() => onDelete(s.id)} title="Delete sector">
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
-      <h3 style={{ marginTop: 18 }}>Actors</h3>
+      {activeTab === "factions" && (
+        <>
+          <h3>Factions</h3>
 
-      <NewActorForm factions={factions} organizations={organizations} systems={systems} onCreate={onCreateActor} />
+          {pendingFactionSeed && (
+            <PendingFactionForm
+              pendingFactionSeed={pendingFactionSeed}
+              onCommit={onCommitFaction}
+              onCancel={onCancelFactionSeed}
+            />
+          )}
 
-      {actors.length === 0 && (
-        <p className="muted small">
-          None yet. Notable people/groups — a governor, a pirate captain, a
-          corporation's local rep — give future events something specific
-          to point at besides "a faction."
-        </p>
+          {factions.length === 0 && !pendingFactionSeed && (
+            <p className="muted small">
+              None yet. Switch to the Faction tool and click to drop a
+              control seed for a major power — small border factions fill
+              the gaps automatically when you generate.
+            </p>
+          )}
+
+          <ul className="gg-sector-list">
+            {factions.map((f) => (
+              <li key={f.id} className={f.id === selectedFactionId ? "active" : ""}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 12,
+                    height: 12,
+                    borderRadius: 3,
+                    background: f.color,
+                    flex: "0 0 auto",
+                  }}
+                />
+                <button className="gg-sector-select" onClick={() => onSelectFaction(f.id)} title={f.government}>
+                  {f.name}{f.origin === "generated" ? " (auto)" : ""}
+                </button>
+                <button className="gg-danger" onClick={() => onDeleteFaction(f.id)} title="Delete faction">
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {selectedFaction && (
+            <FactionCard
+              faction={selectedFaction}
+              factions={factions}
+              onUpdate={onUpdateFaction}
+              onClose={onDeselectFaction}
+            />
+          )}
+        </>
       )}
 
-      <ul className="gg-sector-list">
-        {actors.map((a) => (
-          <li key={a.id} className={a.id === selectedActorId ? "active" : ""}>
-            <button className="gg-sector-select" onClick={() => onSelectActor(a.id)} title={a.role}>
-              {a.name}
-            </button>
-            <button className="gg-danger" onClick={() => onDeleteActor(a.id)} title="Delete actor">
-              ×
-            </button>
-          </li>
-        ))}
-      </ul>
+      {activeTab === "actors" && (
+        <>
+          <h3>Actors</h3>
 
-      {selectedActor && (
-        <ActorCard
-          actor={selectedActor}
-          factions={factions}
-          organizations={organizations}
-          systems={systems}
-          onUpdate={onUpdateActor}
-          onClose={onDeselectActor}
-        />
+          <NewActorForm factions={factions} organizations={organizations} systems={systems} onCreate={onCreateActor} />
+
+          {actors.length === 0 && (
+            <p className="muted small">
+              None yet. Notable people/groups — a governor, a pirate
+              captain, a corporation's local rep — give future events
+              something specific to point at besides "a faction."
+            </p>
+          )}
+
+          {curatedActors.length > 0 && <p className="muted small" style={{ marginBottom: 2 }}>Curated:</p>}
+          <ul className="gg-sector-list">
+            {curatedActors.map((a) => (
+              <li key={a.id} className={a.id === selectedActorId ? "active" : ""}>
+                <button className="gg-sector-select" onClick={() => onSelectActor(a.id)} title={a.role}>
+                  {a.name}
+                </button>
+                <button className="gg-danger" onClick={() => onDeleteActor(a.id)} title="Delete actor">
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {backgroundActors.length > 0 && (
+            <>
+              <button className="gg-link" onClick={() => setShowBackgroundActors((s) => !s)}>
+                {showBackgroundActors ? "Hide" : "Show"} {backgroundActors.length} background actor
+                {backgroundActors.length === 1 ? "" : "s"}
+              </button>
+              {showBackgroundActors && (
+                <ul className="gg-sector-list">
+                  {backgroundActors.map((a) => (
+                    <li key={a.id} className={a.id === selectedActorId ? "active" : ""}>
+                      <button className="gg-sector-select muted" onClick={() => onSelectActor(a.id)} title={a.role}>
+                        {a.name}
+                      </button>
+                      <button className="gg-danger" onClick={() => onDeleteActor(a.id)} title="Delete actor">
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {selectedActor && (
+            <ActorCard
+              actor={selectedActor}
+              factions={factions}
+              organizations={organizations}
+              systems={systems}
+              onUpdate={onUpdateActor}
+              onClose={onDeselectActor}
+            />
+          )}
+        </>
       )}
 
-      <h3 style={{ marginTop: 18 }}>Organizations</h3>
+      {activeTab === "organizations" && (
+        <>
+          <h3>Organizations</h3>
 
-      <NewOrgForm factions={factions} sectors={sectors} systems={systems} onCreate={onCreateOrganization} />
+          <NewOrgForm factions={factions} sectors={sectors} systems={systems} onCreate={onCreateOrganization} />
 
-      {organizations.length === 0 && (
-        <p className="muted small">
-          None yet. Local parties, guilds, or movements that don't hold
-          territory — affiliate an actor to one from their card above.
-        </p>
-      )}
+          {organizations.length === 0 && (
+            <p className="muted small">
+              None yet. Local parties, guilds, or movements that don't hold
+              territory — affiliate an actor to one from their card above.
+            </p>
+          )}
 
-      <ul className="gg-sector-list">
-        {organizations.map((o) => (
-          <li key={o.id} className={o.id === selectedOrgId ? "active" : ""}>
-            <button className="gg-sector-select" onClick={() => onSelectOrg(o.id)} title={o.ideology}>
-              {o.name}
-            </button>
-            <button className="gg-danger" onClick={() => onDeleteOrganization(o.id)} title="Delete organization">
-              ×
-            </button>
-          </li>
-        ))}
-      </ul>
+          <ul className="gg-sector-list">
+            {organizations.map((o) => (
+              <li key={o.id} className={o.id === selectedOrgId ? "active" : ""}>
+                <button className="gg-sector-select" onClick={() => onSelectOrg(o.id)} title={o.ideology}>
+                  {o.name}
+                </button>
+                <button className="gg-danger" onClick={() => onDeleteOrganization(o.id)} title="Delete organization">
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
 
-      {selectedOrg && (
-        <OrgCard
-          org={selectedOrg}
-          actors={actors}
-          factions={factions}
-          onUpdate={onUpdateOrganization}
-          onClose={onDeselectOrg}
-        />
+          {selectedOrg && (
+            <OrgCard
+              org={selectedOrg}
+              actors={actors}
+              factions={factions}
+              systems={systems}
+              sectors={sectors}
+              onUpdate={onUpdateOrganization}
+              onClose={onDeselectOrg}
+            />
+          )}
+        </>
       )}
     </aside>
   );
@@ -285,7 +371,12 @@ function SystemCard({ system, actors, onClose, onUpdate }) {
   );
 }
 
-function FactionCard({ faction, onUpdate, onClose }) {
+function FactionCard({ faction, factions, onUpdate, onClose }) {
+  const [newCrime, setNewCrime] = useState("");
+  const toleratedCrimes = faction.toleratedCrimes || [];
+  const relationships = faction.relationships || {};
+  const others = factions.filter((f) => f.id !== faction.id);
+
   return (
     <div className="gg-new-form">
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
@@ -296,9 +387,18 @@ function FactionCard({ faction, onUpdate, onClose }) {
         {faction.government}{faction.origin === "generated" ? " · auto-seeded border faction" : ""}
       </p>
       {faction.homeSystem && (
-        <p className="small muted">
-          Home system: {faction.homeSystem} (held outright, no external contest)
-        </p>
+        <>
+          <p className="small muted">
+            Home system: {faction.homeSystem} (held outright, no external contest)
+          </p>
+          <button
+            style={{ width: "100%", marginBottom: 8 }}
+            onClick={() => onUpdate(faction.id, { homeSystem: null })}
+            title="Un-anchor — the system goes back into the normal control contest next time you generate factions"
+          >
+            Un-anchor from home system
+          </button>
+        </>
       )}
       <label className="small muted">Aggression ({faction.aggression.toFixed(2)})</label>
       <input
@@ -322,6 +422,64 @@ function FactionCard({ faction, onUpdate, onClose }) {
         Changes here don't move existing borders until you click Generate
         factions again.
       </p>
+
+      <label className="small muted" style={{ marginTop: 8 }}>Tolerated crimes</label>
+      <div className="gg-tag-row">
+        {toleratedCrimes.map((crime) => (
+          <span key={crime} className="gg-tag">
+            {crime}
+            <button
+              onClick={() => onUpdate(faction.id, { toleratedCrimes: toleratedCrimes.filter((c) => c !== crime) })}
+              title="Remove"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {toleratedCrimes.length === 0 && <span className="muted small">None set.</span>}
+      </div>
+      <div className="gg-tool-row">
+        <input
+          value={newCrime}
+          onChange={(e) => setNewCrime(e.target.value)}
+          placeholder="e.g. smuggling"
+          style={{ flex: "1 1 auto" }}
+        />
+        <button
+          disabled={!newCrime.trim() || toleratedCrimes.includes(newCrime.trim())}
+          onClick={() => {
+            onUpdate(faction.id, { toleratedCrimes: [...toleratedCrimes, newCrime.trim()] });
+            setNewCrime("");
+          }}
+        >
+          Add
+        </button>
+      </div>
+
+      <label className="small muted" style={{ marginTop: 8 }}>
+        Relationships (§9 — fed into future war-chance/event resolution)
+      </label>
+      {others.length === 0 && <p className="muted small">No other factions yet.</p>}
+      {others.map((other) => {
+        const value = relationships[other.slug] ?? 0;
+        return (
+          <div key={other.id}>
+            <label className="small muted">
+              {other.name} ({value.toFixed(2)})
+            </label>
+            <input
+              type="range"
+              min="-1"
+              max="1"
+              step="0.05"
+              value={value}
+              onChange={(e) =>
+                onUpdate(faction.id, { relationships: { ...relationships, [other.slug]: Number(e.target.value) } })
+              }
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -559,6 +717,30 @@ function ActorCard({ actor, factions, organizations, systems, onUpdate, onClose 
         <option value="disbanded">Disbanded</option>
         <option value="unknown">Unknown</option>
       </select>
+
+      <label className="small muted" style={{ marginTop: 8 }}>
+        Reputation (per-faction standing — mirrors faction relationships)
+      </label>
+      {factions.length === 0 && <p className="muted small">No factions yet.</p>}
+      {factions.map((f) => {
+        const reputation = actor.reputation || {};
+        const value = reputation[f.slug] ?? 0;
+        return (
+          <div key={f.id}>
+            <label className="small muted">
+              {f.name} ({value.toFixed(2)})
+            </label>
+            <input
+              type="range"
+              min="-1"
+              max="1"
+              step="0.05"
+              value={value}
+              onChange={(e) => onUpdate(actor.id, { reputation: { ...reputation, [f.slug]: Number(e.target.value) } })}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -593,15 +775,27 @@ function NewOrgForm({ factions, sectors, systems, onCreate }) {
           <option key={f.id} value={f.slug}>{f.name}</option>
         ))}
       </select>
-      <label className="small muted">Home system (optional)</label>
-      <select value={homeSystem} onChange={(e) => setHomeSystem(e.target.value)}>
+      <label className="small muted">Home system (optional — one of system/sector/neither)</label>
+      <select
+        value={homeSystem}
+        onChange={(e) => {
+          setHomeSystem(e.target.value);
+          if (e.target.value) setHomeSector("");
+        }}
+      >
         <option value="">None</option>
         {systems.map((s) => (
           <option key={s.id} value={s.slug}>{s.name}</option>
         ))}
       </select>
       <label className="small muted">Home sector (optional — a sector-wide movement)</label>
-      <select value={homeSector} onChange={(e) => setHomeSector(e.target.value)}>
+      <select
+        value={homeSector}
+        onChange={(e) => {
+          setHomeSector(e.target.value);
+          if (e.target.value) setHomeSystem("");
+        }}
+      >
         <option value="">None</option>
         {sectors.map((s) => (
           <option key={s.id} value={s.slug}>{s.name}</option>
@@ -638,7 +832,7 @@ function NewOrgForm({ factions, sectors, systems, onCreate }) {
   );
 }
 
-function OrgCard({ org, actors, factions, onUpdate, onClose }) {
+function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose }) {
   const members = actors.filter((a) => a.affiliation === `party:${org.slug}`);
   return (
     <div className="gg-new-form">
@@ -667,9 +861,29 @@ function OrgCard({ org, actors, factions, onUpdate, onClose }) {
         value={org.localInfluence}
         onChange={(e) => onUpdate(org.id, { localInfluence: Number(e.target.value) })}
       />
-      <p className="small muted">
-        Home: {org.homeSystem || org.homeSector || "galaxy-spanning (no fixed base)"}
-      </p>
+      <label className="small muted">Home system (optional — one of system/sector/neither)</label>
+      <select
+        value={org.homeSystem || ""}
+        onChange={(e) => onUpdate(org.id, { homeSystem: e.target.value || null, homeSector: e.target.value ? null : org.homeSector })}
+      >
+        <option value="">None</option>
+        {systems.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Home sector (optional — a sector-wide movement)</label>
+      <select
+        value={org.homeSector || ""}
+        onChange={(e) => onUpdate(org.id, { homeSector: e.target.value || null, homeSystem: e.target.value ? null : org.homeSystem })}
+      >
+        <option value="">None</option>
+        {sectors.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      {!org.homeSystem && !org.homeSector && (
+        <p className="small muted">Galaxy-spanning — no fixed base.</p>
+      )}
       <p className="small muted">
         Members:{" "}
         {members.length > 0

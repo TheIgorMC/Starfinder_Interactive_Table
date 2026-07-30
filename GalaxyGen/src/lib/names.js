@@ -52,3 +52,29 @@ export function generateSystemName(rng, usedNames) {
   while (usedNames.has(`${name} ${n}`)) n++;
   return `${name} ${n}`;
 }
+
+const ACTOR_FIRST_NAMES = [
+  "Aria", "Doran", "Ilyra", "Marek", "Sonya", "Talis", "Yevra", "Corin",
+  "Nessa", "Bram", "Vashti", "Osric", "Tamsin", "Kael", "Lyris", "Endra",
+  "Pavo", "Sela", "Draven", "Mira", "Anselm", "Ysolde", "Rurik", "Cassia",
+];
+
+const ACTOR_LAST_NAMES = [
+  "Valeran", "Kresh", "Ombric", "Sarn", "Dellow", "Thessaly", "Norrick",
+  "Ashgrove", "Vantor", "Ilsen", "Corvane", "Mirelle", "Brakstone", "Yorric",
+  "Selwyn", "Draeg", "Palmerin", "Voss", "Herrick", "Amaris",
+];
+
+// Docs/10-galaxy-mapgen.md §6.1 — cheap procedural person-name for
+// background (`origin: "generated"`) actors; curated actors get a
+// GM-chosen name instead and never call this.
+export function generateActorName(rng, usedNames) {
+  for (let i = 0; i < 6; i++) {
+    const name = `${pick(rng, ACTOR_FIRST_NAMES)} ${pick(rng, ACTOR_LAST_NAMES)}`;
+    if (!usedNames.has(name)) return name;
+  }
+  let name = `${pick(rng, ACTOR_FIRST_NAMES)} ${pick(rng, ACTOR_LAST_NAMES)}`;
+  let n = 2;
+  while (usedNames.has(`${name} ${n}`)) n++;
+  return `${name} ${n}`;
+}

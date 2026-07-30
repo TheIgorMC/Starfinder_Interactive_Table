@@ -6,9 +6,10 @@ import { createDefaultProject, normalizeProject, FIELD_DEFS } from "./lib/projec
 import { GRID_SIZE, paintGrid } from "./lib/grid.js";
 import { pointInPolygon } from "./lib/geometry.js";
 import { slugify } from "./lib/slug.js";
-import { generateSystems } from "./lib/systemGen.js";
-import { generateHyperlanes } from "./lib/hyperlaneGen.js";
+import { generateSystems, placeSystemAt } from "./lib/systemGen.js";
+import { generateHyperlanes, buildEdge } from "./lib/hyperlaneGen.js";
 import { resolveFactions } from "./lib/factionGen.js";
+import { generateBackgroundActors } from "./lib/actorGen.js";
 import {
   loadFromStorage,
   saveToStorage,
@@ -43,8 +44,10 @@ export default function App() {
   const [hoverInfo, setHoverInfo] = useState(null);
   const [exportStatus, setExportStatus] = useState("");
   const [spacing, setSpacing] = useState({ min: 20, max: 70 });
-  const [showFactions, setShowFactions] = useState(true);
-  const [showFieldOverlay, setShowFieldOverlay] = useState(true);
+  // Both default off — a fresh view shows the plain map, not a wash of
+  // field/territory color; the GM opts into color layers deliberately.
+  const [showFactions, setShowFactions] = useState(false);
+  const [showFieldOverlay, setShowFieldOverlay] = useState(false);
 
   // Autosave (debounced) so a reload never loses work.
   useEffect(() => {
@@ -208,6 +211,54 @@ export default function App() {
     });
   }, [project.systems.length, project.hyperlanes.length]);
 
+  // §3 stage 4's other half — a single hand-placed system, rolled from
+  // whatever's painted at that exact point and locked immediately since
+  // placing it by hand is itself a curation decision.
+  const handlePlaceSystem = useCallback(
+    (wx, wy) => {
+      const system = placeSystemAt(project, wx, wy);
+      if (!system) return; // clicked outside every sector — nothing to place into
+      setProject((p) => ({ ...p, systems: [...p.systems, system] }));
+      setSelectedSystemId(system.id);
+    },
+    [project],
+  );
+
+  // Hyperlane tool: click two systems to toggle a direct edge between them,
+  // independent of a full "Generate hyperlanes" regen. Keeps both the
+  // inspectable `project.hyperlanes` edge list and each system's exported
+  // `hyperlanes` slug array in sync.
+  const handleToggleHyperlane = useCallback((systemIdA, systemIdB) => {
+    setProject((p) => {
+      const a = p.systems.find((s) => s.id === systemIdA);
+      const b = p.systems.find((s) => s.id === systemIdB);
+      if (!a || !b) return p;
+      const existingIdx = p.hyperlanes.findIndex(
+        (e) => (e.a === a.id && e.b === b.id) || (e.a === b.id && e.b === a.id),
+      );
+      const connected = existingIdx >= 0;
+      const hyperlanes = connected
+        ? p.hyperlanes.filter((_, i) => i !== existingIdx)
+        : [...p.hyperlanes, buildEdge(p, a, b)];
+      const systems = p.systems.map((s) => {
+        if (s.id === a.id) {
+          return {
+            ...s,
+            hyperlanes: connected ? s.hyperlanes.filter((slug) => slug !== b.slug) : [...s.hyperlanes, b.slug].sort(),
+          };
+        }
+        if (s.id === b.id) {
+          return {
+            ...s,
+            hyperlanes: connected ? s.hyperlanes.filter((slug) => slug !== a.slug) : [...s.hyperlanes, a.slug].sort(),
+          };
+        }
+        return s;
+      });
+      return { ...p, systems, hyperlanes };
+    });
+  }, []);
+
   // homeSystemSlug/homeSystemName are set when the click snapped onto an
   // existing system (Faction tool anchoring, §4 "seed IN a system") — null
   // for a plain seed placed on open ground.
@@ -300,6 +351,27 @@ export default function App() {
       return { ...p, factions, systems };
     });
   }, [project.systems.length, project.factions]);
+
+  // §6.1 — background (`origin: "generated"`) actors are fully automatic
+  // and freely re-rollable; curated (`origin: "authored"`) actors are never
+  // touched by this pass, so a GM's hand-placed people survive every reroll.
+  const handleGenerateBackgroundActors = useCallback(() => {
+    if (project.systems.length === 0) return;
+    const hasGenerated = project.actors.some((a) => a.origin === "generated");
+    if (
+      hasGenerated &&
+      !window.confirm(
+        "Regenerate background actors? This rerolls every auto-seeded actor from scratch — actors you've added by hand are untouched.",
+      )
+    ) {
+      return;
+    }
+    setProject((p) => {
+      const curated = p.actors.filter((a) => a.origin === "authored");
+      const generated = generateBackgroundActors({ ...p, actors: curated });
+      return { ...p, actors: [...curated, ...generated] };
+    });
+  }, [project.systems.length, project.actors]);
 
   // Actors are anchored to an existing system (§6) — placing one there is
   // a hand-curation signal just like renaming, so lock that system too.
@@ -473,6 +545,8 @@ export default function App() {
           onGenerateHyperlanes={handleGenerateHyperlanes}
           factionCount={project.factions.length}
           onGenerateFactions={handleGenerateFactions}
+          backgroundActorCount={project.actors.filter((a) => a.origin === "generated").length}
+          onGenerateBackgroundActors={handleGenerateBackgroundActors}
           onNewProject={handleNewProject}
           onDownloadProject={() => downloadProjectJSON(project)}
           onImportProject={handleImportProject}
@@ -499,6 +573,8 @@ export default function App() {
           onCancelSectorDraft={handleCancelSectorDraft}
           onAddFactionSeed={handleAddFactionSeed}
           onCancelFactionSeed={handleCancelFactionSeed}
+          onPlaceSystem={handlePlaceSystem}
+          onToggleHyperlane={handleToggleHyperlane}
           onSelectSector={(id) => { setSelectedSectorId(id); setSelectedSystemId(null); setSelectedFactionId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
           onSelectSystem={(id) => { setSelectedSystemId(id); setSelectedSectorId(null); setSelectedFactionId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
           onSelectFaction={(id) => { setSelectedFactionId(id); setSelectedSectorId(null); setSelectedSystemId(null); setSelectedActorId(null); setSelectedOrgId(null); }}

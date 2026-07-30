@@ -37,6 +37,8 @@ export default function GalaxyCanvas({
   onCancelSectorDraft,
   onAddFactionSeed,
   onCancelFactionSeed,
+  onPlaceSystem,
+  onToggleHyperlane,
   onSelectSector,
   onSelectSystem,
   onSelectFaction,
@@ -50,7 +52,13 @@ export default function GalaxyCanvas({
   const [cursor, setCursor] = useState(null); // {sx, sy} screen coords
   const [snapPreview, setSnapPreview] = useState(null); // { world: [x,y], isCloseVertex }
   const [factionSystemSnap, setFactionSystemSnap] = useState(null); // system a new faction seed would anchor to
+  const [hyperlaneFrom, setHyperlaneFrom] = useState(null); // system id the Hyperlane tool's first click picked
   const dragState = useRef(null); // { mode: "pan" | "paint", lastX, lastY }
+
+  // Switching away from the Hyperlane tool abandons any half-made pick.
+  useEffect(() => {
+    if (tool !== "hyperlane") setHyperlaneFrom(null);
+  }, [tool]);
 
   const fieldDef = FIELD_DEFS.find((f) => f.key === activeField);
 
@@ -256,7 +264,13 @@ export default function GalaxyCanvas({
     }
 
     // Systems (Docs/10-galaxy-mapgen.md §3 stage 4-5).
-    const systemsWithActors = new Set((project.actors || []).map((a) => a.location).filter(Boolean));
+    const actorsBySystem = new Map();
+    for (const a of project.actors || []) {
+      if (!a.location) continue;
+      const entry = actorsBySystem.get(a.location) || { authored: 0, generated: 0 };
+      if (a.origin === "authored") entry.authored++; else entry.generated++;
+      actorsBySystem.set(a.location, entry);
+    }
     for (const system of project.systems) {
       const [sx, sy] = worldToScreen(system.position.x, system.position.y);
       const selected = system.id === selectedSystemId;
@@ -285,6 +299,15 @@ export default function GalaxyCanvas({
         ctx.lineWidth = 2;
         ctx.stroke();
       }
+      // Hyperlane tool's first click — cyan ring so it's obvious which
+      // system the next click will connect (or disconnect) against.
+      if (tool === "hyperlane" && system.id === hyperlaneFrom) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, baseRadius + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = "#5fd0e0";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
       // Contested systems (§4) are a first-class state — flag them right on
       // the map, not just in the inspector.
       if (system.control && !system.control.owner && system.control.contestedBy?.length > 0) {
@@ -299,10 +322,15 @@ export default function GalaxyCanvas({
       // A notable person/group calls this system home (§6) — a small dot
       // offset from the system marker itself, so it doesn't get confused
       // with the security/contested rings which are centered and larger.
-      if (systemsWithActors.has(system.slug)) {
+      // Full-weight if any actor there is curated (`authored`); dimmed and
+      // smaller when it's only cheap background (`generated`) presence,
+      // per §3 stage 10.
+      const actorInfo = actorsBySystem.get(system.slug);
+      if (actorInfo) {
+        const hasAuthored = actorInfo.authored > 0;
         ctx.beginPath();
-        ctx.arc(sx + baseRadius + 2, sy - baseRadius - 2, 2, 0, Math.PI * 2);
-        ctx.fillStyle = "#7ee787";
+        ctx.arc(sx + baseRadius + 2, sy - baseRadius - 2, hasAuthored ? 2 : 1.3, 0, Math.PI * 2);
+        ctx.fillStyle = hasAuthored ? "#7ee787" : "rgba(126,231,135,0.55)";
         ctx.fill();
       }
       if (showLabel) {
@@ -461,7 +489,7 @@ export default function GalaxyCanvas({
       ctx.stroke();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, view, fitScale, size, activeField, showSectors, showFactions, showFieldOverlay, selectedSectorId, selectedSystemId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, cursor, snapPreview, factionSystemSnap, tool, brush.radius]);
+  }, [project, view, fitScale, size, activeField, showSectors, showFactions, showFieldOverlay, selectedSectorId, selectedSystemId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, cursor, snapPreview, factionSystemSnap, hyperlaneFrom, tool, brush.radius]);
 
   // --- Interaction ---
   const handleWheel = (e) => {
@@ -513,6 +541,29 @@ export default function GalaxyCanvas({
         onAddFactionSeed(systemSnap.position.x, systemSnap.position.y, systemSnap.slug, systemSnap.name);
       } else {
         onAddFactionSeed(wx, wy);
+      }
+      return;
+    }
+    if (tool === "system" && e.button === 0) {
+      onPlaceSystem(wx, wy);
+      return;
+    }
+    if (tool === "hyperlane" && e.button === 0) {
+      const systemHit = project.systems.find((s) => {
+        const [px, py] = worldToScreen(s.position.x, s.position.y);
+        return distance(px, py, sx, sy) <= SYSTEM_HIT_PX;
+      });
+      if (!systemHit) {
+        setHyperlaneFrom(null); // clicked empty space — cancel
+        return;
+      }
+      if (hyperlaneFrom == null) {
+        setHyperlaneFrom(systemHit.id);
+      } else if (hyperlaneFrom === systemHit.id) {
+        setHyperlaneFrom(null); // clicked the same system twice — cancel
+      } else {
+        onToggleHyperlane(hyperlaneFrom, systemHit.id);
+        setHyperlaneFrom(null);
       }
       return;
     }
@@ -579,6 +630,7 @@ export default function GalaxyCanvas({
       if (e.key === "Enter" && pendingPoints?.length >= 3 && !pendingClosed) onCloseSectorDraft();
     }
     if (tool === "faction" && e.key === "Escape" && pendingFactionSeed) onCancelFactionSeed();
+    if (tool === "hyperlane" && e.key === "Escape" && hyperlaneFrom) setHyperlaneFrom(null);
   };
 
   return (

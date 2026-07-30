@@ -11,7 +11,7 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
 (whose own future is undecided). Exports content following
 `../Docs/06-data-format-sdf.md`.
 
-## Status: Phase 4, curated half done (§13 of the design doc)
+## Status: Phase 4 done, curated + background actors (§13 of the design doc)
 
 **Phase 1** — canvas, density fields, sectors:
 - Pan/zoom 2D canvas over the galaxy bounds
@@ -108,7 +108,7 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   systems and places new ones in the gaps around locked ones — hand
   curation is no longer wiped out by every regen
 
-**Phase 4 (notable actors & organizations, curated half done)**:
+**Phase 4 (notable actors & organizations, curated + background, done)**:
 - Actors (§6): notable people/groups that never hold territory but matter
   for future event targeting — a governor, a pirate captain, a
   corporation's local rep. Created via a form (name, individual/group,
@@ -129,18 +129,61 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   faction/organization gracefully falls back any actor's affiliation or
   organization's parent-faction reference rather than leaving it dangling
 - A small green dot marks any system with 1+ actors on the map itself; the
-  system inspector lists who's there
+  system inspector lists who's there. It's full-weight/bright if any
+  curated (`authored`) actor is there, dimmed/smaller if only background
+  (`generated`) presence exists, per §3 stage 10
 - "Export SDF" now also writes `actors/` and `organizations/` entry trees
+- **Background actors (§6.1, the follow-up slice)**: a "Generate background
+  actors" pass in the toolbar auto-seeds cheap, procedurally-named
+  `origin: "generated"` actors — density scales with **both** a system's
+  population band (more populous → more officials/merchants/functionaries)
+  and any faction contest there (the system's owner, plus every faction
+  with a meaningful contested share, each gets its own local rep on top of
+  the population-driven baseline). Fully automatic, no per-actor review.
+  Re-running it rerolls every background actor from scratch but never
+  touches curated (`authored`) ones — the sidebar's Actors list keeps
+  curated actors visible and collapses background ones behind a "Show N
+  background actors" toggle so a populated galaxy's curated content isn't
+  buried
 
-Not yet built: background/bulk actor auto-seeding (§6.1 — the design doc's
-own roadmap calls this a follow-up slice of Phase 4 once the curated half
-is solid, not a separate phase), events, broadcasts, the AI interface,
-planet/surface generation — see §13 for the full phase breakdown.
+**Navigation & phase cleanup pass**:
+- The sidebar is now tabbed (Sectors / Factions / Actors / Organizations)
+  instead of one long scroll — selecting something on the canvas, or
+  starting to draw/place one, jumps to the right tab automatically.
+- Field heatmap and faction territory overlays now default **off** — a
+  fresh project shows the plain map; color is opt-in via the Layers/Field
+  checkboxes, not the default view.
+- Faction cards now have editable **relationships** (per-other-faction
+  slider, -1 to 1, §9) and **tolerated crimes** (free-text tag list) —
+  previously data-shape-only fields with no UI.
+- Actor cards now have editable **reputation** (per-faction slider, -1 to
+  1, mirrors faction relationships) — same previous gap.
+- A faction anchored to a home system can now be **un-anchored** via a
+  button on its card, without deleting and recreating it.
+- An organization's home system/sector are now mutually exclusive in the
+  UI — setting one clears the other, matching the design doc's
+  one-or-the-other-or-neither framing.
+- New **System tool**: click inside a drawn sector to hand-place a single
+  new system there (rolled from the painted fields at that point, locked
+  immediately) — §3 stage 4's other half, previously only reachable by
+  locking/renaming an already-generated system.
+- New **Hyperlane tool**: click two systems to toggle a direct edge
+  between them, independent of a full "Generate hyperlanes" regen.
+- `Docs/11-AI-integration.md` §6 now specifies the exact
+  `query_galaxy`/`create_actor`/`create_organization`/`apply_event`/
+  `project_timestep` request/response shapes and the closed effect-op
+  vocabulary, matched field-for-field against the current SDF export —
+  nothing implemented yet, but Phase 6 has a frozen contract to build
+  against instead of re-deriving it from the design doc each time.
+
+Not yet built: events, broadcasts, the AI interface, planet/surface
+generation — see §13 for the full phase breakdown.
 
 ### Known simplifications so far
 
 - Sector vertices can't be dragged/edited after creation — delete and
-  redraw if a boundary needs to change.
+  redraw if a boundary needs to change. (Still open — the one item from
+  this list not yet addressed; everything else below it has a fix.)
 - Galaxy bounds (width/height) are only set when starting a new project,
   not editable live against existing painted data (avoids distorting
   already-painted grids).
@@ -151,17 +194,18 @@ planet/surface generation — see §13 for the full phase breakdown.
   regenerated (unlocked) systems still lose whatever `control`/`security.
   faction`/`war_chance` they had — click Generate factions again to
   re-resolve those for the new arrivals.
-- "Generate hyperlanes" likewise replaces the whole graph each time (with
-  a confirmation) — no manual add/remove override of individual edges yet
-  (planned per the design doc's tool palette, not built yet).
-- Hyperlane risk is derived from Dominion security alone (lower security
-  along the route → higher risk) as a stand-in; the design doc's real
-  formula also factors in faction relations, which need actual relation
-  data (`relationships` exists on the faction shape but isn't editable in
-  the UI yet, and isn't fed into hyperlane risk or war-chance). Per-edge
-  length/risk/capacity live only in the project's in-memory `hyperlanes`
-  list for rendering/inspection — SDF export still follows §7's plan of a
-  plain symmetric slug list on each system, not a separate edge category.
+- "Generate hyperlanes" still replaces the whole graph each time (with a
+  confirmation) — but the new **Hyperlane tool** now lets you manually
+  toggle a single edge on or off afterward without a full regen (see
+  "Placing/generating hyperlanes" below).
+- Hyperlane risk is still derived from Dominion security alone (lower
+  security along the route → higher risk) as a stand-in — the design
+  doc's real formula also factors in faction relations, and while
+  `relationships` is now editable (Factions tab), it isn't fed into
+  hyperlane risk or war-chance yet. Per-edge length/risk/capacity live
+  only in the project's in-memory `hyperlanes` list for
+  rendering/inspection — SDF export still follows §7's plan of a plain
+  symmetric slug list on each system, not a separate edge category.
 - "Generate factions" re-seeds every auto-generated ("(auto)") faction
   from scratch each time and recomputes control/security/war-chance for
   every system, but keeps GM-authored factions and their stats as-is —
@@ -175,35 +219,37 @@ planet/surface generation — see §13 for the full phase breakdown.
   fields; it isn't persisted (computed on the fly), so very large faction
   counts (dozens+) could get slow to render, though this hasn't been an
   issue at the scale tested (single digits to low tens of factions).
-- No `tolerated_crimes` or `relationships` editing UI yet — both exist on
-  the data shape (and export) but are always empty until hand-edited in a
-  saved project file or a future UI pass.
-- Locking protects an *existing* generated system, but there's still no
-  tool to drop a brand-new system at an arbitrary point by hand (§3 stage
-  4's "GM can hand-place" half isn't built, only the "lock" half is).
-  Renaming/tuning/locking just lets a GM claim an already-generated system
-  as a specific curated place.
+- Locking protects an *existing* generated system, and the new **System
+  tool** now also covers §3 stage 4's other half — hand-placing a brand
+  new system at an arbitrary point inside a sector, rolled from whatever's
+  painted there and locked immediately.
 - Deleting a sector still removes every system inside it, locked or not —
   locking only protects against a *systems regen*, not a sector deletion,
   since there'd be no sector left for it to belong to.
 - Nothing stops two different factions from anchoring to the same system;
   if it happens, whichever faction comes later in the list wins that
-  system outright the next time you generate. Anchoring also can't be
-  edited after the fact (no "un-anchor this faction" button) — delete and
-  recreate it to change or remove an anchor.
-- No background actor auto-seeding yet (§6.1) — every actor is hand-typed
-  one at a time. A galaxy with hundreds of systems will look sparsely
-  populated with actors until that follow-up slice exists.
-- Actor `reputation` (per-faction standing) exists on the data shape and
-  export but has no editing UI yet, same simplification already accepted
-  for faction `relationships`/`tolerated_crimes`.
+  system outright the next time you generate. A faction can now be
+  **un-anchored** from its home system via a button on its card, though
+  re-anchoring it to a *different* system still means dropping a new seed.
+- Background actor density coefficients (population weight, the "meaningful
+  contested share" cutoff, per-system cap) are the tuned defaults from
+  initial testing, not calibrated against a real galaxy at the 500-2000
+  system scale (§13 flags the exact coefficients as an implementation
+  detail, not a design question) — expect to retune `actorGen.js`'s
+  constants once a full-scale galaxy is generated.
+- Promotion (a background actor flipping to `authored` when an event
+  elevates them) isn't implemented — there's no effect engine yet (Phase 5)
+  to trigger it.
 - If a sector is deleted, any actor based in one of its systems is marked
   unplaced (`location: null`) rather than deleted outright, so the curated
   actor itself isn't lost — but it does need to be manually reassigned to
   a new system afterward.
-- An organization's `home_system`/`home_sector` are independent dropdowns
-  with no mutual-exclusivity enforcement — setting both is allowed even
-  though the design doc frames it as one-or-the-other-or-neither.
+- The AI/MCP interface itself (§9) still doesn't exist — Phase 6 work.
+  What now exists is a frozen **tool contract spec** (`Docs/11-AI-integration.md`
+  §6) for `query_galaxy`/`create_actor`/`create_organization`/`apply_event`/
+  `project_timestep`, precisely matched against the current SDF field
+  names, so that phase can be implemented directly against it without
+  re-deriving the shapes.
 
 ## Running it
 
@@ -223,7 +269,9 @@ Opens on `http://localhost:5174` (see `vite.config.js`).
 |---|---|
 | Brush | Left-drag to paint the selected Field onto the map; Shift+drag erases. Pick the field (Population, Export, Import, Hyperlane density, Dominion security), radius, and strength above it. |
 | Sector | Click to place boundary vertices (need 3+). See "Drawing a sector" below. |
+| System | Click inside a drawn sector to hand-place a single new system there, rolled from whatever's painted at that exact point and locked immediately. Clicking outside every sector does nothing. |
 | Faction | Click to drop a faction's control seed (a diamond marker) — click again to reposition before naming it in the Factions panel. Click near an existing system instead to anchor the faction to it (violet ring) — that system is then held outright by that faction. |
+| Hyperlane | Click a system (cyan ring), then click a second one to toggle a direct hyperlane between them — click the same system twice, or empty space, to cancel. |
 | Select | Click a system, faction seed, or a sector to select it (systems, then factions, take priority when they're close together) — needed to inspect a system/faction, enable "constrain to selected sector" for the brush, or before deleting/editing a sector. |
 | Pan | Left-drag to move the view. (Middle-mouse-drag pans in any tool; scroll wheel always zooms.) |
 
@@ -268,6 +316,10 @@ can lay out the shape first and only decide the name/focus once it's done:
    system — it and anything referencing it (hyperlanes, faction anchors)
    will survive the next regen untouched. Toggle **Locked** directly to
    lock/unlock without changing anything else.
+5. Alternatively, switch to the **System tool** and click a specific point
+   inside a sector to hand-place exactly one system there instead — rolled
+   from the fields painted at that point, locked immediately (no batch
+   regen involved).
 
 **Generating hyperlanes**
 1. Generate systems first — hyperlanes connect existing systems, so there's
@@ -281,6 +333,11 @@ can lay out the shape first and only decide the name/focus once it's done:
    sidebar. On the map, brighter thicker lines are "major trade route"
    connections (high hyperlane density along that edge), faint thin ones
    are "backwater spur" connections (low density).
+5. To adjust one connection without a full regen, switch to the
+   **Hyperlane tool**: click a system (cyan ring marks it as picked), then
+   click a second one to toggle a direct edge between them — add it if
+   missing, remove it if already connected. Click the same system twice,
+   click empty space, or press Escape to cancel a half-made pick.
 
 **Placing factions and generating control**
 1. Switch to the Faction tool and click on the map to drop a control seed
@@ -309,6 +366,12 @@ can lay out the shape first and only decide the name/focus once it's done:
    faction seed to tweak its aggression/strength inline or delete it.
    Re-click **Generate factions** after any tweak to see it take effect —
    nothing recomputes live as you drag a slider.
+6. An anchored faction's card has an **Un-anchor from home system** button
+   — its home system goes back into the normal control contest the next
+   time you generate factions. The card also has editable **relationships**
+   (a slider per other faction, -1 to 1) and **tolerated crimes** (a
+   free-text tag list) — both exist for future event/war-chance resolution
+   (§9) but aren't fed into the live calculations yet.
 
 **Marking important systems**
 - Every system rolls a realistic importance value automatically at
@@ -335,7 +398,24 @@ can lay out the shape first and only decide the name/focus once it's done:
 4. Select an actor or organization from its list to edit any field
    afterward, or delete it. An organization's member list isn't edited
    directly — it's always whichever actors currently have that
-   organization set as their affiliation.
+   organization set as their affiliation. An organization's home
+   system/sector are mutually exclusive — setting one clears the other.
+5. An actor's card also has editable **reputation** (a slider per faction,
+   -1 to 1, mirroring faction relationships) — exists for future
+   event-driven standing (§9) but isn't fed into anything live yet.
+
+**Generating background actors**
+1. Generate systems and (ideally) factions first — background actor
+   density is driven by each system's population band and its control/
+   contest state, so running this before factions just skips the
+   faction-rep half of the count.
+2. Click **Generate background actors** in the toolbar. This rerolls every
+   `generated`-origin actor from scratch (confirms first if any already
+   exist) — anything you've curated by hand is left exactly as it is.
+3. The Actors list in the sidebar keeps curated actors visible up top and
+   collapses the (often much larger) background batch behind a "Show N
+   background actors" toggle; click through to inspect or delete an
+   individual one like any other actor.
 
 **Saving your work**
 - Everything autosaves to the browser's local storage as you go (per

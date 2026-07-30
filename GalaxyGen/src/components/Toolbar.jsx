@@ -4,7 +4,9 @@ import { FIELD_DEFS } from "../lib/project.js";
 const TOOLS = [
   { key: "brush", label: "Brush" },
   { key: "sector", label: "Sector" },
+  { key: "system", label: "System" },
   { key: "faction", label: "Faction" },
+  { key: "hyperlane", label: "Hyperlane" },
   { key: "select", label: "Select" },
   { key: "pan", label: "Pan" },
 ];
@@ -35,6 +37,8 @@ export default function Toolbar({
   onGenerateHyperlanes,
   factionCount,
   onGenerateFactions,
+  backgroundActorCount,
+  onGenerateBackgroundActors,
   onNewProject,
   onDownloadProject,
   onImportProject,
@@ -66,8 +70,12 @@ export default function Toolbar({
           {tool === "brush" && "Left-drag to paint, Shift+drag to erase."}
           {tool === "sector" &&
             "Click to place vertices (3+). Amber ring = snaps onto a neighboring sector's vertex. Click the green-ringed first point (or Enter, or \"Close boundary\" in the Sectors panel) to finish the shape — then name it and confirm its focus. Escape cancels."}
+          {tool === "system" &&
+            "Click inside a drawn sector to hand-place a single new system there, rolled from the painted fields at that point and locked immediately (won't be touched by \"Generate systems\"). Clicking outside every sector does nothing."}
           {tool === "faction" &&
             "Click to drop a faction's control seed — click again to reposition before naming it in the Factions panel. Click near an existing system (violet ring) to anchor the faction there instead: an anchored faction holds that one system outright, no contest."}
+          {tool === "hyperlane" &&
+            "Click a system (cyan ring), then click a second one to toggle a direct hyperlane between them — click the same system twice, or click empty space, to cancel. Escape also cancels."}
           {tool === "select" && "Click a system, faction seed, or a sector to select it (systems, then factions, take priority when close together)."}
           {tool === "pan" && "Left-drag to pan. (Middle-drag pans in any tool.)"}
         </p>
@@ -177,6 +185,22 @@ export default function Toolbar({
           Generate factions
         </button>
         <p className="small muted">{factionCount} faction{factionCount === 1 ? "" : "s"}.</p>
+      </section>
+
+      <section>
+        <h3>Background actors</h3>
+        <p className="small muted">
+          Auto-seeds cheap background people (§6.1) — density scales with
+          each system's population and any faction contest there. Run this
+          after generating factions. Curated actors you've added by hand are
+          never touched or removed by this pass.
+        </p>
+        <button disabled={systemCount === 0} onClick={onGenerateBackgroundActors}>
+          Generate background actors
+        </button>
+        <p className="small muted">
+          {backgroundActorCount} background actor{backgroundActorCount === 1 ? "" : "s"}.
+        </p>
       </section>
 
       <section>

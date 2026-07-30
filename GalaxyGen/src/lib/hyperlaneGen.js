@@ -129,3 +129,20 @@ export function generateHyperlanes(project) {
 
   return { edges, systems: updatedSystems };
 }
+
+// Same edge shape (length/risk/capacity) as the full `generateHyperlanes`
+// pass above, for the Hyperlane tool's manual single-edge toggle — so a
+// hand-added connection reads identically to a generated one instead of
+// showing up with placeholder stats.
+export function buildEdge(project, a, b) {
+  const densityGrid = project.fields.hyperlane;
+  const length = Math.round(Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y));
+  const secA = a.security?.dominion ?? 0.5;
+  const secB = b.security?.dominion ?? 0.5;
+  const risk = Number(Math.max(0, Math.min(1, 1 - (secA + secB) / 2)).toFixed(2));
+  const midX = (a.position.x + b.position.x) / 2;
+  const midY = (a.position.y + b.position.y) / 2;
+  const density = sampleBilinear(densityGrid, GRID_SIZE, midX, midY, project.bounds);
+  const capacity = density >= 0.66 ? "major trade route" : density <= 0.25 ? "backwater spur" : null;
+  return { id: crypto.randomUUID(), a: a.id, b: b.id, aSlug: a.slug, bSlug: b.slug, length, risk, capacity };
+}

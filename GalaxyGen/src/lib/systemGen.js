@@ -3,6 +3,7 @@ import { createRng, weightedPick } from "./rng.js";
 import { generateSystemName } from "./names.js";
 import { GRID_SIZE, sampleBilinear } from "./grid.js";
 import { slugify } from "./slug.js";
+import { pointInPolygon } from "./geometry.js";
 
 const STAR_TYPES = [
   { value: "O-type blue giant", weight: 1 },
@@ -18,7 +19,7 @@ const STAR_TYPES = [
 
 // Ordered low → high population; index is chosen from the painted
 // population field (+noise), not picked independently of it.
-const POPULATION_BANDS = [
+export const POPULATION_BANDS = [
   { value: "uninhabited / automated only", stationOnly: true },
   { value: "outpost (< 500)", stationOnly: true },
   { value: "small colony (500 - 50,000)", stationOnly: false },
@@ -210,4 +211,62 @@ export function generateSystems(project, options = {}) {
   assignImportance(systems, popBias, rng, maxSpacing, lockedMask);
 
   return systems;
+}
+
+// §3 stage 4's "GM can hand-place a system directly" half (the other half,
+// Poisson-disc auto-placement, is `generateSystems` above). Rolls the same
+// per-system detail from whatever's painted at that exact point, locks it
+// immediately (hand-placement is a curation signal like renaming), and
+// returns null if the point isn't inside any sector — placement, like
+// auto-generation, only happens inside drawn boundaries. Not seeded off
+// `project.seed` since a hand click isn't meant to be reproducible the way
+// a full regen is.
+export function placeSystemAt(project, x, y) {
+  const sector = project.sectors.find((s) => pointInPolygon(x, y, s.points));
+  if (!sector) return null;
+
+  const rng = createRng(`manual:${crypto.randomUUID()}`);
+  const populationGrid = project.fields.population;
+  const exportGrid = project.fields.export;
+  const importGrid = project.fields.import;
+  const securityGrid = project.fields.security;
+
+  const popDensity = sampleBilinear(populationGrid, GRID_SIZE, x, y, project.bounds);
+  const exportDensity = sampleBilinear(exportGrid, GRID_SIZE, x, y, project.bounds);
+  const importDensity = sampleBilinear(importGrid, GRID_SIZE, x, y, project.bounds);
+  const securityDensity = sampleBilinear(securityGrid, GRID_SIZE, x, y, project.bounds);
+
+  const bandIndex = Math.min(POPULATION_BANDS.length - 1, Math.floor(popDensity * POPULATION_BANDS.length));
+  const band = POPULATION_BANDS[bandIndex];
+  const starType = weightedPick(rng, STAR_TYPES);
+
+  const usedNames = new Set(project.systems.map((s) => s.name));
+  const usedSlugs = new Set(project.systems.map((s) => s.slug));
+  const name = generateSystemName(rng, usedNames);
+  const slug = uniqueSlug(slugify(name), usedSlugs);
+
+  const trade = FOCUS_TRADE[sector.focus] || DEFAULT_TRADE;
+  const exportGoods = pickN(trade.export, Math.round(exportDensity * trade.export.length));
+  const importGoods = pickN(trade.import, Math.round(importDensity * trade.import.length));
+
+  return {
+    id: crypto.randomUUID(),
+    slug,
+    name,
+    position: { x, y },
+    sector: sector.slug,
+    starType,
+    population: band.value,
+    stationOnly: band.stationOnly,
+    export: exportGoods,
+    import: importGoods,
+    tags: [sector.focus, ...(trade.tags || [])],
+    note: trade.note || null,
+    security: { dominion: Number(securityDensity.toFixed(2)) },
+    important: 0.3,
+    locked: true,
+    control: null,
+    warChance: null,
+    hyperlanes: [],
+  };
 }

@@ -120,3 +120,193 @@ AI_MODEL_PASS_2=qwen3:8b
 ```
 
 The frontend UI should include a **Model Settings Panel** to allow the GM to toggle between "Local GPU" and "Cloud Fallback" on the fly, applying these environment variables dynamically per pass.
+
+## 6. Tool contract (§9.1 surface, firmed up against the current data model)
+
+**Status: spec only — none of these five tools are implemented yet.** This
+section freezes their request/response shapes against GalaxyGen's actual
+current data model (`GalaxyGen/src/lib/persistence.js`,
+`Docs/10-galaxy-mapgen.md` §7) so Phase 5's effect engine and Phase 6's MCP
+server can be built directly against it without re-deriving field names
+from scratch. Field names below match the SDF export exactly — an
+implementation should not need to invent or rename anything.
+
+### 6.1 Typed refs
+
+Every scope/target/reference below is a typed slug string, never a bare
+slug — this is what lets `query_galaxy`/`effects` disambiguate a faction
+from an organization from an actor sharing a similar name:
+
+| Prefix | Resolves to |
+|---|---|
+| `sector:<slug>` | `sectors/<slug>` |
+| `system:<slug>` | `systems/<slug>` |
+| `faction:<slug>` | `factions/<slug>` (never `dominion` — that's the implicit baseline, not a real entity) |
+| `party:<slug>` | `organizations/<slug>` |
+| `actor:<slug>` | `actors/<slug>` |
+
+### 6.2 `query_galaxy` (read-only)
+
+```json
+// Request
+{
+  "scope": ["system:kreels-reach", "faction:kreel-clans"],
+  "mode": "full",            // "index" (compact, §9.3 pass 1) | "full" (§9.3 pass 2)
+  "include_events": 10        // optional: most recent N event slugs touching this scope
+}
+```
+```json
+// Response (mode: "full")
+{
+  "entities": [
+    { "ref": "system:kreels-reach", "entry": { "...": "the exact systems/<slug>/entry.json shape" } },
+    { "ref": "faction:kreel-clans", "entry": { "...": "the exact factions/<slug>/entry.json shape" } }
+  ],
+  "events": ["battle-of-kreels-reach", "kreel-clans-aggression-spike"]
+}
+```
+`mode: "index"` returns the same `entities` shape but each `entry` is
+replaced with a compact `{ name, tags, summary }` triple (no full `data`
+block) — this is the "compact index" §9.3's pass 1 reasons over, scaled to
+the whole galaxy without blowing an 8B model's context. `scope` can also be
+the literal string `"all"` in index mode only, for a pass-1 call that needs
+the entire galaxy's index at once; `"all"` is rejected in `full` mode (too
+large — pass 2 must shortlist first).
+
+### 6.3 `create_actor`
+
+```json
+// Request — every field maps directly onto actors/<slug>/entry.json's `data` block
+{
+  "name": "Aria Valeran",
+  "kind": "individual",              // "individual" | "group"
+  "role": "politician",              // free-text flavor tag, same field GM-authored actors use
+  "affiliation": "party:vernak-libertarian-party",  // typed ref or null
+  "location": "system:vernak",       // typed ref or null (unplaced)
+  "mobile": false,
+  "influence": 0.2
+}
+```
+```json
+// Response
+{ "proposed": { "ref": "actor:aria-valeran", "entry": { "...": "the entry that would be written" } } }
+```
+`origin` is always forced to `"authored"` server-side — this tool can never
+mint a `"generated"` (background, §6.1) actor; background actors only come
+from the bulk auto-seed pass. `status` defaults `"active"`, `reputation`
+defaults `{}`. Slug collision handling matches the existing UI form
+(`uniqueSlug` — append `-2`, `-3`, ... on collision, never silently
+overwrite).
+
+### 6.4 `create_organization`
+
+```json
+// Request
+{
+  "name": "Vernak Libertarian Party",
+  "ideology": "libertarian",
+  "parent_faction": "faction:free-traders-coalition",  // required; must resolve to an existing faction, or the literal "dominion"
+  "home_system": "system:vernak",     // optional, mutually exclusive with home_sector (§6.2)
+  "home_sector": null,
+  "local_influence": 0.2
+}
+```
+```json
+// Response
+{ "proposed": { "ref": "party:vernak-libertarian-party", "entry": { "...": "the entry that would be written" } } }
+```
+`parent_faction` resolving to nothing is a hard validation failure, not a
+silent fallback to Dominion — per §9.1's worked example, creation always
+hooks onto a pre-existing faction the caller found via `query_galaxy`
+first, never invents one. `members` is never part of the request — it's
+always derived (§6.2), so passing it is a validation error.
+
+### 6.5 `apply_event`
+
+```json
+// Request — identical to the events/<slug>/entry.json data block (§7)
+{
+  "name": "Battle of Kreel's Reach",
+  "summary": "Free Traders Coalition routs Kreel Clan raiders at Kreel's Reach.",
+  "tags": ["conflict", "border"],
+  "timestamp": "3025-04-11",
+  "timestep": { "amount": 1, "unit": "day" },
+  "mode": "authored",
+  "magnitude": "major",
+  "scope": ["system:kreels-reach", "faction:free-traders-coalition", "faction:kreel-clans", "actor:governor-yeselle-tarn"],
+  "effects": [
+    { "op": "adjust_control", "target": "system:kreels-reach", "faction": "faction:free-traders-coalition", "delta": 0.27, "confidence": 0.8 },
+    { "op": "adjust_relationship", "a": "faction:free-traders-coalition", "b": "faction:kreel-clans", "delta": -0.22, "confidence": 0.8 },
+    { "op": "adjust_aggression", "faction": "faction:kreel-clans", "delta": -0.08, "confidence": 0.6 },
+    { "op": "adjust_reputation", "actor": "actor:governor-yeselle-tarn", "faction": "faction:free-traders-coalition", "delta": 0.1, "confidence": 0.5 }
+  ],
+  "narrative": "Free-form GM/agent text — flavor/history only, never read by the effect engine."
+}
+```
+```json
+// Response — a diff, not a silent write; GM reviews this before commit
+// unless magnitude === "minor" (§9 pipeline step 3)
+{
+  "event": { "ref": "event:battle-of-kreels-reach", "entry": { "...": "the entry that would be written" } },
+  "diff": [
+    { "ref": "system:kreels-reach", "field": "control", "before": { "...": "..." }, "after": { "...": "..." } },
+    { "ref": "faction:kreel-clans", "field": "relationships.free-traders-coalition", "before": -0.3, "after": -0.52 }
+  ],
+  "requires_review": true
+}
+```
+
+**Closed `effects` op vocabulary** — this is the entire surface; anything
+outside this table cannot be expressed as an effect:
+
+| `op` | Applies to | Fields |
+|---|---|---|
+| `adjust_control` | system | `target`, `faction`, `delta` |
+| `set_owner` | system | `target`, `faction` (any magnitude can flip ownership, §9.2/§12 — not gated to `historic`) |
+| `set_system_status` | system | `target`, `status` (`active`\|`destroyed`\|`quarantined`\|`uninhabitable`) — `destroyed`/`quarantined` cascade: sever that system's hyperlane edges, force a security/`war_chance` re-derive on every former neighbor |
+| `adjust_security` | system | `target`, `delta` |
+| `adjust_relationship` | faction↔faction | `a`, `b`, `delta` (symmetric — same value written to both factions' `relationships`) |
+| `adjust_aggression` | faction | `faction`, `delta` |
+| `adjust_focus` | sector | `target`, `focus` (nudges the sector's trade-goods weighting, §5) |
+| `adjust_influence` | actor \| organization | `target`, `delta` |
+| `set_affiliation` | actor | `target`, `affiliation` (typed ref or null) |
+| `relocate` | actor | `target`, `location` (typed ref or null) |
+| `set_status` | actor | `target`, `status` |
+| `adjust_reputation` | actor→faction | `actor`, `faction`, `delta` |
+| `add_tag` / `remove_tag` | any entity | `target`, `tag` |
+
+Every numeric `delta` is clamped server-side to the requested
+`magnitude`'s envelope (a small GM-tunable config table — e.g. `minor` caps
+`adjust_control`/`adjust_relationship` at ±0.05, `major` allows ±0.35,
+`historic` allows an outright flip) — this is a hard ceiling, not a target;
+the caller should still propose the specific value it judges right within
+that ceiling, not just max it out. Every effect's `confidence` (0–1) is
+used engine-side to pull low-confidence deltas toward a narrower
+sub-range automatically before the ceiling clamp — richly-detailed,
+high-confidence events get to use more of the envelope; a one-line rumor
+does not, even at the same nominal magnitude.
+
+### 6.6 `project_timestep`
+
+```json
+// Request
+{
+  "scope": ["sector:kreels-reach-border"],
+  "duration": { "amount": 1, "unit": "month" },
+  "prompt": "Given current tension and trade patterns, project how this border develops."
+}
+```
+```json
+// Response — always several linked ordinary events, never one aggregate
+// blob (§9.2/§12: "many events always, makes it easier to track")
+{
+  "events": [
+    { "ref": "event:...", "entry": { "...": "same shape as apply_event's request, mode: \"projection\"", "timestamp": "3025-04-18" } },
+    { "ref": "event:...", "entry": { "...": "...", "timestamp": "3025-05-02" } }
+  ]
+}
+```
+Each event in the batch is independently reviewed or auto-committed by its
+own `magnitude` (same `minor`-skips-review rule as `apply_event`) — a
+`project_timestep` call is not one review gate, it's N of them, one per
+decomposed event, exactly as if the GM had called `apply_event` N times.
