@@ -74,10 +74,16 @@ export default function GalaxyCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.bounds.width, project.bounds.height, size.w, size.h]);
 
-  // Track container size.
+  // Track container size. Seeds from the container's actual box the
+  // instant the ref attaches (rather than waiting on ResizeObserver's own
+  // first callback) so a container that's already a non-default size on
+  // mount — e.g. the side panels were dragged before a reload — doesn't
+  // sit at the stale 800×600 fallback until some later resize fires.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const box = el.getBoundingClientRect();
+    setSize({ w: Math.max(200, box.width), h: Math.max(200, box.height) });
     const ro = new ResizeObserver((entries) => {
       const box = entries[0].contentRect;
       setSize({ w: Math.max(200, box.width), h: Math.max(200, box.height) });

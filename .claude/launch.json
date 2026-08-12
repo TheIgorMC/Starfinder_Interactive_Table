@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "GalaxyGen",
       "port": 5174
+    },
+    {
+      "name": "galaxygen-verify",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5199"],
+      "cwd": "GalaxyGen",
+      "port": 5199
     }
   ]
 }

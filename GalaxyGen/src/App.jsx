@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import GalaxyCanvas from "./components/GalaxyCanvas.jsx";
 import Toolbar from "./components/Toolbar.jsx";
 import SectorList from "./components/SectorList.jsx";
@@ -11,6 +11,9 @@ import { generateHyperlanes, buildEdge } from "./lib/hyperlaneGen.js";
 import { resolveFactions } from "./lib/factionGen.js";
 import { generateBackgroundActors } from "./lib/actorGen.js";
 import { applyEvent } from "./lib/effectEngine.js";
+import { buildGalaxyIndexEnvelope } from "./lib/aiIndex.js";
+import { queryGalaxyFull, resolveEntity } from "./lib/aiQuery.js";
+import { runPass1, runPass2 } from "./lib/aiClient.js";
 import {
   loadFromStorage,
   saveToStorage,
@@ -18,7 +21,13 @@ import {
   downloadGalaxyIndex,
   importProjectFile,
   exportGalaxySDF,
+  loadAISettings,
+  saveAISettings,
 } from "./lib/persistence.js";
+
+const PANEL_WIDTHS_KEY = "galaxygen.panelWidths.v1";
+const PANEL_MIN_WIDTH = 180;
+const PANEL_MAX_WIDTH = 560;
 
 function uniqueSlug(base, sectors) {
   const existing = new Set(sectors.map((s) => s.slug));
@@ -26,6 +35,55 @@ function uniqueSlug(base, sectors) {
   let i = 2;
   while (existing.has(`${base}-${i}`)) i++;
   return `${base}-${i}`;
+}
+
+function stripRefPrefix(ref) {
+  if (!ref) return ref;
+  const idx = ref.indexOf(":");
+  return idx < 0 ? ref : ref.slice(idx + 1);
+}
+
+// Docs/11-AI-integration.md §6.3/6.4/6.5 — converts an AI tool-call's typed-
+// ref arguments into the exact field shapes App.jsx's existing create/commit
+// handlers already expect (the same ones the manual forms build) — an AI
+// proposal is never a separate code path from a hand-authored one, just a
+// different source for the same fields.
+function actorProposalToFields(args) {
+  return {
+    name: args.name,
+    kind: args.kind || "individual",
+    role: args.role || "unspecified",
+    affiliation: args.affiliation || null,
+    location: args.location ? stripRefPrefix(args.location) : null,
+    mobile: !!args.mobile,
+    influence: typeof args.influence === "number" ? args.influence : 0.2,
+  };
+}
+
+function organizationProposalToFields(args) {
+  return {
+    name: args.name,
+    ideology: args.ideology || "unspecified",
+    parentFaction: args.parent_faction === "dominion" ? "dominion" : stripRefPrefix(args.parent_faction),
+    homeSystem: args.home_system ? stripRefPrefix(args.home_system) : null,
+    homeSector: args.home_sector ? stripRefPrefix(args.home_sector) : null,
+    localInfluence: typeof args.local_influence === "number" ? args.local_influence : 0.2,
+  };
+}
+
+function eventProposalToDraft(args) {
+  return {
+    name: args.name,
+    summary: args.summary || "",
+    tags: args.tags || [],
+    timestamp: args.timestamp || "",
+    timestep: args.timestep || { amount: 1, unit: "day" },
+    mode: "authored",
+    magnitude: args.magnitude,
+    scope: args.scope || [],
+    effects: args.effects || [],
+    narrative: args.narrative || "",
+  };
 }
 
 export default function App() {
@@ -50,12 +108,74 @@ export default function App() {
   // field/territory color; the GM opts into color layers deliberately.
   const [showFactions, setShowFactions] = useState(false);
   const [showFieldOverlay, setShowFieldOverlay] = useState(false);
+  const [aiSettings, setAiSettings] = useState(() => loadAISettings());
+
+  // Resizable side panels — purely a UI layout preference (not galaxy or
+  // AI data), so it gets its own small localStorage key rather than living
+  // in `project` or `aiSettings`.
+  const [leftWidth, setLeftWidth] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(PANEL_WIDTHS_KEY))?.left ?? 240;
+    } catch {
+      return 240;
+    }
+  });
+  const [rightWidth, setRightWidth] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(PANEL_WIDTHS_KEY))?.right ?? 240;
+    } catch {
+      return 240;
+    }
+  });
+  const dragRef = useRef(null); // { side: "left" | "right", startX, startWidth }
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify({ left: leftWidth, right: rightWidth }));
+    } catch {
+      // Not critical — panel widths just reset to default next load.
+    }
+  }, [leftWidth, rightWidth]);
+
+  const handlePanelResizeMove = useCallback((e) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const delta = e.clientX - drag.startX;
+    const next = drag.side === "left" ? drag.startWidth + delta : drag.startWidth - delta;
+    const clamped = Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, next));
+    if (drag.side === "left") setLeftWidth(clamped);
+    else setRightWidth(clamped);
+  }, []);
+
+  const handlePanelResizeEnd = useCallback(() => {
+    dragRef.current = null;
+    document.body.style.cursor = "";
+    window.removeEventListener("mousemove", handlePanelResizeMove);
+    window.removeEventListener("mouseup", handlePanelResizeEnd);
+  }, [handlePanelResizeMove]);
+
+  const handlePanelResizeStart = useCallback(
+    (side) => (e) => {
+      e.preventDefault();
+      dragRef.current = { side, startX: e.clientX, startWidth: side === "left" ? leftWidth : rightWidth };
+      document.body.style.cursor = "col-resize";
+      window.addEventListener("mousemove", handlePanelResizeMove);
+      window.addEventListener("mouseup", handlePanelResizeEnd);
+    },
+    [leftWidth, rightWidth, handlePanelResizeMove, handlePanelResizeEnd],
+  );
 
   // Autosave (debounced) so a reload never loses work.
   useEffect(() => {
     const t = setTimeout(() => saveToStorage(project), 400);
     return () => clearTimeout(t);
   }, [project]);
+
+  // Machine-local, never part of the project — saved on every change so a
+  // GM doesn't have to re-enter their API base/key/model after a reload.
+  useEffect(() => {
+    saveAISettings(aiSettings);
+  }, [aiSettings]);
 
   const selectedSector = project.sectors.find((s) => s.id === selectedSectorId) || null;
   const selectedSystem = project.systems.find((s) => s.id === selectedSystemId) || null;
@@ -503,6 +623,61 @@ export default function App() {
     setProject((p) => ({ ...p, events: p.events.filter((e) => e.id !== id) }));
   }, []);
 
+  // §9.3 Pass 1 (broad/coherence): compact index + request in, a shortlist
+  // of typed refs out. Pure orchestration — building the index and calling
+  // the AI client are the only things this does.
+  const handleRunAIPass1 = useCallback(
+    (requestText) => runPass1(aiSettings, buildGalaxyIndexEnvelope(project), requestText),
+    [project, aiSettings],
+  );
+
+  // Typed refs (§6) are stable identifiers, not display text — a renamed
+  // system keeps its original slug on purpose (handleUpdateSystem above),
+  // so "system:kreel-1" stops looking anything like the system's current
+  // name once it's been renamed. Rather than churn every stored reference
+  // on rename (which would silently invalidate any past event's scope/
+  // effects — an append-only history log should keep pointing at whatever
+  // it pointed at when committed), the AI panel just looks up each ref's
+  // *current* display name live for whatever it's showing the GM, so a
+  // proposal referencing "system:kreel-1" can be shown as "Vraxis
+  // (system:kreel-1)" without the underlying ref ever having to change.
+  const resolveRefName = useCallback((ref) => resolveEntity(project, ref)?.entry?.name ?? null, [project]);
+
+  // §9.3 Pass 2 (deep detail): resolves the shortlist to full SDF-shaped
+  // entries (§6.2 "full" mode) plus recent event history, then asks the AI
+  // to produce exactly one tool call from the real create/event tools.
+  const handleRunAIPass2 = useCallback(
+    (requestText, shortlist) => runPass2(aiSettings, queryGalaxyFull(project, shortlist), requestText),
+    [project, aiSettings],
+  );
+
+  // Only `apply_event` proposals have anything to preview — reuses the
+  // exact same effect-engine validation/clamping the manual Events form
+  // does, so an AI-drafted event gets no less scrutiny than a hand-typed
+  // one.
+  const handlePreviewAIProposal = useCallback(
+    (proposal) => handlePreviewEvent(eventProposalToDraft(proposal.arguments)),
+    [handlePreviewEvent],
+  );
+
+  // Dispatches an accepted proposal onto the exact same handlers the manual
+  // forms use — an AI proposal is just a different source for the same
+  // fields, never a separate write path.
+  const handleConfirmAIProposal = useCallback(
+    (proposal) => {
+      if (proposal.name === "create_actor") {
+        handleCreateActor(actorProposalToFields(proposal.arguments));
+      } else if (proposal.name === "create_organization") {
+        handleCreateOrganization(organizationProposalToFields(proposal.arguments));
+      } else if (proposal.name === "apply_event") {
+        handleCommitEvent(eventProposalToDraft(proposal.arguments));
+      } else {
+        throw new Error(`Unknown proposal type: ${proposal.name}`);
+      }
+    },
+    [handleCreateActor, handleCreateOrganization, handleCommitEvent],
+  );
+
   const handleNewProject = useCallback((seed, width, height) => {
     const hasWork = project.sectors.length > 0;
     if (hasWork && !window.confirm("Discard the current galaxy and start a new one?")) return;
@@ -552,9 +727,9 @@ export default function App() {
     <div className="galaxygen-app">
       <header className="gg-header">
         <h1>Galaxy MapGen</h1>
-        <span className="muted small">Phase 5 — events &amp; effect engine</span>
+        <span className="muted small">Phase 6 — AI integration</span>
       </header>
-      <div className="gg-body">
+      <div className="gg-body" style={{ gridTemplateColumns: `${leftWidth}px 6px 1fr 6px ${rightWidth}px` }}>
         <Toolbar
           project={project}
           tool={tool}
@@ -590,6 +765,7 @@ export default function App() {
           onExportSDF={handleExportSDF}
           exportStatus={exportStatus}
         />
+        <div className="gg-resize-handle" onMouseDown={handlePanelResizeStart("left")} />
         <GalaxyCanvas
           project={project}
           tool={tool}
@@ -617,6 +793,7 @@ export default function App() {
           onSelectFaction={(id) => { setSelectedFactionId(id); setSelectedSectorId(null); setSelectedSystemId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
           onHover={(wx, wy, value) => setHoverInfo(wx == null ? null : { wx, wy, value })}
         />
+        <div className="gg-resize-handle" onMouseDown={handlePanelResizeStart("right")} />
         <SectorList
           sectors={project.sectors}
           selectedSectorId={selectedSectorId}
@@ -663,6 +840,13 @@ export default function App() {
           onPreviewEvent={handlePreviewEvent}
           onCommitEvent={handleCommitEvent}
           onDeleteEvent={handleDeleteEvent}
+          aiSettings={aiSettings}
+          onAISettingsChange={setAiSettings}
+          onRunAIPass1={handleRunAIPass1}
+          onRunAIPass2={handleRunAIPass2}
+          onPreviewAIProposal={handlePreviewAIProposal}
+          onConfirmAIProposal={handleConfirmAIProposal}
+          onResolveAIRefName={resolveRefName}
         />
       </div>
     </div>

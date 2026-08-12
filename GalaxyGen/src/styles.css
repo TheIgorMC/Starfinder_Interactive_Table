@@ -53,16 +53,33 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
 .gg-body {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 240px 1fr 240px;
+  /* grid-template-columns is set inline from App.jsx's resizable panel state */
   min-height: 0;
 }
 
 .gg-toolbar, .gg-sectors {
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
-  border-right: 1px solid #1d2833;
+  min-width: 0;
 }
-.gg-sectors { border-right: none; border-left: 1px solid #1d2833; }
+
+.gg-resize-handle {
+  cursor: col-resize;
+  background: #1d2833;
+  position: relative;
+}
+.gg-resize-handle:hover, .gg-resize-handle:active { background: #4f8ef7; }
+/* Widen the actual hit area past the visible 6px column so the handle is
+   easy to grab without needing pixel-perfect aim. */
+.gg-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
 
 .gg-toolbar section, .gg-sectors > h3 { margin-bottom: 18px; }
 .gg-toolbar h3, .gg-sectors h3 {
@@ -178,3 +195,61 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
   margin: 6px 0;
 }
 .gg-diff-box p { margin: 2px 0; }
+
+.gg-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gg-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gg-chat-header .gg-link { margin: 0; }
+.gg-chat-header > .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gg-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 260px;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: #0b0e11;
+  border: 1px solid #1d2833;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.gg-chat-msg {
+  max-width: 92%;
+  border-radius: 8px;
+  padding: 8px 10px;
+  border: 1px solid #1d2833;
+}
+.gg-chat-msg p { margin: 2px 0; }
+.gg-chat-msg p:first-child { margin-top: 0; }
+.gg-chat-msg p:last-child { margin-bottom: 0; }
+.gg-chat-msg.user {
+  align-self: flex-end;
+  background: #16324f;
+  border-color: #234a6e;
+}
+.gg-chat-msg.assistant {
+  align-self: flex-start;
+  background: #12181e;
+  border-color: #1d2833;
+}
+.gg-chat-msg.assistant.status { border-style: dashed; }
+.gg-chat-msg.assistant.error { border-color: #6b2626; background: #1e1414; }
+
+.gg-chat-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.gg-chat-input-row textarea { margin: 0; flex: 1 1 auto; resize: vertical; }
+.gg-chat-input-row button { flex: 0 0 auto; }

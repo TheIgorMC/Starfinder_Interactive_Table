@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { SECTOR_FOCI } from "../lib/project.js";
+import AIPanel from "./AIPanel.jsx";
 
 const TABS = [
   { key: "sectors", label: "Sectors" },
@@ -7,6 +8,7 @@ const TABS = [
   { key: "actors", label: "Actors" },
   { key: "organizations", label: "Organizations" },
   { key: "events", label: "Events" },
+  { key: "ai", label: "AI" },
 ];
 
 // Docs/10-galaxy-mapgen.md §9 — the closed effect-op vocabulary the event
@@ -103,6 +105,13 @@ export default function SectorList({
   onPreviewEvent,
   onCommitEvent,
   onDeleteEvent,
+  aiSettings,
+  onAISettingsChange,
+  onRunAIPass1,
+  onRunAIPass2,
+  onPreviewAIProposal,
+  onConfirmAIProposal,
+  onResolveAIRefName,
 }) {
   const [activeTab, setActiveTab] = useState("sectors");
   const [showBackgroundActors, setShowBackgroundActors] = useState(false);
@@ -363,6 +372,21 @@ export default function SectorList({
               <JournalEntry key={ev.id} event={ev} onDelete={() => onDeleteEvent(ev.id)} />
             ))}
           </ul>
+        </>
+      )}
+
+      {activeTab === "ai" && (
+        <>
+          <h3>AI</h3>
+          <AIPanel
+            settings={aiSettings}
+            onSettingsChange={onAISettingsChange}
+            onRunPass1={onRunAIPass1}
+            onRunPass2={onRunAIPass2}
+            onPreviewProposal={onPreviewAIProposal}
+            onConfirmProposal={onConfirmAIProposal}
+            resolveRefName={onResolveAIRefName}
+          />
         </>
       )}
     </aside>

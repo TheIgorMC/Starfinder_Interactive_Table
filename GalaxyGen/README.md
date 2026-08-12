@@ -11,7 +11,7 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
 (whose own future is undecided). Exports content following
 `../Docs/06-data-format-sdf.md`.
 
-## Status: Phase 5 done, manual event log & effect engine (§13 of the design doc)
+## Status: Phase 6 underway, client-side AI integration (§13 of the design doc)
 
 **Phase 1** — canvas, density fields, sectors:
 - Pan/zoom 2D canvas over the galaxy bounds
@@ -225,12 +225,116 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   entry only removes it from the log, it does not revert its effects
   (there's no replay/undo engine yet — see known simplifications).
 
-Not yet built: broadcasts, the AI interface itself (query_galaxy/
-create_actor/create_organization/apply_event/project_timestep as live,
-callable tools), planet/surface generation — see §13 for the full phase
-breakdown. §9's `apply_event` tool contract is now backed by a real,
-tested implementation (this phase's effect engine) — an AI layer calling
-it just needs to produce the same event-draft shape a GM types by hand.
+**Phase 6 (AI integration, underway)**:
+- New **AI** tab, styled as a chat window (scrolling message history,
+  Enter-to-send input, collapsible settings) — type a plain-language
+  request, and it runs the full §9.3 two-pass loop as an evolving
+  assistant message: Pass 1 shortlists relevant entities from the compact
+  index, Pass 2 gets those entities' full records plus recent event
+  history and proposes exactly one tool call (`create_actor`,
+  `create_organization`, or `apply_event`), rendered as a proposal card in
+  the thread — against **any OpenAI-compatible `/chat/completions`
+  endpoint** (a local Ollama server, or a cloud provider), called directly
+  from the browser via `fetch`. There is no separate backend — GalaxyGen
+  is both the "Application Host" crafting prompts and the caller of the
+  inference endpoint.
+- **No new write path**: an accepted proposal is converted (typed refs →
+  the exact bare-slug/field shapes the app already uses internally) and
+  handed to the *same* `handleCreateActor`/`handleCreateOrganization`/
+  `handleCommitEvent` functions the manual forms call. An AI proposal gets
+  no special privileges — `apply_event` proposals go through the identical
+  effect-engine validation, magnitude clamping, and ownership-flip gate a
+  hand-typed event does, with the same Preview-then-Confirm review step.
+- `query_galaxy`'s missing **"full" mode** is now implemented
+  (`GalaxyGen/src/lib/aiQuery.js`) — resolves Pass 1's shortlisted typed
+  refs into the exact SDF entry shape "Export SDF" writes, plus recent
+  event slugs touching that scope, with zero duplicated logic from
+  `persistence.js`.
+- AI settings (API base URL, key, model) live in their own `localStorage`
+  key, deliberately never part of `project` — they're a machine-local
+  credential/config, not galaxy data, so they can never leak into a saved
+  project file or SDF export.
+- Verified end-to-end with a mocked chat-completions endpoint: Pass 1 →
+  Pass 2 → diff preview → commit for both a `create_actor` and an
+  `apply_event` proposal, plus malformed-JSON and network-failure error
+  paths.
+- **Fixed against real-world testing** (a real galaxy against a real local
+  Qwen3 8B/Ollama setup, not just mocks): Pass 1 now bounds the compact
+  index to a character budget with lexical pre-filtering instead of
+  dumping the whole galaxy (was blowing a 45k-token prompt past a 4k
+  context and silently truncating before the model saw the request at
+  all); Pass 1 falls back to parsing refs out of free text when a model
+  ignores a forced tool call (confirmed happening with this real setup);
+  and Pass 2 now sends every entity as an explicit `ref => entry` pair
+  instead of just the entry — the entry alone carries no ref/slug field,
+  so the model had to *derive* one from the entity's name, which silently
+  breaks for any renamed system (renaming intentionally keeps the
+  original slug). All three confirmed fixed against the exact scenario
+  that surfaced them.
+- **`adjust_control`/`adjust_security` confusion, confirmed live**: asked
+  to "increase X's control over system Y," a real response picked
+  `adjust_security` (Dominion security/crime level) instead of
+  `adjust_control` (territorial ownership share, §4) — different fields
+  entirely, and since security was already maxed the diff correctly
+  rendered as a no-op, which was at least a visible tell. The
+  `apply_event` tool schema now carries an explicit one-line-per-op
+  cheat-sheet distinguishing every effect (not just those two) instead of
+  only pointing at this doc's §6.5 table, which no model actually reads.
+  A prompt-quality improvement, not a guarantee — always check a
+  proposal's diff for a plausible before/after before confirming.
+- **Pass 2 ignoring `auto` tool_choice, confirmed live**: asked to add an
+  actor, a real response wrote a plain-text JSON object shaped like an
+  exported SDF entity record (`{"type":"actor","name":...,"data":{...}}`)
+  instead of actually calling `create_actor` — Pass 2 uses `auto` tool
+  choice (unlike Pass 1's forced `shortlist`), so nothing stopped the
+  model from answering in free text. `runPass2` now has the same kind of
+  fallback Pass 1 already had: on no tool call, it scans the response text
+  for a JSON object and, if its shape looks like an actor/organization/
+  event record, remaps it into the matching tool call's argument shape.
+  Verified against the exact response text that surfaced this. Best
+  effort, same caveat as Pass 1's fallback — a model that answers in an
+  unrecognized shape still fails outright.
+- **Bare names in ref fields**: that same reconstructed proposal had
+  `location: "Banelor"` instead of `system:banelor` — a display name, not
+  a typed ref, which nothing downstream would ever match against a real
+  system. Since `fullContext.entities` already pairs every shortlisted
+  entity's name with its real ref, `runPass2` now resolves any bare name
+  in a ref-shaped field (`affiliation`, `location`, `parent_faction`,
+  `home_system`, `home_sector`, and every `apply_event` effect's
+  `target`/`faction`/`a`/`b`/`actor`) against that list before returning —
+  applied to every proposal, not just fallback-parsed ones, since nothing
+  stops a real tool call from doing the same thing. An already-valid typed
+  ref passes through unchanged; a name matching nothing in the shortlist
+  is left as-is so the existing "no longer exists" UI still catches it.
+- **Refs vs. names in the AI tab**: every ref shown to the GM ("Considered:
+  ...", an `apply_event` diff's target, `create_actor`'s affiliation/
+  location, `create_organization`'s parent faction) used to render as a
+  bare typed ref like `system:kreel-1`. Fine until a system's been renamed
+  — a system's slug intentionally never changes on rename (App.jsx, so
+  hyperlane/control references never go stale), so a renamed system's ref
+  stops resembling its current name at all, and a galaxy with several
+  manually-renamed systems made every AI proposal read like a wall of
+  meaningless slugs. Rather than churn every stored reference (including
+  past events' scope/effects, which would silently rewrite history) on
+  every rename, the AI panel now resolves each ref's *current* display
+  name live wherever it renders one, so "system:kreel-1" shows as "Vraxis
+  (system:kreel-1)" without the underlying ref ever changing. Verified the
+  resolver (`resolveEntity` from `aiQuery.js`, already used by Pass 2)
+  against a renamed system: correctly returns the live name from the ref.
+
+**Name variety**: background-actor names were colliding constantly at
+real scale (confirmed live: "Sonya Ombric 2," "Mira Herrick 3" — the
+old 24×20 first/last pool only had 480 combinations). `names.js`'s pools
+are now ~3x bigger (70 first names, 70 last names, 71 system-name roots,
+36 place words, 30 faction suffixes) plus occasional hyphenated compound
+names (first or last, ~6-10% of the time) for further variety without
+hand-writing hundreds more words. Verified: 2000 generated actor names
+and 2000 generated system names, zero collisions in both (the old pool
+would have been almost entirely numbered fallbacks by that volume).
+
+Not yet built: `project_timestep` (the projection-mode tool — decomposing
+a duration into several linked events), broadcasts, planet/surface
+generation — see §13 for the full phase breakdown.
 
 ### Known simplifications so far
 
@@ -335,6 +439,58 @@ it just needs to produce the same event-draft shape a GM types by hand.
   share the exact same clamp-apply-diff code path as the ones that were
   tested (`adjust_aggression`, `set_owner`, `set_system_status`, `add_tag`,
   `relocate`), just against different fields.
+- No separate backend yet (Docs/11-AI-integration.md's "Application Host"/
+  "Inference Host" split, the two-model-slot Ollama config, the cloud-
+  fallback env vars) — the browser calls the inference endpoint directly.
+  This works for local testing but isn't the deployed shape the design doc
+  describes; a real deployment still needs that backend built.
+- A local Ollama server needs `OLLAMA_ORIGINS` set to allow this page's
+  origin, or the browser's `fetch` will be blocked by CORS — the AI panel
+  surfaces this as a clear error when it happens, but doesn't configure it
+  for you. Cloud providers (OpenAI, Anthropic) generally allow direct
+  browser calls out of the box; Anthropic specifically requires the
+  `anthropic-dangerous-direct-browser-access` header, which is already
+  sent on every request.
+- Pass 1's relevance filter (kicks in once the compact index would exceed
+  a ~6000-character budget, `aiClient.js`) is lexical, not semantic — it
+  scores entities by literal word overlap with your request, not meaning.
+  "Increase Gammon's control over Vraxis" finds `Vraxis`/`Gammon` fine;
+  something like "the pirates near the mining world" with no name/tag
+  actually containing those words could miss the intended entity even
+  though a human (or real embeddings) would connect them. This is a
+  stand-in for the real embedding-similarity retrieval §10 calls for, not
+  that retrieval itself. The budget is tuned conservatively for a default,
+  unconfigured local model (confirmed live against Ollama/Qwen3 8B at
+  ~2000 usable prompt tokens despite a 4096 reported context) — raise
+  `MAX_PASS1_INDEX_CHARS` in `aiClient.js` if you've configured a bigger
+  context window and want more of the galaxy visible per request.
+- Some local models/setups don't reliably honor a *forced* tool call —
+  confirmed live: Qwen3 8B via Ollama answered in free text instead of
+  calling `shortlist` even with `tool_choice` pinned to it. `runPass1` now
+  falls back to scanning that free text for a JSON refs array before
+  giving up, but this is a best-effort patch over a real model/server
+  limitation, not a guarantee — a model that answers in a totally
+  unparseable shape still fails Pass 1.
+- Only one proposed tool call is ever shown/actionable per request — if
+  the AI proposes several (e.g. a `create_organization` + a `create_actor`
+  for the "new party" worked example in §9.1), only the first is surfaced;
+  the rest are silently dropped with a note to re-ask afterward. The
+  design doc frames that worked example as one bundled reviewable
+  proposal, which this doesn't yet do.
+- No confidence editing in the UI — an AI proposal's per-effect
+  `confidence` value (used by the magnitude-envelope clamp, §9.2) passes
+  straight through from the model's tool call with no GM override, unlike
+  every other field on the proposal review, which is currently
+  accept-as-is or reject-the-whole-thing (no partial editing before
+  commit).
+- `query_galaxy` as an actual named, independently-callable tool doesn't
+  exist — Pass 1/Pass 2 call `buildGalaxyIndexEnvelope`/`queryGalaxyFull`
+  directly as internal functions rather than through a real tool-call round
+  trip, since there's no agent loop yet where the model decides *when* to
+  query vs. propose — it's a fixed two-step pipeline, not an
+  agent-directed one.
+- `project_timestep` (projection mode) isn't implemented at all — see
+  "Not yet built" above.
 
 ## Running it
 
@@ -347,6 +503,11 @@ npm run dev
 Opens on `http://localhost:5174` (see `vite.config.js`).
 
 ## How to use it
+
+Both side panels are resizable — drag the thin divider between a panel and
+the map (cursor turns to a col-resize arrow) to give either one more room;
+widths persist across reloads (clamped 180–560px each), stored in
+`localStorage` separately from the project itself.
 
 **Tool bar (left panel)**
 
@@ -531,6 +692,42 @@ can lay out the shape first and only decide the name/focus once it's done:
    (append-only, newest first) — click one to expand its full diff and
    narrative. Deleting one only removes it from the log; it does not
    revert whatever it already changed.
+
+**Using the AI tab**
+
+The AI tab is a chat window: a scrolling message history with a
+send-on-Enter input pinned at the bottom (Shift+Enter for a newline).
+Settings collapse into a one-line summary (`model @ base URL`) once set —
+click **Show AI settings** to reopen them.
+
+1. First time only: click **Show AI settings** and fill in **API base
+   URL** (e.g. `http://localhost:11434/v1` for a local Ollama server, or a
+   cloud provider's base URL), an **API key** if the endpoint needs one,
+   and a **model** name. These save to this browser only, never to a
+   project file.
+2. Type a plain-language request — a creation command ("add a politician
+   to the Libertarian Party in Vernak, called Aria Valeran") or a discrete
+   happening ("the Free Traders Coalition routed the Kreel Clans at
+   Kreel's Reach") — and hit Enter or **Send**. It appears as your message
+   in the thread.
+3. **Pass 1** sends the whole galaxy's compact index and gets back a
+   shortlist of relevant entity refs; **Pass 2** sends those entities'
+   full records plus recent event history and asks for exactly one tool
+   call — `create_actor`, `create_organization`, or `apply_event`. Both
+   render as an evolving assistant message ("Shortlisting…" → "Drafting a
+   proposal…" → the finished proposal card), same bubble the whole time.
+4. The proposal card shows a plain-language summary; for `apply_event` it
+   also runs the exact same effect-engine preview the manual Events form
+   uses, showing the real diff (and any validation error, e.g. an
+   ownership flip that doesn't clear its threshold) before you can commit.
+5. **Confirm & commit** applies it through the same handler a manual
+   creation/event would use — no separate code path, no special
+   privileges — and the card updates in place to "✓ Committed." rather
+   than disappearing, so the thread stays a readable log of what you
+   asked for and what happened. **Reject** marks it "✗ Rejected" instead,
+   without touching state.
+6. If the AI proposed more than one action in a single response, only the
+   first is shown; commit it and send another message for the rest.
 
 **Saving your work**
 - Everything autosaves to the browser's local storage as you go (per

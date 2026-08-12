@@ -1,6 +1,27 @@
 import { buildGalaxyIndexEnvelope } from "./aiIndex.js";
 
 const STORAGE_KEY = "galaxygen.project.v1";
+// Separate key, deliberately never part of `project` — an API base
+// URL/key/model is a machine-local setting, not galaxy data, so it must
+// never end up in a saved project file or SDF export that gets shared.
+const AI_SETTINGS_KEY = "galaxygen.aiSettings.v1";
+
+export function loadAISettings() {
+  try {
+    const raw = localStorage.getItem(AI_SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : { baseUrl: "", apiKey: "", model: "" };
+  } catch {
+    return { baseUrl: "", apiKey: "", model: "" };
+  }
+}
+
+export function saveAISettings(settings) {
+  try {
+    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    // Not critical — settings just won't persist across reloads.
+  }
+}
 
 export function loadFromStorage() {
   try {
@@ -50,8 +71,11 @@ export async function importProjectFile(file) {
   return parsed;
 }
 
-// Docs/10-galaxy-mapgen.md §7 — sectors/<slug>/entry.json shape.
-function sectorToEntry(sector) {
+// Docs/10-galaxy-mapgen.md §7 — sectors/<slug>/entry.json shape. Exported
+// (alongside the other four below) so aiQuery.js's `query_galaxy` "full"
+// mode can resolve a typed ref straight to the exact same entry shape the
+// real SDF export writes, with zero duplicated logic.
+export function sectorToEntry(sector) {
   return {
     sdf: 1,
     type: "sector",
@@ -68,7 +92,7 @@ function sectorToEntry(sector) {
 // Docs/10-galaxy-mapgen.md §7 — systems/<slug>/entry.json shape. `control`/
 // `war_chance`/faction security are `null` until "Generate factions" has
 // run at least once; `bodies` fills in with the future planet-gen phase.
-function systemToEntry(system) {
+export function systemToEntry(system) {
   return {
     sdf: 1,
     type: "system",
@@ -100,7 +124,7 @@ function systemToEntry(system) {
 // Docs/10-galaxy-mapgen.md §7 — factions/<slug>/entry.json shape. The
 // Dominion itself is never exported here — it's the implicit baseline
 // represented only via `security.dominion` on systems (§4).
-function factionToEntry(faction) {
+export function factionToEntry(faction) {
   return {
     sdf: 1,
     type: "faction",
@@ -122,7 +146,7 @@ function factionToEntry(faction) {
 
 // Docs/10-galaxy-mapgen.md §7 — actors/<slug>/entry.json shape. `origin` is
 // always "authored" until Phase 4's background auto-seeding pass exists.
-function actorToEntry(actor) {
+export function actorToEntry(actor) {
   return {
     sdf: 1,
     type: "actor",
@@ -146,7 +170,7 @@ function actorToEntry(actor) {
 // `members` is derived from every actor whose `affiliation` points here,
 // rather than a separately hand-maintained list, so it can never drift out
 // of sync with what the actors themselves say.
-function organizationToEntry(org, actors) {
+export function organizationToEntry(org, actors) {
   return {
     sdf: 1,
     type: "organization",
@@ -167,7 +191,7 @@ function organizationToEntry(org, actors) {
 // Docs/10-galaxy-mapgen.md §7, §9 pipeline step 5 — events/<slug>/entry.json
 // shape. Append-only: nothing in the app ever edits or re-derives an
 // existing event's own fields after commit, only removes it from the log.
-function eventToEntry(event) {
+export function eventToEntry(event) {
   return {
     sdf: 1,
     type: "event",

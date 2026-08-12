@@ -35,6 +35,55 @@ OLLAMA_CONTEXT_LENGTH=8192
 
 By standardizing on a single versatile 8B model for both reasoning passes, we eliminate model-swapping latency. The model remains hot in VRAM, processing sequential requests instantly.
 
+### 2.1 Quick setup for testing against GalaxyGen's AI tab today
+
+The AI tab calls whatever endpoint you give it directly from the browser
+— there's no backend to configure yet, so this is the whole setup:
+
+1. **Install Ollama** (https://ollama.com) on whichever machine will run
+   inference — same machine as the browser is fine for local testing.
+2. **Pull a tool-calling-capable model**, e.g.:
+   ```
+   ollama pull qwen3:8b
+   ```
+   (Any model Ollama lists as supporting tool/function calling works —
+   Qwen3, Llama 3.1+, Mistral Nemo, etc. A model without tool-calling
+   support will not be able to return the structured `shortlist`/
+   `create_actor`/`apply_event` calls the AI tab expects.)
+3. **Set `OLLAMA_ORIGINS`** so Ollama's server accepts a browser request
+   from GalaxyGen's dev-server origin — Ollama rejects cross-origin
+   requests by default. On the machine running Ollama:
+   - Windows: set the `OLLAMA_ORIGINS` environment variable (System
+     Properties → Environment Variables, or `setx OLLAMA_ORIGINS "*"` in
+     an elevated shell) and restart Ollama.
+   - Linux (systemd): `sudo systemctl edit ollama.service`, add under
+     `[Service]`:
+     ```ini
+     Environment="OLLAMA_ORIGINS=*"
+     ```
+     then `sudo systemctl restart ollama`.
+   - `*` allows any origin — fine for local testing; scope it to
+     `http://localhost:5174` (GalaxyGen's dev port) if you want it
+     tighter.
+4. **Start Ollama** (`ollama serve`, or it may already be running as a
+   service after install) — it listens on `http://localhost:11434` by
+   default.
+5. **In GalaxyGen's AI tab**, set:
+   - API base URL: `http://localhost:11434/v1` (Ollama's OpenAI-compatible
+     endpoint — note the `/v1` suffix)
+   - API key: leave blank (Ollama doesn't require one locally)
+   - Model: `qwen3:8b` (or whatever you pulled)
+6. Type a request and click **Ask AI**. If the base URL is unreachable or
+   CORS-blocked, the panel surfaces a clear error naming the URL and
+   suggesting the `OLLAMA_ORIGINS` fix above.
+
+Using a cloud provider instead (OpenAI, Anthropic, OpenRouter) works the
+same way — set the base URL to their API root (e.g.
+`https://api.openai.com/v1`), paste a real API key, and use one of their
+model names. No `OLLAMA_ORIGINS`-equivalent step is needed for most cloud
+providers; Anthropic specifically requires a direct-browser-access header,
+which the AI tab already sends on every request.
+
 ## 3. The Two-Pass Call Structure
 
 Given the token limits and reasoning capacity of an 8B model, providing the entire galaxy state (1000+ systems, factions, and actors) in a single prompt will fail. AI calls are structured into two sequential passes using the exact same Qwen3 8B model.
@@ -44,12 +93,18 @@ Given the token limits and reasoning capacity of an 8B model, providing the enti
 *   **Input Context:** A highly compressed index of the galaxy. Only names, slugs, and high-level tags (e.g., `[System: kreels-reach, Tags: frontier, mining, contested]`).
 *   **Prompt Instruction:** "Identify which specific system slugs, faction slugs, and actor slugs are relevant to the following event: [User Input]."
 *   **Output:** A small JSON array of referenced slugs. No tool calling or complex logic yet.
+*   **Confirmed live**: at real galaxy scale (~2300 entities in testing), sending the whole compact index blew a 45k-token prompt past a 4k-context local model, which silently truncated it and never even reached the actual request — Pass 1 came back empty every time. `aiClient.js`'s `runPass1` now pre-narrows candidates by a cheap lexical relevance score (how many significant words from the request appear in each entity's name/ref/tags), greedily keeping the highest-scoring entities up to a **character budget** (not a fixed entity count — line length varies too much with tag count for a flat cap to reliably bound prompt size) before ever calling the model. This is the local, no-embedding-model stand-in for the "plain embedding-similarity retrieval" §10 calls for. Below the budget, nothing is filtered.
+    - The budget (`MAX_PASS1_INDEX_CHARS = 6000`, ≈1500 tokens at a ~4-char/token estimate) is deliberately conservative — testing against a real local setup (Qwen3 8B via Ollama, default unconfigured context) showed only ~2000 tokens are actually usable for the prompt even though the server reports a 4096-token context (the rest is server-reserved headroom). An earlier 200-*entity* cap (no character budget) still produced prompts too large for that setup. If you've raised `OLLAMA_CONTEXT_LENGTH` (§2) to get a bigger usable window, raising `MAX_PASS1_INDEX_CHARS` correspondingly gives Pass 1 more of the galaxy to reason over and improves shortlist recall.
+    - **Confirmed live**: this exact local setup (Qwen3 8B, Ollama, forced `tool_choice` pinned to the `shortlist` function) still answered in free text instead of calling the tool. `runPass1` now falls back to scanning that free text for a JSON `{"refs": [...]}` object (or a bare typed-ref array) before giving up — turns an otherwise total failure into a working shortlist whenever the model at least attempts a parseable answer, independent of whether it honors forced tool-calling.
 
 ### Pass 2: Deep Detail (The Generator)
 *   **Goal:** Reason about the specific entities and construct the structured tool call.
 *   **Input Context:** The *full* JSON records (SDF data) of only the entities shortlisted in Pass 1, plus their recent event history.
 *   **Prompt Instruction:** "You are the effect engine simulator. Based on the provided detailed profiles, map the user's request to the exact system tool call."
 *   **Output:** A strict JSON Tool Call matching the system's predefined schemas (e.g., `apply_event`, `create_actor`).
+*   **Fixed a real bug found live**: `runPass2` was serializing each shortlisted entity's SDF entry (`JSON.stringify(e.entry)`) without its `ref` — the entry itself (`systemToEntry`/etc., §7) carries no ref/slug field at all. The model therefore had no ground truth for the actual typed ref and had to derive one from the entity's display name, which only happens to work when a system's slug still equals `slugify(name)` — i.e. it was never renamed (renaming intentionally keeps the original slug, so hyperlane/control references never break). Confirmed live: a system renamed to "Vraxis" (real slug unrelated to the name) made the model invent `system:vraxis`, which the effect engine correctly rejected with "System not found: vraxis." Fixed by sending each entity as `<ref> => <entry JSON>` and instructing the model explicitly to copy refs verbatim, never derive them from a name. Re-verified live with a system named "Vraxis" whose real slug was unrelated: the fixed prompt correctly exposes the real ref, and a proposal using it resolves cleanly.
+*   **Op confusion, confirmed live**: with the ref bug fixed, a real Qwen3 8B response for "increase X's control over system Y" picked `adjust_security` (Dominion security/crime level) instead of `adjust_control` (territorial ownership share, §4) — a plausible-sounding but wrong op, landing on a field that happened to already be maxed at 1.0 so the diff correctly rendered as a no-op (`1 → 1`), which was at least a visible tell something was off. The `APPLY_EVENT_TOOL` schema's `effects` array previously only pointed at this doc's §6.5 table for per-op field guidance — no help to a model that's never read it. Added an explicit inline cheat-sheet to the schema description distinguishing every op in one line each, specifically calling out that `adjust_control` (territorial share) and `adjust_security` (Dominion security level) are different fields not to be conflated. This is a prompt-quality improvement, not a guarantee — an 8B model can still pick the wrong op; if it keeps happening, try a stronger Pass 2 model (a bigger local model, or a cloud model) even while keeping a cheap one for Pass 1's broad filtering.
+*   **Tool call skipped entirely, confirmed live**: unlike Pass 1's forced `tool_choice`, Pass 2 uses `auto`, so nothing stops the model from answering in free text instead of calling `create_actor`/`create_organization`/`apply_event`. Confirmed live: a request to add an actor got back a plain-text JSON object shaped like an exported SDF entry (`{"type":"actor","name":"Aria Valeran","data":{"kind":"individual",...}}`) instead of a real tool call. `runPass2` now has the same class of fallback Pass 1 already had — on no tool call, it scans the response text for a JSON object and, if its shape (`type`/`data.kind`, `ideology`, `effects` array, etc.) matches one of the three tools, remaps it into that tool's argument shape before giving up. The system prompt was also strengthened to explicitly forbid writing an entity record directly instead of calling a function. Best effort, not a guarantee — a response in a genuinely unrecognized shape still surfaces as a plain error.
 
 ## 4. API & Tool Calling Protocol
 
@@ -123,14 +178,21 @@ The frontend UI should include a **Model Settings Panel** to allow the GM to tog
 
 ## 6. Tool contract (§9.1 surface, firmed up against the current data model)
 
-**Status: mostly spec — `query_galaxy`'s `index` mode is implemented
-client-side (`GalaxyGen/src/lib/aiIndex.js`), the other four tools are not.**
-This section freezes their request/response shapes against GalaxyGen's
-actual current data model (`GalaxyGen/src/lib/persistence.js`,
-`Docs/10-galaxy-mapgen.md` §7) so Phase 5's effect engine and Phase 6's MCP
-server can be built directly against it without re-deriving field names
-from scratch. Field names below match the SDF export exactly — an
-implementation should not need to invent or rename anything.
+**Status: implemented client-side, no separate backend yet.**
+`query_galaxy` (both `index` and `full` mode), `create_actor`, and
+`apply_event` are all real, working code paths, wired into a two-pass AI
+loop (§9.3) that calls out to any OpenAI-compatible `/chat/completions`
+endpoint directly from the browser (`GalaxyGen/src/lib/aiClient.js`,
+`aiIndex.js`, `aiQuery.js`, `effectEngine.js`) — see the GalaxyGen tab
+"AI". `create_organization` shares the exact same tool-calling and commit
+path as `create_actor` but hasn't been separately exercised end-to-end.
+`project_timestep` is not implemented at all. What's still missing
+relative to §1-5 above: the actual split-host deployment (a real
+"Application Host" backend, the Ollama VRAM/model config, the cloud-
+fallback toggle) — for now the browser *is* the Application Host, which
+works for local testing but isn't the deployed shape. Field names below
+match the SDF export exactly — an implementation should not need to
+invent or rename anything.
 
 ### 6.1 Typed refs
 
@@ -191,11 +253,18 @@ array of typed refs to scope it, or omit for the `"all"` case) and
 "Export SDF" now writes this envelope to `index.json` at the tree root
 automatically; a standalone **Download AI index** button (Toolbar → AI
 index) grabs just this file so it can be pasted into any LLM chat today,
-with no backend or tool-calling plumbing required yet. What's still
-missing is the live `query_galaxy` call itself (an actual request/response
-round-trip with an inference host) and `mode: "full"` — right now only the
-compact `entities` array exists; there's no handler that resolves a scope
-of typed refs back into full SDF entries on demand.
+with no backend or tool-calling plumbing required yet.
+
+`mode: "full"` is now also implemented: `GalaxyGen/src/lib/aiQuery.js`
+exports `queryGalaxyFull(project, scope, includeEvents)`, resolving a
+scope of typed refs to the exact same entry shape `persistence.js`'s
+`Export SDF` writes (imported directly from there — zero duplicated
+logic), plus recent event slugs whose `scope` overlaps the query. The
+AI tab's Pass 2 calls this directly on the shortlist Pass 1 returned.
+What's still missing is `query_galaxy` as an independently-callable tool
+inside an agent loop — right now it's only ever invoked as a fixed step in
+a two-pass pipeline the app drives itself, not something the model decides
+to call (or not) on its own.
 
 ### 6.3 `create_actor`
 
@@ -222,6 +291,14 @@ defaults `{}`. Slug collision handling matches the existing UI form
 (`uniqueSlug` — append `-2`, `-3`, ... on collision, never silently
 overwrite).
 
+**Implemented today**: `AIPanel.jsx`'s Pass 2 can propose this tool; a
+confirmed proposal is converted (typed refs stripped to the app's internal
+bare-slug/field shapes) and handed to `App.jsx`'s existing
+`handleCreateActor` — the exact function the manual "+ New Actor" form
+calls, so `origin: "authored"` and every other convention above is
+enforced for free, not re-implemented. Verified live with a mocked
+response.
+
 ### 6.4 `create_organization`
 
 ```json
@@ -245,18 +322,31 @@ hooks onto a pre-existing faction the caller found via `query_galaxy`
 first, never invents one. `members` is never part of the request — it's
 always derived (§6.2), so passing it is a validation error.
 
+**Implemented today**: the tool schema is wired into Pass 2 alongside
+`create_actor` and `apply_event`, dispatching to `App.jsx`'s existing
+`handleCreateOrganization` on confirm — same code path, same validation.
+Not separately exercised end-to-end in the session that built this (only
+`create_actor` and `apply_event` proposals were live-tested), but it's
+the identical dispatch pattern.
+
 ### 6.5 `apply_event`
 
-**Status: implemented.** `GalaxyGen/src/lib/effectEngine.js` is a complete,
-tested implementation of this tool's actual mechanics — `applyEvent(project,
-draft)` runs every effect below through the magnitude envelope, the
-ownership-flip gate, and the derived-field re-computation, and the Events
-tab (§13 Phase 5) is a hand-authored client for it. What's still missing is
-the AI-facing wrapper: nothing yet turns natural-language text into an
-event draft, and there's no live request/response round-trip with an
-inference host — an AI layer calling this tool just needs to produce the
-same draft shape the Events form already builds and hands to
-`applyEvent`.
+**Status: implemented, both mechanics and the AI-facing wrapper.**
+`GalaxyGen/src/lib/effectEngine.js` is a complete, tested implementation of
+this tool's actual mechanics — `applyEvent(project, draft)` runs every
+effect below through the magnitude envelope, the ownership-flip gate, and
+the derived-field re-computation. The Events tab (§13 Phase 5) is a
+hand-authored client for it; the **AI tab** (§13 Phase 6,
+`GalaxyGen/src/components/AIPanel.jsx`) is the AI-driven one — Pass 2 can
+propose this tool, and a confirmed proposal is handed to the exact same
+`applyEvent`-backed commit path (`App.jsx`'s `handleCommitEvent`), including
+the same Preview-then-Confirm review gate the manual form uses. Verified
+live end-to-end with a mocked chat-completions response. Still missing:
+a real inference host (this all currently runs against a local/cloud
+endpoint called directly from the browser, not the split-host deployment
+§1-5 describe) and the actual natural-language classification quality,
+which depends entirely on whatever model is configured — nothing here
+constrains or evaluates that.
 
 ```json
 // Request — identical to the events/<slug>/entry.json data block (§7)
@@ -322,11 +412,23 @@ high-confidence events get to use more of the envelope; a one-line rumor
 does not, even at the same nominal magnitude. Implemented as
 `envelopeCap = base * (0.3 + 0.7 * confidence)` in `effectEngine.js` — a
 reasonable placeholder curve, not one derived from the design doc (which
-leaves the exact shape unspecified); confidence `1` (the only value
-hand-authored events ever pass) uses the full envelope, so this is
-currently inert until an AI layer starts passing anything lower.
+leaves the exact shape unspecified). Hand-authored events always pass
+confidence `1` (full envelope); the AI tab's `apply_event` proposals now
+actually exercise this with real sub-1 values from the model's tool call
+(verified live: a proposed effect carrying `confidence: 0.9` round-tripped
+through commit unchanged), so this is no longer inert — just still
+un-tuned against real model output at scale.
 
 ### 6.6 `project_timestep`
+
+**Status: not implemented.** Nothing in the AI tab requests a projection —
+`AIPanel.jsx` only ever asks Pass 2 for one of `create_actor`/
+`create_organization`/`apply_event`. Since a projection is defined as
+decomposing into several linked ordinary `apply_event`-shaped records,
+implementing it is mostly a prompting/orchestration problem (ask the model
+for a list of events instead of one, then commit each through the exact
+same `applyEvent` path already built) rather than new engine work — but
+that orchestration and its own review-gate-per-event UI don't exist yet.
 
 ```json
 // Request
