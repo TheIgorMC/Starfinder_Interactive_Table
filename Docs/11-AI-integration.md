@@ -208,6 +208,21 @@ from an organization from an actor sharing a similar name:
 | `party:<slug>` | `organizations/<slug>` |
 | `actor:<slug>` | `actors/<slug>` |
 
+A ref's slug is fixed at creation and never changes, even if the entity is
+later renamed (a system's slug intentionally stays put on rename, so
+hyperlane/faction-control/actor-location references and past events' scope
+never go stale). That means a ref can stop resembling an entity's *current*
+name entirely. **Confirmed live**: a GM renamed a system to "Vraxis" whose
+real slug was unrelated; every AI proposal referencing it showed the bare
+ref (`system:kreel-1`) with nothing tying it back to "Vraxis," making
+proposals unreadable across a galaxy with several manually-renamed
+entities. Rather than re-slug on rename (which would break past events'
+history, trading one dangling-ref bug for another), the GM-facing AI panel
+now resolves each ref's live current name at render time — the same
+`resolveEntity` helper Pass 2 already uses — and shows it as `Vraxis
+(system:kreel-1)` wherever a ref appears in a proposal, with the ref itself
+never changing underneath.
+
 ### 6.2 `query_galaxy` (read-only)
 
 ```json

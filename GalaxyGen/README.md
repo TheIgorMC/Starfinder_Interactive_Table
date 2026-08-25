@@ -321,6 +321,17 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
   (system:kreel-1)" without the underlying ref ever changing. Verified the
   resolver (`resolveEntity` from `aiQuery.js`, already used by Pass 2)
   against a renamed system: correctly returns the live name from the ref.
+- **Crashed on first real proposal, confirmed live**: the ref-name display
+  above initially crashed the whole AI tab (`Function components cannot
+  have string refs`) the moment a proposal with an affiliation/location
+  showed up — the label component's prop was named `ref`, which React
+  reserves for its own ref-forwarding and never actually passes through to
+  a plain function component's props. Renamed the prop (`refId`) and
+  reproduced the exact crashing scenario (a `create_actor` proposal with a
+  faction affiliation) against a live mocked proposal to confirm the fix:
+  renders `Aria Valeran — individual, senator, affiliated with Gammon
+  Family (faction:gammon-family)` with no console errors, confirm-and-
+  commit included.
 
 **Name variety**: background-actor names were colliding constantly at
 real scale (confirmed live: "Sonya Ombric 2," "Mira Herrick 3" — the
