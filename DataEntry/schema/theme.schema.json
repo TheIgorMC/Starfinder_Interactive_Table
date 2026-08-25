@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "theme.schema.json",
+  "title": "Starfinder Theme",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "ability_mod", "theme_skill", "levels"],
+  "definitions": {
+    "bonusEffect": { "$ref": "race.schema.json#/definitions/bonusEffect" },
+    "reviewNote": { "$ref": "race.schema.json#/definitions/reviewNote" },
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "description"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "source": { "type": "string", "description": "Source book -- full title matching aon-cache's own `source` field, or a short code from lookups/sourcebooks.json." },
+        "page": { "type": "integer" },
+        "description": { "type": "string" },
+        "bonus": { "type": "array", "items": { "$ref": "#/definitions/bonusEffect" } }
+      }
+    }
+  },
+  "properties": {
+    "name": { "type": "string", "description": "Slug/id, lowercase, matches the filename (ace-pilot.json -> \"ace-pilot\")." },
+    "ability_mod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ability", "value"],
+      "properties": {
+        "ability": { "enum": ["str", "dex", "con", "int", "wis", "cha"] },
+        "value": { "type": "integer" }
+      }
+    },
+    "theme_skill": { "type": "string", "description": "Skill slug -- must match a `slug` in lookups/skills.json." },
+    "flavor_text": { "type": "string", "description": "The theme's opening prose blurb (aon-cache data.effect)." },
+    "levels": {
+      "type": "array",
+      "description": "SF1e themes grant exactly one feature at 1st level and one benefit each at 6th/12th/18th -- unlike races, there's no alternate/replaces branching here.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "feature"],
+        "properties": {
+          "level": { "enum": [1, 6, 12, 18] },
+          "feature": { "$ref": "#/definitions/feature" }
+        }
+      }
+    },
+    "_source": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "aon-cache slugs this entry was assembled from (the theme entry itself plus every linked theme-feature)."
+    },
+    "_review": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/reviewNote" },
+      "description": "Anything the normalization script couldn't confidently fill in -- see race.schema.json's _review for the general convention."
+    }
+  }
+}

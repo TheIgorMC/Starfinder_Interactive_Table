@@ -18,7 +18,7 @@
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mapFoundryItem } from "../src/foundry-import.js";
+import { mapFoundryItem, mapFoundryJournalPage, mapFoundryRollTable } from "../src/foundry-import.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SRC = path.resolve(
@@ -40,15 +40,39 @@ const FOLDER_CATEGORY_OVERRIDE = {
   effects: "effect",
 };
 
+// JournalEntry-shaped folders (core rulebook reference prose, not
+// game-mechanical items) — one JournalEntry maps to *several* Compendium
+// entries, one per page. See mapFoundryJournalPage() in foundry-import.js.
+const JOURNAL_FOLDER_CATEGORY = { rules: "rule", setting: "setting" };
+
+// RollTable-shaped folders (random/reference tables) — one file, one entry.
+const TABLE_FOLDERS = new Set(["tables"]);
+
 // Every folder this importer knows how to read. Folders not listed here
 // (alien-archives, starships, vehicles, hazards, ...) use a different data
 // shape entirely (full stat blocks / vehicle combat, not spells-and-gear
-// mechanics) and aren't wired up yet — see Docs/04-data-pipeline-aon.md.
+// mechanics or reference prose) and aren't wired up yet — see
+// Docs/04-data-pipeline-aon.md.
 const ALL_FOLDERS = [
   "feats", "spells", "races", "classes", "archetypes", "themes",
   "class-features", "racial-features", "archetype-features", "theme-features",
   "universal-creature-rules", "conditions", "effects", "equipment",
+  ...Object.keys(JOURNAL_FOLDER_CATEGORY), ...TABLE_FOLDERS,
 ];
+
+function uniqueSlugger() {
+  const used = new Set();
+  return (raw) => {
+    let slug = raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (used.has(slug)) {
+      let n = 2;
+      while (used.has(`${slug}-${n}`)) n++;
+      slug = `${slug}-${n}`;
+    }
+    used.add(slug);
+    return slug;
+  };
+}
 
 function parseArgs(argv) {
   const folders = [];
@@ -75,31 +99,51 @@ async function main() {
       continue;
     }
 
-    const categoryOverride = FOLDER_CATEGORY_OVERRIDE[folder];
     const outDir = path.join(outRoot, folder);
     await mkdir(outDir, { recursive: true });
     let count = 0;
     let skipped = 0;
-    const usedSlugs = new Set();
-    for (const file of files) {
-      const raw = JSON.parse(await readFile(path.join(dir, file), "utf8"));
-      const entry = mapFoundryItem(raw, categoryOverride);
-      if (!entry) { skipped++; continue; }
-      // Distinct source filenames can collapse to the same slug (e.g.
-      // "mind-reading.json" vs "mind_reading.json" — two different real
-      // items) — disambiguate rather than silently overwrite one on disk.
-      let slug = path.basename(file, ".json").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-      if (usedSlugs.has(slug)) {
-        let n = 2;
-        while (usedSlugs.has(`${slug}-${n}`)) n++;
-        slug = `${slug}-${n}`;
+    // Distinct source filenames (or, for journals, distinct page names
+    // across different chapters) can collapse to the same slug — dedupe
+    // rather than silently overwrite one entry with another on disk.
+    const nextSlug = uniqueSlugger();
+
+    if (JOURNAL_FOLDER_CATEGORY[folder]) {
+      const category = JOURNAL_FOLDER_CATEGORY[folder];
+      for (const file of files) {
+        const raw = JSON.parse(await readFile(path.join(dir, file), "utf8"));
+        const docSlug = path.basename(file, ".json").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        for (const page of raw.pages || []) {
+          const entry = mapFoundryJournalPage(page, raw.name, category);
+          if (!entry) { skipped++; continue; }
+          const slug = nextSlug(`${docSlug}--${page.name}`);
+          await writeFile(path.join(outDir, `${slug}.json`), JSON.stringify(entry, null, 2));
+          count++;
+        }
       }
-      usedSlugs.add(slug);
-      await writeFile(path.join(outDir, `${slug}.json`), JSON.stringify(entry, null, 2));
-      count++;
+    } else if (TABLE_FOLDERS.has(folder)) {
+      for (const file of files) {
+        const raw = JSON.parse(await readFile(path.join(dir, file), "utf8"));
+        const entry = mapFoundryRollTable(raw);
+        if (!entry) { skipped++; continue; }
+        const slug = nextSlug(path.basename(file, ".json"));
+        await writeFile(path.join(outDir, `${slug}.json`), JSON.stringify(entry, null, 2));
+        count++;
+      }
+    } else {
+      const categoryOverride = FOLDER_CATEGORY_OVERRIDE[folder];
+      for (const file of files) {
+        const raw = JSON.parse(await readFile(path.join(dir, file), "utf8"));
+        const entry = mapFoundryItem(raw, categoryOverride);
+        if (!entry) { skipped++; continue; }
+        const slug = nextSlug(path.basename(file, ".json"));
+        await writeFile(path.join(outDir, `${slug}.json`), JSON.stringify(entry, null, 2));
+        count++;
+      }
     }
+
     grandTotal += count;
-    console.log(`Imported ${count} from ${folder}${skipped ? ` (${skipped} skipped — unrecognized item type)` : ""}`);
+    console.log(`Imported ${count} from ${folder}${skipped ? ` (${skipped} skipped — unrecognized/empty)` : ""}`);
   }
 
   console.log(`Total: ${grandTotal} entries. Next: npm run validate:aon`);

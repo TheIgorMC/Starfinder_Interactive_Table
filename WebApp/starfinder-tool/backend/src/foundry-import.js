@@ -138,16 +138,24 @@ export function normalizeSource(raw) {
   return { book: SOURCE_BOOKS[codeOrName] || codeOrName, page };
 }
 
+// Resolves Foundry's own @UUID[...]{Label} and @Check[type:x|dc:y]{Label}
+// rich-text link syntax to plain labels — shared by foundryTextToPlain()
+// (items) and mapFoundryJournalPage() (rules/setting), which additionally
+// needs the cheerio DOM itself (not just the final text) to strip out a
+// leading "Source: ..." paragraph before converting to plain text.
+function resolveFoundryLinks(html) {
+  return html
+    .replace(/@UUID\[[^\]]*\]\{([^}]*)\}/g, "$1")
+    .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]\{([^}]*)\}/gi, "$2")
+    .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]/gi, (_, type) => `${SKILL_NAMES[type] || type} check`);
+}
+
 // Converts Foundry's rich-text HTML (including its own @UUID[...]{Label}
 // and @Check[type:x|dc:y]{Label} link syntax) into plain text for `data`
 // fields, matching what the AoN scraper already produces.
 export function foundryTextToPlain(html) {
   if (!html) return "";
-  const withLabels = html
-    .replace(/@UUID\[[^\]]*\]\{([^}]*)\}/g, "$1")
-    .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]\{([^}]*)\}/gi, "$2")
-    .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]/gi, (_, type) => `${SKILL_NAMES[type] || type} check`);
-  return load(withLabels).text().replace(/\n{3,}/g, "\n\n").trim();
+  return load(resolveFoundryLinks(html)).text().replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // Pulls "Prerequisites: ..." out of a feat's stripped description text —
@@ -521,6 +529,93 @@ export function mapFoundryItem(raw, categoryOverride) {
     url: "",
     data: { ...buildData(raw.type, system, plainDescription), ...(page != null ? { sourcePage: page } : {}) },
     mechanics: deriveFoundryMechanics(raw.type, system, plainDescription),
+    mechanicsSource: "foundry",
+  };
+}
+
+// --- JournalEntry-shaped content (rules/, setting/) -----------------------
+//
+// Structurally nothing like an Item: a JournalEntry is just { name, pages:
+// [{ name, type, text: { content: html } }] } — core rulebook reference
+// prose (how actions work, environmental rules, deity/planet lore), not a
+// game-mechanical thing with a `system` block. One JournalEntry (a rules
+// "chapter", e.g. "Actions in Combat") maps to *several* Compendium entries
+// here, one per page (e.g. "Standard Actions", "Move Actions", ...) — same
+// granularity as everything else in the Compendium being one concept per
+// entry, not one entry per chapter.
+
+// Nearly every page opens with a "<p><strong>Source:</strong> CRB pg.
+// 244</p>" paragraph (confirmed live across rules/setting) — pull it out
+// via normalizeSource() and drop that paragraph from the body so it isn't
+// duplicated as both `source`/`sourcePage` and the first line of `effect`.
+// A handful of pages don't have a real book/page after "Source:" (e.g.
+// rules/afflictions.json's "Diseases" page just runs straight into body
+// prose) — only strip the paragraph when normalizeSource() found an actual
+// page number or a recognized book, so unparseable text is never silently
+// swallowed as a fake source name.
+function extractAndStripJournalSource($) {
+  const first = $("p").first();
+  const text = first.text().trim();
+  const m = /^Source\s*:?\s*(.*)$/i.exec(text);
+  if (!m) return { book: "", page: null };
+  const { book, page } = normalizeSource(m[1]);
+  const looksReal = page != null || Object.values(SOURCE_BOOKS).includes(book);
+  if (!looksReal) return { book: "", page: null };
+  first.remove();
+  return { book, page };
+}
+
+// Converts one page of a JournalEntry into an aon-cache entry. Returns
+// null for non-text pages (Foundry's own "Figure: X" image-only pages,
+// common in setting/) and pages with no real body text once the source
+// line is stripped.
+export function mapFoundryJournalPage(page, topicName, category) {
+  if (page.type !== "text") return null;
+  const html = page.text?.content;
+  if (!html) return null;
+  const $ = load(resolveFoundryLinks(html));
+  const { book, page: pageNum } = extractAndStripJournalSource($);
+  const plain = $.text().replace(/\n{3,}/g, "\n\n").trim();
+  if (plain.length < 15) return null;
+
+  return {
+    category,
+    name: page.name,
+    source: book,
+    url: "",
+    data: { effect: plain, topic: topicName, ...(pageNum != null ? { sourcePage: pageNum } : {}) },
+    mechanics: blankMechanics(),
+    mechanicsSource: "foundry",
+  };
+}
+
+// --- RollTable-shaped content (tables/) ------------------------------------
+//
+// A third shape again: { name, formula, results: [{ name, range: [min,
+// max], weight, documentUuid }] }. No source book field exists on these at
+// all (confirmed — matches the existing precedent of the "Drone" class
+// entry having no parseable source line either, per
+// Docs/04-data-pipeline-aon.md's "Classes" note). `documentUuid` points at
+// another compendium's internal id (e.g.
+// "Compendium.sfrpg.races.Item.AMBcyDZDtJ1OOzh3") which doesn't resolve to
+// anything in our own database — kept as a raw string for reference rather
+// than resolved, since `result.name` already carries the human-readable
+// value a GM/player actually needs.
+export function mapFoundryRollTable(raw) {
+  if (!raw || !Array.isArray(raw.results)) return null;
+  const results = raw.results.map((r) => ({
+    name: r.name || "",
+    min: Array.isArray(r.range) ? r.range[0] : null,
+    max: Array.isArray(r.range) ? r.range[1] : null,
+    weight: r.weight ?? 1,
+  }));
+  return {
+    category: "table",
+    name: raw.name,
+    source: "",
+    url: "",
+    data: { formula: raw.formula || "", results },
+    mechanics: blankMechanics(),
     mechanicsSource: "foundry",
   };
 }

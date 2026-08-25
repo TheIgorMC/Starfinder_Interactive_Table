@@ -4,7 +4,7 @@ import { api } from "../api.js";
 
 // Fields already shown elsewhere (header, dedicated columns, mechanics
 // block) — don't repeat them in the generic "everything else in data" dump.
-const HIDDEN_DATA_FIELDS = new Set(["sourceUrl", "sourcePage", "description", "prerequisite", "combat"]);
+const HIDDEN_DATA_FIELDS = new Set(["sourceUrl", "sourcePage", "description", "prerequisite", "combat", "topic", "results", "formula"]);
 // Shown big and first, if present, ahead of the rest of the fields.
 const HEADLINE_FIELD = "effect";
 
@@ -276,6 +276,35 @@ const SECTIONS = [
     facets: [],
     ranges: [],
   },
+  {
+    key: "rules", label: "Rules", categories: ["rule"],
+    columns: [
+      { key: "name", label: "Name", get: (r) => r.name },
+      { key: "topic", label: "Chapter", get: (r) => r.data?.topic || "" },
+      sourceCol,
+    ],
+    facets: [{ key: "topic", label: "Chapter", get: (r) => r.data?.topic || "" }],
+    ranges: [],
+  },
+  {
+    key: "setting", label: "Setting & Lore", categories: ["setting"],
+    columns: [
+      { key: "name", label: "Name", get: (r) => r.name },
+      sourceCol,
+    ],
+    facets: [],
+    ranges: [],
+  },
+  {
+    key: "tables", label: "Random Tables", categories: ["table"],
+    columns: [
+      { key: "name", label: "Name", get: (r) => r.name },
+      { key: "formula", label: "Roll", get: (r) => r.data?.formula || "" },
+      { key: "resultCount", label: "Results", numeric: true, get: (r) => (r.data?.results || []).length },
+    ],
+    facets: [],
+    ranges: [],
+  },
 ];
 
 function compareRows(a, b, column) {
@@ -315,6 +344,20 @@ function ExpandedRow({ row, columns }) {
           )}
 
           {row.data?.[HEADLINE_FIELD] && <p className="compendium-effect">{row.data[HEADLINE_FIELD]}</p>}
+
+          {row.category === "table" && Array.isArray(row.data?.results) && (
+            <table className="compendium-roll-table">
+              <thead><tr><th>Roll</th><th>Result</th></tr></thead>
+              <tbody>
+                {row.data.results.map((res, i) => (
+                  <tr key={i}>
+                    <td>{res.min === res.max ? res.min : `${res.min}–${res.max}`}</td>
+                    <td>{res.name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
 
           {detailFields.length > 0 && (
             <dl className="compendium-fields">

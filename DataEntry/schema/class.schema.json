@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "class.schema.json",
+  "title": "Starfinder Class",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "key_ability_score", "base_attack_bonus", "saving_throws", "hit_points_per_level", "skill_ranks_per_level", "class_skills", "levels"],
+  "definitions": {
+    "bonusEffect": { "$ref": "race.schema.json#/definitions/bonusEffect" },
+    "reviewNote": { "$ref": "race.schema.json#/definitions/reviewNote" },
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "description"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "source": { "type": "string", "description": "Source book -- full title matching aon-cache's own `source` field, or a short code from lookups/sourcebooks.json." },
+        "page": { "type": "integer" },
+        "description": { "type": "string" },
+        "bonus": { "type": "array", "items": { "$ref": "#/definitions/bonusEffect" } }
+      }
+    }
+  },
+  "properties": {
+    "name": { "type": "string", "description": "Slug/id, lowercase, matches the filename (soldier.json -> \"soldier\")." },
+    "key_ability_score": { "enum": ["str", "dex", "con", "int", "wis", "cha"] },
+    "base_attack_bonus": { "enum": ["full", "3/4", "1/2"], "description": "Foundry's own \"full\" progression tag; \"3/4\"/\"1/2\" cover the other two SF1e progressions even though no class currently uses them at full-class scope." },
+    "saving_throws": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fort", "ref", "will"],
+      "properties": {
+        "fort": { "enum": ["fast", "slow"] },
+        "ref": { "enum": ["fast", "slow"] },
+        "will": { "enum": ["fast", "slow"] }
+      }
+    },
+    "hit_points_per_level": { "type": "integer" },
+    "stamina_points_per_level": { "type": "integer" },
+    "skill_ranks_per_level": { "type": "integer" },
+    "class_skills": {
+      "type": "array",
+      "items": { "type": "string", "description": "Skill slug -- must match a `slug` in lookups/skills.json." }
+    },
+    "flavor_text": { "type": "string", "description": "The class's opening prose blurb (aon-cache data.effect, before the first level-feature heading)." },
+    "levels": {
+      "type": "array",
+      "description": "One entry per level that grants at least one class feature -- not necessarily every level 1-20.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "features"],
+        "properties": {
+          "level": { "type": "integer", "minimum": 1, "maximum": 20 },
+          "features": { "type": "array", "items": { "$ref": "#/definitions/feature" } }
+        }
+      }
+    },
+    "_source": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "aon-cache slugs this entry was assembled from (the class entry itself plus every linked class-feature)."
+    },
+    "_review": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/reviewNote" },
+      "description": "Anything the normalization script couldn't confidently fill in -- see race.schema.json's _review for the general convention."
+    }
+  }
+}

@@ -253,11 +253,62 @@ split into distinct `category` values by source folder instead, via
 | `shield` | 34 | `equipment` | Shields |
 | `weaponAccessory` | 26 | `equipment` | Weapon accessories |
 | `container` | 11 | `equipment` | Bags, cases, ... |
+| `rule` | 335 | `rules` | Core rulebook reference glossary — Actions in Combat, Afflictions, Environment, Skills, Combat Basics, Character Advancement, Downtime, Galactic Trade, ... (46 chapters, one entry per page/topic within each) |
+| `setting` | 67 | `setting` | Pact Worlds lore — deities and planets/locations, one entry each |
+| `table` | 46 | `tables` | Random/reference tables (racial subtypes, critical hit/fumble effects, treasure) |
 
 A handful of items (59 in `class-features`, 1 in `conditions`) are skipped
 rather than crash — mostly drone chassis/mod items and one exotic
 condition variant that don't fit any handled Foundry `type`; `import-
 foundry.js` prints a skip count per folder so you can see this.
+
+### Journal/table-shaped content (`rule`/`setting`/`table`)
+
+Structurally different from every category above: `rules/` and `setting/`
+are Foundry **Journal Entries**, not Items — `{ name, pages: [{ name,
+type, text: { content: html } }] }`, core rulebook reference *prose*
+(how actions work, environmental rules, deity/planet lore), not a
+game-mechanical thing with a `system` block. `tables/` is a third shape
+again, a Foundry **Roll Table** — `{ name, formula, results: [{ name,
+range, weight }] }`.
+
+`mapFoundryJournalPage()`/`mapFoundryRollTable()` in `foundry-import.js`
+handle these (`import-foundry.js` branches per folder — see
+`JOURNAL_FOLDER_CATEGORY`/`TABLE_FOLDERS`). One JournalEntry maps to
+*several* Compendium entries, one per page (e.g. the "Actions in Combat"
+chapter becomes "Standard Actions", "Move Actions", "Full Actions", ... as
+separate entries under `data.topic: "Actions in Combat"`) — same
+one-concept-per-entry granularity as everything else in the Compendium,
+not one giant entry per chapter. `mechanics` stays blank for all three —
+this is reference prose/tables, not something with modifiers/actions/
+requirements to categorize.
+
+Nearly every rules/setting page opens with a `<p><strong>Source:</strong>
+CRB pg. 244</p>` paragraph, parsed into `source`/`data.sourcePage` and
+stripped from the body so it isn't duplicated — but this is a plain regex
+match on the *first paragraph's* text, not a real structured field the way
+`system.source` is on Items, so it has two known gaps: a rules page whose
+source line doesn't parse as a real book/page (confirmed:
+`rules/afflictions.json`'s "Diseases" page) leaves `source` empty rather
+than guessing, and setting pages that put their source inside a stat-block
+`<table>` instead of a leading paragraph (confirmed: `setting/
+absalom_station.json`) aren't caught by the first-paragraph check at all —
+the source text is still present in the body either way, just not split
+out into the dedicated fields. Not fixed further since content isn't lost,
+only metadata quality in these specific cases.
+
+`tables/` results reference other compendium entries via a Foundry-internal
+`documentUuid` (e.g. `Compendium.sfrpg.races.Item.AMBcyDZDtJ1OOzh3`) that
+doesn't resolve to anything in our own database — deliberately not
+resolved at import time, since `result.name` already carries the
+human-readable value (e.g. "Human (Featherlight)") a GM/player actually
+needs; only `name`/`min`/`max`/`weight` are kept.
+
+The Compendium view (`frontend/src/views/Compendium.jsx`) has matching
+sections — **Rules** (filterable by chapter), **Setting & Lore**, **Random
+Tables** (rendered as an actual roll-range table, not the generic field
+dump every other category uses, since `results[]` is an array of objects
+the generic renderer can't stringify sensibly).
 
 ### `data` fields per category
 
@@ -373,6 +424,180 @@ data shape and aren't wired up:
   needs a different reader (Journal page tree, not item `system` fields).
 - **`characters`** folder (33 items) — sample pregenerated PCs, not rules
   content; use the Hephaistos importer for real character data instead.
+
+## Normalized authoring pipeline (race/class/archetype/theme)
+
+`DataEntry/` (see its own README) hand-authors a stricter, decomposed JSON
+shape per race/class/archetype/theme (`DataEntry/schema/*.schema.json`) —
+started because a race's Foundry-imported `data.effect` is one undecomposed
+prose blob (flavor text + every named trait run together), not because the
+underlying mechanics are actually missing. In fact they mostly aren't:
+`racial-features/`, `class-features/`, `archetype-features/`, and
+`theme-features/` already carry each individual trait/feature as its own
+entry with real `mechanics.modifiers`, just not linked back to its parent
+race/class/archetype/theme as a single document.
+
+`backend/scripts/normalize-entries.js` does that linking — deterministically,
+via regex/join, not an LLM — and only reaches for a local LLM (optional,
+`--llm`) for the handful of gaps that are genuinely prose-dependent:
+
+```bash
+cd WebApp/starfinder-tool/backend
+node scripts/normalize-entries.js races                 # or classes/archetypes/themes/all
+node scripts/normalize-entries.js races --limit=5        # useful while testing
+node scripts/normalize-entries.js races --llm             # also use a local Ollama for unresolved "replaces" links
+  # --ollama-url=http://localhost:11434/v1 --model=qwen3:8b are the defaults,
+  # same conventions as GalaxyGen (Docs/11-AI-integration.md)
+```
+
+Output goes to `DataEntry/output/<category>/<slug>.json` (gitignored, like
+`aon-cache/`) — a **draft for human review**, not a final authored file.
+Every entry carries `_source` (which aon-cache slugs it was assembled from)
+and `_review` (anything the script — or the LLM step — couldn't confidently
+resolve, each with a reason and the raw source text). Nothing here writes
+back into `aon-cache/` or the DB import path.
+
+What the deterministic join actually does, per category:
+- **Races**: a `racial-feature` entry is a *default* trait if its
+  `mechanics.requirements[].hasFeat.name` cleanly names this race (or,
+  since a variant race's own name carries a parenthetical the source data
+  doesn't — "Android (Companion)"'s traits link via `hasFeat: "Android"`,
+  the base species — its base name too; confirmed live, 60/190 races have
+  a parenthetical variant name and were all coming back with zero linked
+  traits before this was added) and its text has no "This replaces..."
+  sentence; it's an *alternate* if that sentence names this race (parsed
+  per-clause, since one entry can read "replaces X for aasimars or Y for
+  ganzis", or "replaces X and Y" for two traits at once — the schema only
+  records one `replaces` id, so the clause that actually resolves to a
+  known trait is preferred over always taking the first one listed).
+  Shared/generic entries (`hasFeat: "Racial Feature"` — e.g. Darkvision,
+  granted to many species) fall back to matching the feature's bare name
+  against a heading line in the race's own prose, flagged for review since
+  that's weaker evidence.
+  Ability score adjustments and size are each cross-checked across up to
+  three independent copies of the same fact (the structured
+  `mechanics.abilityModifiers`/`data.sizeAndType` fields, `data.
+  abilityScores`' separate summary text, and — for ability scores — the
+  "Ability Adjustments" line embedded inline in `data.effect`'s prose) —
+  see "Real upstream data bugs found this way" below for why agreement
+  between two sources isn't itself proof of correctness.
+- **Classes/themes**: features link via their own `data.prerequisites` text
+  ("6th Level (Envoy)", "12th Level - Guard") or, when that's missing the
+  parent name, the feature's own trailing `(ParentName)` or filename.
+  Themes' 1st-level "Theme Knowledge" isn't a separate feature entry at all
+  — it's embedded in the theme's own base entry under an ALL-CAPS "THEME
+  KNOWLEDGE (1ST)" heading — extracted separately.
+- **Archetypes**: same linking as classes, but which class feature slot
+  each archetype level replaces is essentially never stated in a
+  consistently parseable way in the source text (confirmed: 0/248 sampled
+  archetype-feature entries name it) — every level always gets a
+  `_review` note for `replaces_class_feature` rather than a guess.
+
+The LLM step (`--llm`) is used for exactly one thing today: resolving a
+race's alternate-trait `replaces` target when the regex match against
+known trait ids fails (e.g. the source phrase doesn't slugify cleanly to
+an existing trait name). It's a single short, bounded question per
+unresolved trait — not "summarize this page" — via
+`backend/scripts/lib/ollama-client.js` (same OpenAI-compatible
+`/chat/completions` convention as GalaxyGen's `aiClient.js`, ported to
+Node's built-in `fetch`). The system prompt explicitly tells the model
+null is a common, correct answer, not a fallback of last resort —
+confirmed live this needed to be explicit: without it, the model picked a
+real-but-wrong id from the known-trait list rather than admitting no
+match (see below). If the endpoint isn't reachable, or a lookup fails
+after one retry, the item just stays in `_review` instead of blocking the
+run.
+
+Deliberately **not** run through this pipeline: weapons, spells, feats, and
+the rest of `equipment/` — those are already fully structured per-item from
+the Foundry import (damage, range, price, properties, ability-score
+prerequisites all already typed fields, not prose), so there's nothing an
+LLM pass would add.
+
+### Grounded consistency checker
+
+`backend/scripts/audit-normalized.js` independently re-checks fields the
+normalizer derived against the *same source text they came from* — not
+against a local model's memory of Starfinder rules, which an 8B model
+doesn't reliably have and would confidently fabricate rather than admit
+(the worst failure mode for a checker specifically, since its whole job is
+catching errors). Every claim it verifies is grounded in text supplied in
+the prompt: ability score adjustments and size against the race's own
+overview prose, the default-trait list against the same, and each
+alternate trait's `replaces` value against that trait's own description.
+
+```bash
+node scripts/audit-normalized.js races --limit=10   # try a few first
+node scripts/audit-normalized.js races                # full category
+```
+
+Findings write into each entry's `_audit` array (separate from `_review`
+— `_review` flags what the normalizer *couldn't* determine, `_audit` flags
+fields it *did* confidently fill in that this independent check now
+disputes) and print a summary to the console. Like the `--llm` step above,
+this needs a local Ollama server reachable at `--ollama-url` (default
+`http://localhost:11434/v1`).
+
+**This has a real, structural blind spot, not just occasional
+inaccuracy**: it can only catch Foundry's data disagreeing *with itself*
+(prose vs. structured field, or one race's default-trait list vs. what its
+own overview text names) — it has no way to catch every available
+Foundry-sourced signal agreeing on the same wrong answer. Confirmed live:
+`dessamar-instar.json`'s `data.abilityScores` text and structured
+`mechanics.abilityModifiers` field both said "-2 Con, +2 Dex", consistent
+with each other, and the checker had no basis to flag it — the actual
+rulebook says +2 Con, -2 Dex. That one was only caught because a human
+checked the physical book. The checker also isn't itself infallible even
+when grounded: the same run flagged a real *false positive* on this same
+race, misreading a source snippet that plainly said "+2 dexterity" as
+saying "-2". Treat every `_audit` finding (mismatch or clean) as a lead
+for human review, not a verdict.
+
+**Real upstream data bugs found this way** (fixed in the normalizer, not
+worked around):
+- `racial-features/reverse-fate.json` and `fiendish-nihilism.json` both
+  claim `hasFeat: "Aasimar"` while their own text is entirely about
+  ganzis/tieflings — a source-data mislabel; the assembler now
+  cross-checks a candidate trait's text against every known race name and
+  excludes (with a `_review` note) anything naming a different one.
+- `copaxi.json`'s structured `data.sizeAndType` says "fine", its own prose
+  says "Copaxis are Medium humanoids" — disagree within the same entry.
+  Prose wins on disagreement now (still flagged either way).
+- `dessamar-instar.json`: see above — the one bug no internal
+  cross-check could have caught, since every Foundry-sourced signal agreed
+  on the wrong values. Fixed by hand against the physical rulebook.
+- The `--llm` resolver itself had a bug, not the source data: asked to
+  match `android-laborer.json`'s "replaces exceptional vision" against
+  Android's two known default trait ids (neither of which is "Exceptional
+  Vision" — that trait has no `racial-feature` entry in the Foundry
+  checkout at all, a genuine gap, not a linking failure), the model
+  answered "constructed" — a real id, just the wrong one, so it passed the
+  "is this a known id" validation undetected. Fixed by making the prompt
+  explicit that null is expected and common, not a failure state.
+
+**Known, not-yet-fixed gaps this surfaced** (real, documented, left as
+`_review`/`_audit` items rather than guessed at):
+- **Missing source data**: `alkainan.json` has zero `racial-feature`
+  entries anywhere in the Foundry checkout, despite its own prose clearly
+  describing several traits (Low-Light Vision, Metallic Bloodline, Natural
+  Weapons) — nothing to link to; needs hand-authoring via `DataEntry/`.
+- **"Choose one of several" defaults**: some races (e.g. `cephalume`, with
+  its krikik symbiote options) present a *choice* of otherwise-equivalent
+  default traits, not "grant all of them" — the current model has no
+  concept between "default" (always granted) and "alternate" (swaps one
+  specific thing) for this case.
+- **Stage/subspecies-conditional defaults**: races published as several
+  life-stage or subspecies variants sharing one base species name (Ghoran
+  Sapling/Oakling/Willower) link via the same base `hasFeat` as the
+  variant-race fix above intends, but some linked traits/ability
+  adjustments only actually apply to *one* stage, not all — the source
+  data doesn't distinguish this via `hasFeat`, only in each trait's own
+  prose, which isn't parsed for conditions yet. Same underlying category
+  as the choice-of-several gap above (a race's stat block isn't always
+  "here are your defaults", sometimes it's "pick within this group").
+- **Variable size**: a handful of races (e.g. `entu-symbiote`: Small,
+  Medium, or Large) don't have one fixed size at all; the schema assumes
+  a single `size` value per race.
 
 ## Querying by source
 

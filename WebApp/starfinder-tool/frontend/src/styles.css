@@ -331,6 +331,9 @@ button.active { background: #2a4a6b; border-color: #4f8ef7; }
 }
 .compendium-mechanics dt { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6f9bc4; }
 .compendium-mechanics dd { margin: 0; }
+.compendium-roll-table { border-collapse: collapse; margin: 0 0 14px; font-size: 13px; }
+.compendium-roll-table th, .compendium-roll-table td { padding: 4px 12px 4px 0; text-align: left; border-bottom: 1px solid #1d2833; }
+.compendium-roll-table th { color: #7c8894; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
 
 .pill.cat-feat { background: #24405f; color: #a9d0ff; }
 .pill.cat-spell { background: #402458; color: #ddb0ff; }

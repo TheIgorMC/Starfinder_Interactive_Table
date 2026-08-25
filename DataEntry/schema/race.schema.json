@@ -4,7 +4,7 @@
   "title": "Starfinder Race",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "type", "size", "hp", "ability_modifiers", "trait", "description_rulebook"],
+  "required": ["name", "type", "size", "hp", "ability_modifiers", "traits", "description_rulebook"],
   "definitions": {
     "abilityValue": {
       "description": "A fixed racial modifier, or \"any\" if the player assigns it freely (see ability_modifiers.special for the amount).",
@@ -34,7 +34,7 @@
       "type": "object",
       "required": ["type"],
       "properties": {
-        "type": { "enum": ["skill", "ability", "save", "condition"] }
+        "type": { "enum": ["skill", "ability", "save", "condition", "modifier"] }
       },
       "allOf": [
         {
@@ -79,8 +79,37 @@
               "qty": { "type": "integer" }
             }
           }
+        },
+        {
+          "if": { "properties": { "type": { "const": "modifier" } } },
+          "then": {
+            "description": "Catch-all passthrough of the app's own engine-wide Modifier shape (backend/src/mechanics-schema.js) -- covers everything the four sugar-typed variants above don't (energy resistance, AC, speed, initiative, attack/damage buckets, ...). Automated normalization (WebApp/starfinder-tool/backend/scripts/normalize-entries.js) emits this variant by passing a linked racial-feature's mechanics.modifiers[] through close to verbatim, so nothing is lossily remapped into the narrower vocabulary above.",
+            "required": ["name", "effectType", "modifier"],
+            "properties": {
+              "name": { "type": "string" },
+              "modifierType_": { "type": "string", "description": "SF1e bonus type, e.g. untyped/racial/circumstance/insight -- same-type bonuses from different sources don't stack except untyped/circumstance/dodge. Field literally named `type` on the wire (see modifier.type below), aliased here only to avoid clashing with bonusEffect's own `type` discriminator." },
+              "effectType": { "type": "string", "description": "What this modifies, e.g. skill/save/ac/energy-resistance/all-attacks -- see Docs/04-data-pipeline-aon.md 'The Modifiers system'." },
+              "valueAffected": { "type": ["string", "null"], "description": "Narrows effectType further, e.g. which skill/save/energy type." },
+              "modifier": { "type": ["string", "number"], "description": "Formula string or constant, e.g. \"5\" or \"@abilities.str.mod\"." },
+              "modifierType": { "type": "string", "enum": ["constant", "formula"] },
+              "max": { "type": ["number", "null"] },
+              "condition": { "type": "string" },
+              "notes": { "type": "string" },
+              "source": { "type": "string" }
+            }
+          }
         }
       ]
+    },
+    "reviewNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "reason"],
+      "properties": {
+        "scope": { "type": "string", "description": "What this note is about, e.g. a trait id, \"alternate_traits[2].replaces\", or \"description_rulebook.names\"." },
+        "reason": { "type": "string", "description": "Why this couldn't be confidently filled in automatically -- e.g. \"replaces-sentence didn't match the expected pattern\", \"LLM classification below confidence threshold\"." },
+        "raw": { "type": "string", "description": "The source text this was derived (or failed to be derived) from, so a human reviewer doesn't have to go dig it out of aon-cache again." }
+      }
     }
   },
   "properties": {
@@ -104,13 +133,21 @@
         "description": { "type": "string" }
       }
     },
-    "trait": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "description"],
-      "properties": {
-        "id": { "type": "string" },
-        "description": { "type": "string" }
+    "traits": {
+      "type": "array",
+      "description": "The race's default traits -- plural, since real races commonly grant several (e.g. Aasimar: Darkvision + Celestial Radiance + Celestial Resistance + Skilled, all at once, none of them optional). Was a single `trait` object in an earlier revision of this schema, which only fit races with exactly one default trait; corrected once real Foundry-sourced data (racial-features/*.json) showed that's not the common case.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "source": { "type": "string", "description": "Source book -- full title (e.g. \"Alien Archive 2\") matching aon-cache's own `source` field, or a short code from lookups/sourcebooks.json for hand-authored entries." },
+          "page": { "type": "integer" },
+          "description": { "type": "string" },
+          "bonus": { "type": "array", "items": { "$ref": "#/definitions/bonusEffect" } }
+        }
       }
     },
     "alternate_abilities": {
@@ -122,7 +159,7 @@
         "properties": {
           "name": { "type": "string" },
           "id": { "type": "string" },
-          "source": { "type": "string", "description": "Sourcebook short code -- should match a `code` in lookups/sourcebooks.json, e.g. CRB, COM, AA2." },
+          "source": { "type": "string", "description": "Source book -- full title matching aon-cache's own `source` field, or a short code from lookups/sourcebooks.json." },
           "page": { "type": "integer" },
           "description": { "type": "string" },
           "ability_modifiers": { "$ref": "#/definitions/abilityModifiers" }
@@ -138,11 +175,14 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
-          "source": { "type": "string", "description": "Sourcebook short code -- should match a `code` in lookups/sourcebooks.json, e.g. CRB, COM, AA2." },
+          "source": { "type": "string", "description": "Source book -- full title matching aon-cache's own `source` field, or a short code from lookups/sourcebooks.json." },
           "page": { "type": "integer" },
           "description": { "type": "string" },
           "bonus": { "type": "array", "items": { "$ref": "#/definitions/bonusEffect" } },
-          "replaces": { "type": "string", "description": "id of the trait or alternate_trait this one swaps out." }
+          "replaces": {
+            "type": ["string", "null"],
+            "description": "id of the trait (in `traits[]`, or another alternate_traits[].id) this one swaps out. null when a source's \"This replaces X\" sentence couldn't be resolved to a known trait id -- see _review."
+          }
         }
       }
     },
@@ -161,6 +201,16 @@
         "adventurers": { "type": "string" },
         "names": { "type": "string" }
       }
+    },
+    "_source": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "aon-cache slugs this entry was assembled from (the race entry itself plus every linked racial-feature) -- provenance for a reviewer who wants to go check the original scrape."
+    },
+    "_review": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/reviewNote" },
+      "description": "Anything the normalization script (or its optional local-LLM assist) couldn't confidently fill in -- reviewed and cleared by a human before this entry is treated as final, rather than silently dropped or guessed. Empty/absent once fully reviewed."
     }
   }
 }

@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "archetype.schema.json",
+  "title": "Starfinder Archetype",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "requirements", "levels"],
+  "definitions": {
+    "bonusEffect": { "$ref": "race.schema.json#/definitions/bonusEffect" },
+    "reviewNote": { "$ref": "race.schema.json#/definitions/reviewNote" },
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "description"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "source": { "type": "string", "description": "Source book -- full title matching aon-cache's own `source` field, or a short code from lookups/sourcebooks.json." },
+        "page": { "type": "integer" },
+        "description": { "type": "string" },
+        "bonus": { "type": "array", "items": { "$ref": "#/definitions/bonusEffect" } },
+        "replaces_class_feature": {
+          "type": ["string", "null"],
+          "description": "Free-text name of the class feature this archetype level swaps out, e.g. \"Combat Feat\". Unlike race.schema.json's alternate_traits[].replaces, this is rarely stated explicitly in the source text (0/248 sampled archetype-feature entries name it directly) -- the archetype's own flavor text usually just says 'alternate class feature at Nth level' and expects the reader to know their class's level table. Almost always null unless a human (or a confident LLM pass) fills it in; expect a _review note here by default."
+        }
+      }
+    }
+  },
+  "properties": {
+    "name": { "type": "string", "description": "Slug/id, lowercase, matches the filename (battle-leader.json -> \"battle-leader\")." },
+    "requirements": { "type": "string", "description": "Free text -- which class(es)/conditions qualify a character to take this archetype. Often sparse or empty in the source data (see _review)." },
+    "flavor_text": { "type": "string", "description": "The archetype's opening prose blurb (aon-cache data.effect, before the first level-feature heading)." },
+    "levels": {
+      "type": "array",
+      "description": "One entry per level at which this archetype grants or swaps a feature.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "features"],
+        "properties": {
+          "level": { "type": "integer", "minimum": 1, "maximum": 20 },
+          "features": { "type": "array", "items": { "$ref": "#/definitions/feature" } }
+        }
+      }
+    },
+    "_source": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "aon-cache slugs this entry was assembled from (the archetype entry itself plus every linked archetype-feature)."
+    },
+    "_review": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/reviewNote" },
+      "description": "Anything the normalization script couldn't confidently fill in -- see race.schema.json's _review for the general convention. Expect at least one entry per level here (the replaces_class_feature gap above) until a human fills them in by hand."
+    }
+  }
+}

@@ -9,6 +9,8 @@
     "import:foundry": "node scripts/import-foundry.js",
     "derive:aon": "node scripts/derive-mechanics.js",
     "validate:aon": "node scripts/validate-aon-cache.js",
+    "normalize:aon": "node scripts/normalize-entries.js",
+    "audit:aon": "node scripts/audit-normalized.js",
     "import:aon": "node scripts/import-aon-cache.js",
     "create-user": "node scripts/create-user.js"
   },

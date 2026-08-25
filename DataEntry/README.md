@@ -1,18 +1,59 @@
-# Data Entry Tool (planned)
+# Data Entry Tool
 
-A standalone Python GUI for hand-authoring Compendium JSON files (races
-first, other categories later) — a guided form instead of raw JSON editing,
-so entries come out structurally consistent and pre-validated. Not part of
-the `WebApp/starfinder-tool` stack or the Orange Pi deployment (same idea as
-`../MapCreator`): it runs on a workstation and produces JSON files that
-later get imported into the app the normal way.
+Schema-first, hand-authored (and now also machine-prefilled) Compendium
+JSON for races, classes, archetypes, and themes — a stricter, decomposed
+shape than what `aon-cache/` has natively, so entries are structurally
+consistent and easy to review. Not part of the `WebApp/starfinder-tool`
+stack or the Orange Pi deployment (same idea as `../MapCreator`): this is
+workstation-only tooling that produces JSON files, imported into the app
+later the normal way.
 
-This doc is step one: pin down the schema and the GUI plan before writing
-any GUI code. `race.schema.json` is a companion JSON Schema (draft-07) file
-in `schema/` that both documents the shape formally and can be used to
-validate files at save time. `lookups/` holds the closed-vocabulary lists
-(sizes, creature types, abilities, skills, saves, conditions, sourcebooks)
-that back every dropdown in the eventual GUI — see below.
+`schema/*.schema.json` (draft-07 JSON Schema, one per category) is the
+target shape, pinned down before any authoring — see each file's own
+comments, and `Docs/04-data-pipeline-aon.md` → "Normalized authoring
+pipeline" for the full rationale (short version: a race's Foundry-imported
+`data.effect` is one undecomposed prose blob; the individual trait
+mechanics already exist as separate, clean entries in `racial-features/`
+etc., they just aren't linked back to their parent). `lookups/` holds the
+closed-vocabulary lists (sizes, creature types, abilities, skills, saves,
+conditions, sourcebooks) every schema's enum-like fields reference.
+
+## Getting a first draft: the normalize script (recommended starting point)
+
+`WebApp/starfinder-tool/backend/scripts/normalize-entries.js` assembles
+`output/<category>/<slug>.json` drafts directly from `aon-cache/` —
+deterministic joins for the vast majority of the work, an optional local
+LLM (`--llm`, via Ollama) only for the handful of gaps that genuinely need
+reading prose (mainly: which trait a race's alternate trait replaces, when
+the text doesn't slugify cleanly to a known trait name). Every draft
+carries `_source` (which aon-cache entries it came from) and `_review`
+(anything left unresolved, with why) — review and clear `_review` by hand
+(editing the JSON directly, or eventually the GUI below) before treating an
+entry as final. `output/` is gitignored, same as `aon-cache/` — these are
+drafts, not the authored source of truth yet.
+
+```bash
+cd WebApp/starfinder-tool/backend
+node scripts/normalize-entries.js races --limit=5   # try a few first
+node scripts/normalize-entries.js all                 # races + classes + archetypes + themes
+```
+
+`scripts/audit-normalized.js` is a second, independent pass worth running
+before trusting a draft: it re-checks fields the normalizer filled in
+against their own source text via the same local LLM, and has already
+caught real bugs the normalizer's own logic missed (see
+`Docs/04-data-pipeline-aon.md` → "Grounded consistency checker" for what
+it can and can't catch — it's a lead generator for human review, not a
+verdict).
+
+```bash
+node scripts/audit-normalized.js races --limit=10
+```
+
+The GUI plan below is still the intended way to *review and hand-correct*
+these drafts (and to author anything from scratch that has no aon-cache
+source at all) — it just no longer needs to be the starting point for
+every entry.
 
 ## Lookups — the controlled vocabularies
 
@@ -61,15 +102,9 @@ stays free text and just grows as new races need a new one.
 
 ## Race schema (normalized)
 
-Based on `human.json` as the reference "dream" shape, with one change: **all
-modifier/quantity values are integers**, never strings like `"+2"`. The
-reference file mixes both (`"special": "+2"` but `alternate_abilities[1].str:
-"+2"` vs `alternate_abilities[0].str: -2` in the same object) — that
-inconsistency is exactly the kind of thing hand-editing raw JSON lets slip
-through, and exactly what a form-based GUI with typed number fields
-eliminates by construction. Validating `human.json` against
-`schema/race.schema.json` produces 9 errors, all `'+2' is not of type
-'integer'` — normalizing those to `2` validates clean.
+All modifier/quantity values are integers, never strings like `"+2"` —
+normalize-entries.js already produces them that way from Foundry's own
+numeric fields, so this only matters for hand-authored entries.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -80,9 +115,11 @@ eliminates by construction. Validating `human.json` against
 | `hp` | integer | racial HP |
 | `ability_modifiers` | object | `str/dex/con/int/wis/cha`: integer, or the literal `"any"` (player picks); `special`: integer, the amount applied to each `"any"` slot |
 | `bonus_feats` | object, optional | `qty` (int), `condition` (`level`/`always`), `condition_spec` (int, e.g. the level), `description` |
-| `trait` | object | the race's one default fixed trait: `id`, `description` |
+| `traits[]` | array | the race's default traits — plural: real races commonly grant several at once (e.g. Aasimar: Darkvision + Celestial Radiance + Celestial Resistance + Skilled), not just one. Each has `id`, `name`, `description`, `bonus[]` |
 | `alternate_abilities[]` | array, optional | swaps the *entire* `ability_modifiers` block; each has `name`, `id`, `source`, `page`, `description`, `ability_modifiers` |
-| `alternate_traits[]` | array, optional | swaps out `trait` (or another alt trait); each has `id`, `name`, `source`, `page`, `description`, `bonus[]`, `replaces` (id it swaps out) |
+| `alternate_traits[]` | array, optional | swaps out an entry in `traits[]` (or another alt trait); each has `id`, `name`, `source`, `page`, `description`, `bonus[]`, `replaces` (id it swaps out, or `null` if unresolved — see `_review`) |
+| `bonus[]` items | tagged union | `skill`/`ability`/`save`/`condition` (hand-authoring sugar) or `modifier` (a near-verbatim passthrough of the app's engine-wide Modifier shape, backend/src/mechanics-schema.js — what normalize-entries.js emits, since most real bonuses don't fit the four narrower types) |
+| `_source[]` / `_review[]` | array, optional | provenance (which aon-cache slugs this was assembled from) and open questions a human still needs to resolve — see `Docs/04-data-pipeline-aon.md` |
 | `alternate_traits[].bonus[]` | array | typed effect objects — see below |
 | `description_rulebook` | object | prose block: `race_description`, `race_likely[]`, `race_seen_by_others[]`, `description_physical`, `home_world`, `society_alignment`, `relations`, `adventurers`, `names` |
 
