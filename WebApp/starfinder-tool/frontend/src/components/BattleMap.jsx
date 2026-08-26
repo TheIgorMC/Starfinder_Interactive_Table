@@ -14,16 +14,16 @@ export default function BattleMap({ session, onCellClick, onTokenClick, fit = fa
         viewBox={`0 0 ${w} ${h}`}
         width={fit ? "100%" : w}
         height={fit ? "100%" : h}
-        style={{ background: "#101418", display: "block" }}
+        style={{ background: "#0a0e1c", display: "block" }}
         preserveAspectRatio="xMidYMid meet"
       >
         {map_url && <image href={map_url} width={w} height={h} />}
         {/* grid */}
         {Array.from({ length: grid_w + 1 }, (_, i) => (
-          <line key={`v${i}`} x1={i * CELL} y1={0} x2={i * CELL} y2={h} stroke="#2a3138" strokeWidth="1" />
+          <line key={`v${i}`} x1={i * CELL} y1={0} x2={i * CELL} y2={h} stroke="rgba(110,168,255,.16)" strokeWidth="1" />
         ))}
         {Array.from({ length: grid_h + 1 }, (_, i) => (
-          <line key={`h${i}`} x1={0} y1={i * CELL} x2={w} y2={i * CELL} stroke="#2a3138" strokeWidth="1" />
+          <line key={`h${i}`} x1={0} y1={i * CELL} x2={w} y2={i * CELL} stroke="rgba(110,168,255,.16)" strokeWidth="1" />
         ))}
         {/* click layer */}
         {onCellClick && (

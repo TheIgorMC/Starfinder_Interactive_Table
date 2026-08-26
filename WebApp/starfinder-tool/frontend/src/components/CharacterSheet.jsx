@@ -210,15 +210,18 @@ export default function CharacterSheet({ character, patch }) {
             <Pool label="RP" cur={char.rp_cur} max={char.rp_max} curKey="rp_cur" />
           </section>
 
-          <section className="grid-6">
+          <section className="defense-strip">
             <div className="stat"><label>EAC</label><strong>{char.eac}</strong></div>
             <div className="stat"><label>KAC</label><strong>{char.kac}</strong></div>
-            <div className="stat"><label>BAB</label><strong>{fmt(char.bab)}</strong></div>
+            <div className="stat"><label>Init</label><strong>{fmt(char.init_bonus)}</strong></div>
+            <div className="stat"><label>Speed</label><strong>{char.speed} ft</strong></div>
+          </section>
+
+          <section className="save-strip">
             <div className="stat"><label>Fort</label><strong>{fmt(char.save_fort)}</strong></div>
             <div className="stat"><label>Ref</label><strong>{fmt(char.save_ref)}</strong></div>
             <div className="stat"><label>Will</label><strong>{fmt(char.save_will)}</strong></div>
-            <div className="stat"><label>Init</label><strong>{fmt(char.init_bonus)}</strong></div>
-            <div className="stat"><label>Speed</label><strong>{char.speed} ft</strong></div>
+            <div className="stat"><label>BAB</label><strong>{fmt(char.bab)}</strong></div>
           </section>
         </div>
       )}

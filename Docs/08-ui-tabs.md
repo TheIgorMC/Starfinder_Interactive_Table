@@ -46,11 +46,14 @@ tabs just swaps which JSX block renders. State for a tab's contents (e.g. a
 draft textarea) lives in the same component and survives tab switches since
 nothing unmounts except the inactive `{tab === "..." && ...}` blocks.
 
-The CSS for all three tab bars is the same recipe already in `styles.css`
-(`.gm-tabs`, `.sheet-tabs`, `.compendium-tabs` — search for `.active` in each
-block): flex row, transparent buttons, a 2px bottom border that lights up
-blue (`#4f8ef7`) on the active one. **Adding a tab never requires new CSS** —
-just add to the array and add a render branch.
+The CSS for all tab bars is the same recipe already in `styles.css`
+(`.gm-tabs`, `.sheet-tabs`, `.compendium-tabs`, `.wizard-steps`, `.tab-row` —
+one shared comma-grouped rule block, search for `.active` in it): a pill-
+shaped scrollable row, transparent inactive buttons, and the active one
+filled with the accent gradient (`var(--accent-grad)`, blue→violet). See
+[13-visual-design-system.md](13-visual-design-system.md) for the full token
+set. **Adding a tab never requires new CSS** — just add to the array and add
+a render branch.
 
 ## Adding a tab to the GM console
 
