@@ -538,6 +538,58 @@ disputes) and print a summary to the console. Like the `--llm` step above,
 this needs a local Ollama server reachable at `--ollama-url` (default
 `http://localhost:11434/v1`).
 
+**Also covers item-shaped categories that never go through
+normalize-entries.js at all** — pass any `aon-cache/` folder name instead
+of a normalized category (`node scripts/audit-normalized.js conditions
+--limit=5`, `... equipment ...`, `... feats ...`, etc.) and it checks
+`mechanics.modifiers[]`/`mechanics.actions[]` (damage) against the
+entry's own `data.effect` prose directly, via `scripts/lib/audit-item.js`.
+These categories skip normalize-entries.js because there's no decomposition/
+linking problem for a single-concept item the way there is for a race's
+bundled traits — but that reasoning was about *linking*, not
+*correctness*, so it's worth the same grounded check anyway. Findings
+write to a sidecar file (`DataEntry/output/_audits/<folder>/<slug>.json`)
+rather than into `aon-cache/` itself, which stays a clean, regeneratable
+output of the importers.
+
+Smoke-tested (2 entries each, 0 call failures) across every `aon-cache/`
+folder, not just conditions/effects/equipment: `feats`, `spells`,
+`classes`, `class-features`, `racial-features`, `archetypes`,
+`archetype-features`, `themes`, `theme-features`,
+`universal-creature-rules`, `rules`, `setting`, `tables`. Three honest
+outcomes, not one:
+- `archetype-features`/`theme-features` (and, from the first round,
+  `conditions`/`effects`/some `equipment`) found real claims and verified
+  them correctly.
+- `feats`/`spells`/`classes`/`class-features`/`racial-features`/
+  `archetypes`/`themes`/`universal-creature-rules`: the first two entries
+  alphabetically in each happened to carry no modifiers/damage actions at
+  2-item sample size — a sampling artifact, not a coverage gap, since it's
+  the identical code path that found and verified claims elsewhere.
+- `rules`/`setting`/`tables` will **always** show zero checkable claims —
+  `mapFoundryJournalPage()`/`mapFoundryRollTable()` (see "Journal/
+  table-shaped content" above) always emit blank mechanics, since these
+  are pure reference prose/tables with nothing structured to check by
+  design. Documented here so a future zero-claims run against these three
+  doesn't get mistaken for the checker being broken.
+
+**Confirmed live, a real and useful asymmetry between categories**:
+conditions/effects prose routinely restates exact numbers ("Prone: *You
+take a –4 penalty to melee attack rolls*" matches `mechanics.modifiers`
+exactly) — a genuinely groundable check, verified working end-to-end.
+Most equipment prose (weapons, armor, magic items, goods) is pure flavor
+text with zero mechanical numbers in it at all — confirmed by direct
+sampling across five equipment subtypes, none restated damage/price/bonus
+values in `data.effect`. For those, most claims correctly come back
+"uncertain" rather than a false "match" (the prompt is explicit that
+silence isn't confirmation) — not a wasted check, since the rare
+flavor blurb that *does* state a number contradicting the structured
+field is exactly what's worth catching, and a live test caught a genuine
+edge case: an augmentation's prose confirmed "+2 to a single ability
+score" without naming *which* ability, correctly verdict "uncertain"
+rather than either falsely confirming or wrongly flagging the specific
+ability the structured data named.
+
 **This has a real, structural blind spot, not just occasional
 inaccuracy**: it can only catch Foundry's data disagreeing *with itself*
 (prose vs. structured field, or one race's default-trait list vs. what its
