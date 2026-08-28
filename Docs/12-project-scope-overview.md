@@ -277,9 +277,14 @@ flavor prop, not a control surface — nobody interacts with it directly.
 Called out explicitly in the project's own planning docs so they're not
 mistaken for oversights:
 - Starship combat (a separate map/ruleset from ground combat)
-- Automated rule enforcement (auto-applying a feat's numeric bonus, etc.)
-- Fog of war, fully-built initiative tracker, and AoE/range measurement
-  tools on the battle map (map exists; these specific tools don't yet)
+- Automated rule enforcement of *judgment calls* (whether an attack hits,
+  whether a condition narratively applies) — arithmetic/bookkeeping
+  automation (effective stats, damage resolution, duration tracking) is
+  now planned, see `14-automated-rules-engine.md`
+- Fog of war and AoE/range measurement tools on the battle map (map
+  exists; these specific tools don't yet). A full initiative tracker is no
+  longer in this bucket — it's now planned as part of the rules engine's
+  duration-tracking phase, see `14-automated-rules-engine.md` §8
 - Voice/video integration (the app assumes everyone is physically present)
 - Leveling up a character past 1st level via the wizard
 

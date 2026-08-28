@@ -1,8 +1,9 @@
 # 14 - Automated Rules Engine — Design Doc v1
 
-Status: **proposal, not started.** This lays out the concepts and a phased
-plan for review before any code is written — same role `10-galaxy-mapgen.md`
-played before GalaxyGen's first line of code.
+Status: **proposal, not started; open design questions in §9 are now
+resolved.** This lays out the concepts and a phased plan for review before
+any code is written — same role `10-galaxy-mapgen.md` played before
+GalaxyGen's first line of code.
 
 ## 1. What this is
 
@@ -16,7 +17,8 @@ sheet; nothing tracks how long a buff lasts. This doc scopes the engine
 that closes that gap: given a character (their permanent build) and a set
 of currently-active effects (temporary conditions/buffs), compute their
 real current stats, resolve incoming damage against those stats, and
-track effect durations against a turn/round counter.
+track effect durations and per-turn action economy (standard/move/swift/
+full/reaction) against a full initiative order.
 
 **Explicitly out of scope for this doc**: battle-map geometry — AoE
 shapes, range-limited targeting, movement enforcement, vision/darkvision/
@@ -45,8 +47,14 @@ line through it than "automated vs. not":
   hits, whether a condition narratively makes sense to apply, whether a
   house rule overrides the printed one — none of that is this engine's
   job, and every irreversible step (see §6) still surfaces a GM
-  confirmation before committing, same review-gate pattern already used
-  elsewhere in the app (Campaign entries, Compendium sourcing).
+  confirmation before committing. **Correction from an earlier draft of
+  this doc**: that confirmation step is not reusing an existing pattern —
+  checked live, Campaign entries and Compendium sourcing have no approve/
+  pending workflow, and the character sheet's HP/SP steppers write
+  immediately on click (`frontend/src/components/CharacterSheet.jsx:94`,
+  the `Pool` component). No confirm-before-write UI exists anywhere in the
+  app today; this doc is what builds the first one, starting with damage
+  resolution (§7).
 
 Concretely: this engine computes numbers and proposes state changes; a
 human still triggers every input and confirms every output. Nothing here
@@ -156,46 +164,127 @@ same as §2). The engine:
    actual SF1e rule, not a design choice this doc is making) — reduce
    `sp_cur` first, any remainder spills to `hp_cur`.
 3. Surfaces the proposed split (e.g. "6 → SP (0 remaining), 12 → HP") for
-   GM confirmation before writing it — same review-gate pattern as
-   everywhere else in the app, not a silent auto-write.
+   GM confirmation before writing it, via the new confirm-before-write UI
+   this doc introduces (§2) — not a silent auto-write.
 
-## 8. Duration & turn tracking
+## 8. Initiative & duration tracking
 
-Needs a minimal round/turn concept that plainly doesn't exist yet
-(§3) — not necessarily a *full* initiative tracker (ordering combatants,
-delay/ready actions, etc. — that's its own scoping question, §9) but at
-minimum a per-encounter round counter and an "advance round" action that:
-decrements every active effect's remaining duration, auto-expires
-anything that hits zero, and surfaces expirations to the GM as a visible
-notification rather than a silent disappearance ("Shaken expired on
-Kira").
+Resolved (§9) as a **full initiative order**, not just a bare round
+counter — schema sketch in §9. Three GM actions on a `battle_session`:
 
-## 9. Open design questions
+- **Start Combat** — GM enters each combatant's rolled initiative (players
+  roll IRL, per the project's own physical-presence design — this is data
+  entry, not a die roll the app performs) and locks that order into
+  `initiative_order`; sets `round = 1`, `current_turn_index = 0`,
+  `combat_active = true`.
+- **Next Turn** — advances `current_turn_index`. Wrapping past the last
+  combatant increments `round` and is also when every active effect's
+  `duration_rounds` decrements; anything that hits zero auto-expires and
+  surfaces to the GM as a visible notification, not a silent disappearance
+  ("Shaken expired on Kira").
+- **End Combat** — clears `combat_active` and the turn pointer; permanent
+  (`duration_rounds = NULL`) active effects are untouched, round-bound ones
+  are left at whatever they decremented to (a GM can still see/clear them
+  manually from §6's UI).
 
-Left genuinely open rather than resolved by guessing — worth a decision
-before or during Phase 3 (§10), not blocking Phases 1-2:
+Delay/ready actions are explicitly **not** part of this first pass —
+ordering and turn advancement only. All three actions broadcast through
+the existing WebSocket layer (`backend/src/ws.js`'s `broadcast()`, already
+wired into every token mutation in `battlemap.js`) so the projector/tablet
+views stay live, same as token movement today.
 
-- **Where do active effects live?** A dedicated table (joined to both
-  `characters` and `battle_sessions`, since effects are inherently
-  encounter-scoped) reads as more correct than another JSONB blob on
-  `characters` — but this is a real schema call, not decided here.
-- **Does duration tracking need a full initiative *order*, or just a
-  round counter?** A bare "Next Round" button is far cheaper than
-  building turn order, delay/ready, etc. and might be enough for
-  duration purposes alone — full initiative is its own feature
-  (`12-project-scope-overview.md` §9 already lists it separately as
-  not-yet-built) that this doc doesn't need to bundle in.
-- **How does this relate to the still-missing "attach a Compendium entry
-  to a character" UI?** Effective-stat computation (§5) needs it for
-  *permanent* modifiers (a taken feat); it's not needed for the
-  Phase-3-and-later *active-effects* half, which can start from
-  manually-applied conditions regardless. Worth deciding whether that UI
-  becomes an explicit prerequisite phase here or ships as its own
-  unrelated piece of work.
-- **Class resource pools** (`@resources.<classKey>.<name>.value` —
-  Stellar Mode, Evolution Track, Entropic Pool, ...) — referenced by some
-  formulas per `Docs/04-data-pipeline-aon.md`'s Modifiers glossary, but
-  what tracks *those* isn't scoped here at all yet.
+### Action economy within a turn
+
+In scope alongside turn order, not a separate later add-on — it's the
+same "deterministic bookkeeping that follows from a stated fact" as
+everything else in §2, and the exact rule is already sitting in the
+Compendium's own imported text (`aon_entries`, category `rule`, topic
+"Actions in Combat", confirmed live from `aon-cache/rules/
+actions-in-combat-actions-in-combat.json`): *"In a normal round, you can
+perform one standard action, one move action, and one swift action, or
+you can instead perform one full action... You can also take one
+reaction each round, even if it isn't your turn... you regain your
+reaction at the start of your turn."* That's also exactly the vocabulary
+already on every entry's `mechanics.activation.type`
+(`backend/src/foundry-import.js:219-221`, `mechanics-schema.js:23`) —
+confirmed live across the cache: `action` (=standard, 1,450 entries),
+`move` (316), `full` (180), `reaction` (307), `swift` (112), plus `none`/
+`other`/`special` and time-based casting times (`round`/`min`/`hour`/
+`day`) that aren't per-turn action-economy costs at all.
+
+Tracked per row in `initiative_order` (not globally — a reaction can be
+spent on someone else's turn, so each combatant needs their own budget,
+not one shared per-round pool): `standard_used`, `move_used`,
+`swift_used`, `full_used`, `reaction_used` (all BOOL). Toggling
+`full_used` on also marks the other three used (a full action *is* your
+standard+move+swift for the round, per the rule text above) — the
+downgrade conversions (standard→move, standard/move→swift) don't need
+their own state machine, since spending a converted action still just
+consumes that slot's boolean regardless of what it was used for. **Next
+Turn** (§8 above) resets `standard_used`/`move_used`/`swift_used`/
+`full_used` to false for the combatant whose turn is starting, and
+`reaction_used` to false as well — matching "you regain your reaction at
+the start of your turn" exactly, not a blanket per-round reset for
+everyone. A small widget on the current combatant's card lets the
+GM/player mark each spent as declared, mirroring `mechanics.activation.
+type` on whatever feat/spell/item was used where one exists.
+
+## 9. Resolved design decisions
+
+These were left open in an earlier draft; each is now grounded in the
+actual schema/code (not assumed) before being decided.
+
+- **Where do active effects live? → a new dedicated table,
+  `active_effects`.** `characters.conditions`
+  (`backend/migrations/008_character_sheet.sql:8`) already exists but is
+  shaped `{ conditionKey: { active, notes } }`
+  (`frontend/src/components/CharacterSheet.jsx:11-19`, `:161-167`) — a
+  fixed checklist with no duration/round field and, confirmed by grepping
+  the whole codebase for `aon_id`/`aon_entries`, no link to `aon_entries`
+  at all. Retrofitting duration into it would break the existing simple
+  toggle UI for no benefit, so this is new: `active_effects(id,
+  character_id FK, battle_session_id FK NULL, source_category,
+  source_name — a ref into aon_entries by (category, name), modifier
+  JSONB — a snapshot of one Modifier object from mechanics-schema.js,
+  granted_at_round INT, duration_rounds INT NULL — NULL means permanent,
+  enabled BOOL, created_at)`. `battle_session_id` is nullable because not
+  every active effect is encounter-scoped (e.g. a toggled permanent
+  trait). The existing `conditions` checklist stays as-is for now —
+  wiring it to also create a real `active_effects` row (with the matching
+  `condition` entry's actual `mechanics.modifiers`) is later, separate
+  work, not a Phase 4 blocker.
+
+- **Duration tracking → full initiative order, not a bare round
+  counter.** Confirmed live: `battle_sessions`
+  (`backend/migrations/001_init.sql:43-51`) has no round or turn field
+  today, but a WebSocket broadcast layer already exists
+  (`backend/src/ws.js`, a `broadcast(type, payload)` helper already wired
+  into every token mutation in `backend/src/routes/battlemap.js`) — the
+  natural hook for turn/round events too. See §8 for the resulting
+  schema and the three GM actions (Start Combat / Next Turn / End
+  Combat). This expands `12-project-scope-overview.md` §9's "fully-built
+  initiative tracker... not-yet-built" line into an active plan — that
+  doc has a matching note pointing back here.
+
+- **Relation to "attach a Compendium entry to a character" → its own
+  explicit phase (Phase 2), ahead of effective-stat computation.** This
+  turned out to be a bigger gap than originally described: it's not just
+  a missing UI — `feats`/`equipment`/`spells` on `characters` are raw
+  pass-through arrays from the Hephaistos importer
+  (`backend/src/hephaistos.js:82-90`) with **no field anywhere** for an
+  `aon_entries` reference. Phase 2 (§10) covers both a Hephaistos-import
+  resolver (match imported feat/item names against `aon_entries` at
+  import time, best-effort) and a manual attach UI for anything
+  unresolved or homebrew. Effective-stat computation (renumbered to
+  Phase 3) can't start without this landing first.
+
+- **Class resource pools — still deferred, not scoped by this doc.**
+  Confirmed nothing tracks these today beyond the generic `rp_cur`/
+  `rp_max` columns (`backend/migrations/001_init.sql:22-23`) — no Stellar
+  Mode, Evolution Track, Entropic Pool, or any other `@resources.<key>.*`
+  target found anywhere in schema, backend, or frontend. Left open rather
+  than guessed at; revisit only if a Phase 1 formula test actually needs
+  `@resources.*` to resolve.
 
 ## 10. Phased delivery roadmap
 
@@ -206,18 +295,26 @@ state already established, same intent as GalaxyGen's phasing.
    a pure computation layer with real test coverage (feed it a known
    character + known formula, assert the resolved number). Everything
    else depends on this being right first.
-2. **Effective stat computation, read-only** (§5) — surface computed vs.
-   base values on the character sheet for *permanent* modifiers only
-   (feats/gear already on the sheet). Depends on §9's "attach a Compendium
-   entry" question being resolved one way or another — flag this
-   explicitly when scoping the phase in detail, don't discover it mid-build.
-3. **Active effects data model + manual GM UI** (§6) — a GM can apply/
-   remove a named effect (starting from conditions, which already carry
-   real `mechanics.modifiers`) and see it factor into §5's computation.
-   No duration/expiry yet — that's Phase 5.
-4. **Damage resolution flow** (§7) — GM enters damage taken, sees the
-   proposed SP/HP split (with resistances applied from Phase 3's active
-   effects), confirms.
-5. **Round counter + duration expiry** (§8) — the piece Phase 3's active
-   effects were missing: a duration actually counts down and effects
-   expire, visibly, as rounds advance.
+2. **Attach a Compendium entry to a character** (§9) — a Hephaistos-import
+   resolver (match imported feat/item names against `aon_entries`) plus a
+   manual attach UI for anything unresolved or homebrew. A genuine
+   prerequisite, not optional: Phase 3 has nothing to read a permanent
+   modifier from without it.
+3. **Effective stat computation, read-only** (§5) — surface computed vs.
+   base values on the character sheet for *permanent* modifiers (feats/
+   gear now linked via Phase 2).
+4. **Active effects data model + manual GM UI** (§6) — the new
+   `active_effects` table (§9); a GM can apply/remove a named effect
+   (starting from conditions, which already carry real
+   `mechanics.modifiers`) and see it factor into §5's computation.
+   No duration/expiry yet — that's Phase 6.
+5. **Damage resolution flow** (§7) — GM enters damage taken, sees the
+   proposed SP/HP split (with resistances applied from Phase 4's active
+   effects), confirms via the new confirm-before-write UI (§2).
+6. **Initiative order + duration expiry** (§8) — the full-initiative
+   schema resolved in §9: Start Combat / Next Turn / End Combat, plus the
+   piece Phase 4's active effects were missing — a duration actually
+   counts down and effects expire, visibly, as turns advance. Action
+   economy tracking (§8's "Action economy within a turn") lands in this
+   same phase — it depends on the same `initiative_order` rows and the
+   same Next Turn action, so there's no reason to split it out further.
