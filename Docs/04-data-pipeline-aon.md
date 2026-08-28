@@ -538,6 +538,26 @@ disputes) and print a summary to the console. Like the `--llm` step above,
 this needs a local Ollama server reachable at `--ollama-url` (default
 `http://localhost:11434/v1`).
 
+Every run also writes one consolidated `DataEntry/output/_audits/
+<category>/_findings.json` — the thing to actually come back to later
+(by a human or a future Claude session), rather than re-grepping hundreds
+of per-entry sidecar files or scrolling back through console output that's
+already gone. Same path regardless of whether the category went through
+`normalize-entries.js` or was audited directly against `aon-cache/`. Each
+finding carries `"status": "open"` — flip it by hand (or have a future
+pass flip it) as items get reviewed; the file is plain JSON, no tooling
+required to track progress across sessions. Re-running a category
+overwrites its `_findings.json` with the new run's results, so treat it as
+"current state of that category's open items," not an append-only log.
+
+`--random` (or `--seed=N`, which implies it) shuffles the file list with a
+seeded PRNG (`seededShuffle()`) before applying `--limit` — without it, a
+small sample keeps landing on whichever entries sort first alphabetically,
+which (confirmed live) can systematically miss the entries that actually
+have something to check. A fixed seed makes two runs of the same command
+comparable — useful for confirming a code change actually changed the
+result on the *same* entries, not just a different random sample.
+
 **Also covers item-shaped categories that never go through
 normalize-entries.js at all** — pass any `aon-cache/` folder name instead
 of a normalized category (`node scripts/audit-normalized.js conditions
@@ -572,6 +592,121 @@ outcomes, not one:
   are pure reference prose/tables with nothing structured to check by
   design. Documented here so a future zero-claims run against these three
   doesn't get mistaken for the checker being broken.
+
+Follow-up run at real sample size (`--random --seed=N`, 8 entries/category
+instead of 2 — `seededShuffle()` in `audit-normalized.js`, since the first
+two entries alphabetically kept landing on ones with nothing to check)
+found two more confirmed real upstream bugs, independently verified
+against the raw entry, not just trusted from the model's note:
+- `racial-features/lithic.json` (a Quorlu trait): `modifiers[0].
+  valueAffected` says `"fire"`, but both the prose *and that same
+  modifier's own `notes` field* say the bonus applies to Bleed/Disease/
+  Poison saves — `valueAffected` contradicts its own sibling field, not
+  just the prose.
+- `theme-features/starship-savant.json`: `effectType: "all-skills"` with
+  an empty `condition` field reads as a blanket +1 to every skill check,
+  but the prose (and again that modifier's own `notes`) says it only
+  applies "if you're trained in a skill required for a crew action" — the
+  qualifier exists in English in `notes` but was never extracted into the
+  structured `condition` field the Modifier shape has specifically for
+  this.
+
+Also caught a real bug in the *checker's own prompt*, not the data:
+rendering a raw `effectType` key verbatim ("all-attacks") produced a
+claim the model read as contradicting a source sentence about "attack
+rolls" even though they mean the same thing
+(`conditions/dazzled.json`) — fixed with an `EFFECT_TYPE_PHRASES`
+translation table in `audit-item.js` (not exhaustive, just the values
+from "The Modifiers system" below); re-verified the same entry no longer
+false-flags.
+
+#### The false-positive flood, and five rounds of fixing it properly
+
+Running the item-audit at real scale (a full, un-limited category, not a
+2-8 entry sample) surfaced a much bigger version of the same problem —
+one run came back with 131 "mismatches" out of 621 `racial-features`,
+which turned out to be almost entirely one bug, not 131 real Foundry
+errors. Documented in full because the *process* matters as much as the
+fixes: every one of these was caught by re-verifying a suspicious-looking
+result against the raw entry before trusting it, the same discipline
+applied throughout this pipeline — a checker that's occasionally wrong is
+expected and fine (see the structural-blind-spot note above); a checker
+whose wrongness is silently trusted and reported as findings is not.
+
+1. **`valueAffected` blindly concatenated onto a phrase that already means
+   "applies broadly"** — `effectType: "all-skills"` + `valueAffected: "per"`
+   rendered as `"per all skill checks"`, nonsense the model correctly
+   rejected, but rejecting a garbled sentence isn't finding a real error.
+   Fixed by never building a valueAffected-qualified sentence for
+   `all-skills`/`saves`/`all-attacks`/`all-damage`/`all-speeds`/
+   `damage-reduction` (`BROAD_EFFECT_TYPES` in `audit-item.js`); a non-empty
+   `valueAffected` on one of these is instead logged as a **deterministic
+   anomaly** (no LLM call, no judgment call — the contradiction is provable
+   from the two fields alone).
+2. **Even without that conflict, "all X" was still routinely an overclaim**
+   — this dataset uses `saves`/`all-skills` loosely, with the real
+   (usually narrower) scope living only in free-text `notes`, never the
+   structured `condition` field. An explicit system-prompt instruction
+   ("missing conditions aren't mismatches") measurably helped but was
+   **confirmed unreliable on this 8B model** — `racial-features/
+   battle-hardened.json`'s `ac`+`"both"` bonus still got flagged after the
+   instruction was added. Fixed the same deterministic way as (1): `ac`
+   with `valueAffected` in `{both, eac, kac}` (a normal, expected value
+   there, unlike the broad types) is skipped entirely rather than sent to
+   the LLM with a claim this data shape can't fairly support.
+3. **Damage-action formulas sent verbatim** — `Deals 1d3 + @abilities.str.mod
+   + lookupRange(@details.level.value, 0, 3, floor(@details.level.value/2))
+   piercing damage` compared against prose that says "1-1/2 × level damage
+   bonus" is a category error (implementation syntax vs. natural-language
+   description of the same formula), not a value check. Fixed by only
+   sending damage claims whose formula is plain dice notation
+   (`SIMPLE_FORMULA_RE` — digits, `d`, `+`, `-`, whitespace only); anything
+   with an `@`-path or function call is skipped.
+4. **The same `valueAffected`-gluing bug, one level down, for the *narrow*
+   types** — unlike the broad types above, `skill`/`save` are *supposed*
+   to be narrowed by `valueAffected` (that's the whole point), but the raw
+   abbreviation code was still glued on unparsed: `"per" + "skill"` →
+   `"per skill"` instead of "Perception checks". Confirmed across multiple
+   `conditions` entries (`dazzled`, `blinded`, `asleep`, `deafened`, ...),
+   all flagged as "mismatch" against prose that plainly names the skill.
+   Fixed with a `describeTarget()` helper that decodes the abbreviation via
+   `SKILL_NAMES` (exported from `foundry-import.js` — reused, not
+   duplicated) and a small `SAVE_NAMES` map (`fort`/`ref`/`will`); also
+   fixed the `energy-resistance` phrasing ("fire energy resistance" →
+   "resistance to fire damage") while in there, a smaller instance of the
+   same awkward-concatenation pattern.
+5. **The model penalizing a claim for not saying "untyped"** — a bonus
+   *type* (untyped/racial/morale/...) is a game-mechanical classification
+   rulebook prose never states explicitly ("+2 to X", never "+2 untyped
+   bonus to X") — "untyped" specifically means *no* type word was used,
+   so its absence in the source is exactly what confirms it, not a reason
+   to flag mismatch. Fixed with an explicit system-prompt clause.
+
+Each fix was verified on the specific entries that surfaced it before
+being trusted (not just "the count went down") — e.g. round 2 confirmed
+`battle-hardened`/`stable` stopped false-flagging while `sheltering`
+(which was never wrong) still correctly passed. Round-by-round mismatch
+counts on the same full re-run, `racial-features` (the largest, noisiest
+category): 131 → 87 → 66 (rounds 1-2 fixed) → still 66 after round 3 (that
+fix mainly affected `archetype-features`' damage-formula-heavy entries) →
+final small-sample spot checks after rounds 4-5 showed further real
+improvement (e.g. a 7-entry `conditions` sample dropped from 5 flagged to
+2, both now plausible genuine findings) but weren't re-run at full scale
+in this session — left for a future run using the same `--random --seed=N`
+commands documented above.
+
+**A recurring pattern that survived every fix, and looks like a real,
+independent data issue rather than checker noise**: a modifier's own
+`name` field sometimes doesn't match its parent entry at all —
+`racial-features/wilderness-runner.json`'s modifier is labeled `"Memory
+Gap"`; `archetype-features/mystic-decoder-ex.json`'s is labeled `"Cultural
+Studies (Ex)"`; `racial-features/pheromone-cloud.json`'s is labeled
+`"Ancestral Knowledge"` while its own prose is about a Fortitude-save
+effect with no mention of Acrobatics (what the mislabeled modifier
+claims). Confirmed three independent times, never chased to a single root
+cause — reads like copy-paste from an unrelated entry during the Foundry
+conversion. Worth a targeted look across the dataset at some point rather
+than something this checker should try to auto-fix.
 
 **Confirmed live, a real and useful asymmetry between categories**:
 conditions/effects prose routinely restates exact numbers ("Prone: *You

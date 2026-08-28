@@ -44,11 +44,18 @@ against their own source text via the same local LLM, and has already
 caught real bugs the normalizer's own logic missed (see
 `Docs/04-data-pipeline-aon.md` → "Grounded consistency checker" for what
 it can and can't catch — it's a lead generator for human review, not a
-verdict).
+verdict). Also works directly against `aon-cache/` for categories that
+never go through the normalizer at all (feats, spells, conditions,
+equipment, ...) — pass any `aon-cache/` folder name instead of `races`.
 
 ```bash
 node scripts/audit-normalized.js races --limit=10
+node scripts/audit-normalized.js conditions --random --seed=42   # any aon-cache/ folder works
 ```
+
+Each run writes one `DataEntry/output/_audits/<category>/_findings.json`
+— open that to see what's flagged (each item marked `"status": "open"`
+until reviewed) rather than hunting through per-entry files.
 
 The GUI plan below is still the intended way to *review and hand-correct*
 these drafts (and to author anything from scratch that has no aon-cache

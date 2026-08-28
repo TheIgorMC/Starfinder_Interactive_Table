@@ -30,7 +30,7 @@ import { parsePrerequisites, parseTargets } from "./mechanics-parser.js";
 
 const ABILITY_NAMES = { str: "strength", dex: "dexterity", con: "constitution", int: "intelligence", wis: "wisdom", cha: "charisma" };
 
-const SKILL_NAMES = {
+export const SKILL_NAMES = {
   acr: "Acrobatics", ath: "Athletics", blu: "Bluff", com: "Computers", cul: "Culture",
   dip: "Diplomacy", dis: "Disguise", eng: "Engineering", int: "Intimidate",
   lsc: "Life Science", med: "Medicine", mys: "Mysticism", per: "Perception",

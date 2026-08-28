@@ -41,8 +41,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Categories with a real normalize-entries.js draft to audit in place.
 const NORMALIZED_BUILDERS = { races: buildRaceAuditPrompt };
 
+// Deterministic shuffle (mulberry32 PRNG) rather than Math.random() — a
+// --seed re-run reproduces the exact same sample, useful for comparing
+// two code versions against literally the same entries.
+function seededShuffle(arr, seed) {
+  let s = seed >>> 0;
+  const rand = () => { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 function parseArgs(argv) {
-  const args = { category: null, limit: null, ollamaUrl: "http://localhost:11434/v1", model: "qwen3:8b", dir: "../../../../DataEntry/output", cache: "aon-cache" };
+  const args = { category: null, limit: null, ollamaUrl: "http://localhost:11434/v1", model: "qwen3:8b", dir: "../../../../DataEntry/output", cache: "aon-cache", random: false, seed: Date.now() % 100000 };
   for (const raw of argv) {
     if (!raw.startsWith("--")) { args.category = raw; continue; }
     const [key, value] = raw.slice(2).split(/=(.*)/s);
@@ -51,6 +65,8 @@ function parseArgs(argv) {
     else if (key === "model") args.model = value;
     else if (key === "dir") args.dir = value;
     else if (key === "cache") args.cache = value;
+    else if (key === "random") args.random = true;
+    else if (key === "seed") { args.random = true; args.seed = Number(value); }
   }
   return args;
 }
@@ -58,7 +74,7 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.category) {
-    console.error(`Usage: node scripts/audit-normalized.js <${Object.keys(NORMALIZED_BUILDERS).join("|")}|<any aon-cache folder name>> [--limit=N] [--ollama-url=...] [--model=...]`);
+    console.error(`Usage: node scripts/audit-normalized.js <${Object.keys(NORMALIZED_BUILDERS).join("|")}|<any aon-cache folder name>> [--limit=N] [--random] [--seed=N] [--ollama-url=...] [--model=...]`);
     process.exit(1);
   }
 
@@ -91,21 +107,49 @@ async function main() {
   }
   const chatBaseUrl = args.ollamaUrl.replace(/^https?:\/\/[^/]+/, new URL(ping.url).origin);
 
-  const limited = args.limit ? files.slice(0, args.limit) : files;
+  // Alphabetically-first entries are a biased sample — confirmed live,
+  // running --limit=2 without shuffling against feats/spells/classes/etc.
+  // kept landing on entries with zero modifiers/actions purely because of
+  // where they fall in the alphabet, undercounting how often the checker
+  // actually has something to verify. --random (or --seed=N, which
+  // implies it) shuffles before slicing so a small sample is representative.
+  const pool = args.random ? seededShuffle(files, args.seed) : files;
+  const limited = args.limit ? pool.slice(0, args.limit) : pool;
+  if (args.random) console.log(`Random sample (seed ${args.seed}) of ${limited.length}/${files.length} ${args.category}.`);
 
   let checked = 0;
   let noClaims = 0;
   let mismatches = 0;
   let uncertain = 0;
+  let anomalyCount = 0;
   let callFailures = 0;
   const findings = [];
+  const anomalyFindings = [];
 
   for (const file of limited) {
     const slug = file.replace(/\.json$/, "");
     process.stdout.write(`\r[audit ${args.category} ${checked + 1}/${limited.length}] ${slug.padEnd(30)}`);
     const doc = JSON.parse(await readFile(path.join(readDir, file), "utf8"));
-    const { system, user, claimMeta } = isNormalized ? NORMALIZED_BUILDERS[args.category](doc) : buildItemAuditPrompt(doc);
-    if (claimMeta.length === 0) { noClaims++; checked++; process.stdout.write(" (no checkable claims)\n"); continue; }
+    const built = isNormalized ? NORMALIZED_BUILDERS[args.category](doc) : buildItemAuditPrompt(doc);
+    const { system, user, claimMeta } = built;
+    const anomalies = built.anomalies || [];
+
+    // Anomalies are deterministic (no LLM involved) — record them even
+    // when there's nothing left to actually send to the model.
+    if (claimMeta.length === 0) {
+      noClaims++;
+      checked++;
+      if (anomalies.length && !isNormalized) {
+        anomalyCount += anomalies.length;
+        const entries = applyItemAuditResults(doc, [], [], anomalies);
+        await writeFile(path.join(sidecarDir, file), JSON.stringify({ name: doc.name, category: doc.category, _audit: entries }, null, 2));
+        for (const a of anomalies) anomalyFindings.push({ slug, claim: a });
+        process.stdout.write(` (no checkable claims, ${anomalies.length} anomaly(ies))\n`);
+      } else {
+        process.stdout.write(" (no checkable claims)\n");
+      }
+      continue;
+    }
 
     try {
       const started = Date.now();
@@ -114,7 +158,9 @@ async function main() {
       // its own verdict + note — confirmed live, a race with 6 alternate
       // traits got cut off mid-JSON at 800 tokens.
       const result = await askOllamaJson({ baseUrl: chatBaseUrl, model: args.model, system, user, maxTokens: 2000 });
-      const entries = isNormalized ? applyAuditResults(doc, result.checks, claimMeta) : applyItemAuditResults(doc, result.checks, claimMeta);
+      const entries = isNormalized
+        ? applyAuditResults(doc, result.checks, claimMeta)
+        : applyItemAuditResults(doc, result.checks, claimMeta, anomalies);
       if (isNormalized) {
         await writeFile(path.join(readDir, file), JSON.stringify(doc, null, 2));
       } else {
@@ -123,6 +169,7 @@ async function main() {
       for (const e of entries) {
         if (e.verdict === "mismatch") { mismatches++; findings.push({ slug, ...e }); }
         else if (e.verdict === "uncertain") uncertain++;
+        else if (e.verdict === "anomaly") { anomalyCount++; anomalyFindings.push({ slug, claim: e.claim }); }
       }
       process.stdout.write(` (${((Date.now() - started) / 1000).toFixed(1)}s, ${entries.length} claim(s), ${entries.filter((e) => e.verdict === "mismatch").length} mismatch)\n`);
     } catch (err) {
@@ -132,12 +179,45 @@ async function main() {
     checked++;
   }
 
-  console.log(`\nChecked ${checked} ${args.category} (${noClaims} had no checkable claims): ${mismatches} mismatch(es), ${uncertain} uncertain, ${callFailures} call failure(s).`);
+  console.log(`\nChecked ${checked} ${args.category} (${noClaims} had no checkable claims): ${mismatches} mismatch(es), ${uncertain} uncertain, ${anomalyCount} anomal(ies), ${callFailures} call failure(s).`);
   if (!isNormalized) console.log(`Findings written to ${path.relative(process.cwd(), sidecarDir)}/ (aon-cache/ itself is untouched).`);
   if (findings.length) {
-    console.log("\nMismatches found:");
+    console.log("\nMismatches found (LLM-verified against source text):");
     for (const f of findings) console.log(`  - ${f.slug} :: ${f.field}\n      claim: ${f.claim}\n      note:  ${f.note}`);
   }
+  if (anomalyFindings.length) {
+    console.log("\nAnomalies found (deterministic — internally contradictory data, not LLM-checked):");
+    for (const f of anomalyFindings) console.log(`  - ${f.slug}\n      ${f.claim}`);
+  }
+
+  // One consolidated, well-known file per category — so "come back and
+  // work through what needs a human" later (by you or a future Claude
+  // session) means opening one file, not grepping hundreds of per-entry
+  // sidecars or scrolling back through console output that's already
+  // gone. Always the same path regardless of source kind (races or any
+  // aon-cache/ folder), and each entry keeps everything needed to act on
+  // it without re-deriving anything: which file it came from, the exact
+  // claim, the model's note, and a `status` field a human (or a later
+  // pass) can flip from "open" once it's been looked at — the file is
+  // just JSON, editing that field by hand is enough to track review
+  // progress across sessions.
+  const summaryDir = path.resolve(__dirname, args.dir, "_audits", args.category);
+  await mkdir(summaryDir, { recursive: true });
+  const summaryPath = path.join(summaryDir, "_findings.json");
+  const summary = {
+    category: args.category,
+    generatedAt: new Date().toISOString(),
+    sourceKind: isNormalized ? "normalize-entries draft" : "aon-cache (direct)",
+    checked,
+    noClaims,
+    callFailures,
+    findings: [
+      ...findings.map((f) => ({ status: "open", kind: "mismatch", slug: f.slug, field: f.field, claim: f.claim, note: f.note })),
+      ...anomalyFindings.map((f) => ({ status: "open", kind: "anomaly", slug: f.slug, claim: f.claim })),
+    ],
+  };
+  await writeFile(summaryPath, JSON.stringify(summary, null, 2));
+  console.log(`\nConsolidated findings: ${path.relative(process.cwd(), summaryPath)} (${summary.findings.length} item(s), each "status": "open" until reviewed).`);
 }
 
 main().catch((err) => {
