@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "test": "node --test src",
     "scrape:aon": "node scripts/scrape-aon.js",
     "import:foundry": "node scripts/import-foundry.js",
     "derive:aon": "node scripts/derive-mechanics.js",

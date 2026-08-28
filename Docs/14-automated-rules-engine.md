@@ -1,9 +1,9 @@
 # 14 - Automated Rules Engine — Design Doc v1
 
-Status: **proposal, not started; open design questions in §9 are now
-resolved.** This lays out the concepts and a phased plan for review before
-any code is written — same role `10-galaxy-mapgen.md` played before
-GalaxyGen's first line of code.
+Status: **Phase 1 (§4, §4.1) implemented and tested; Phases 2-6 not
+started.** Open design questions in §9 are resolved. This lays out the
+concepts and a phased plan for review before any code is written — same
+role `10-galaxy-mapgen.md` played before GalaxyGen's first line of code.
 
 ## 1. What this is
 
@@ -81,6 +81,31 @@ free text.
 
 ## 4. Core concept: the Character Context
 
+**Implemented**: `backend/src/rules-engine/character-context.js`. Built
+and tested against the real `characters` schema/JSONB shapes (grounded
+against `Docs/Example-Hephaistos-Joe.json` and `foundry-import.js`'s
+`SKILL_NAMES`), not assumed — two real gaps surfaced doing that and are
+called out in the code rather than papered over:
+
+- `characters.class` is one flat, possibly-multiclass display string
+  (`"Mechanic / Operative"`) with no per-class level breakdown stored
+  anywhere. A single-class character's `classes[key].levels` is accurate;
+  a multiclass character's *every* class reports the character's *total*
+  level (a real overstatement for any class that isn't their only one).
+  Fixing this needs a schema change (a `classes[]` table), out of scope
+  for this pure computation layer.
+- `characters.skills` is keyed by full skill name (`"Acrobatics"`), but
+  every formula addresses `@skills.<3-letter-abbr>`. Two named
+  specializations of the same base skill (`"Profession (Chef)"` and
+  `"Profession (Pilot)"`) both collapse onto the single `pro` @-path —
+  Foundry's own convention has no way to address a specific
+  specialization, so this is a real limitation of the upstream formula
+  vocabulary itself, not a bug in the join.
+- Only `attributes.speed.land` is populated — `characters.speed` is the
+  only speed column that exists (no flying/swimming/climbing/burrowing).
+  A formula referencing one of those correctly throws in
+  `evaluateFormula` rather than silently resolving to 0.
+
 Every Foundry-derived formula (`Docs/04-data-pipeline-aon.md` → "The
 Modifiers system") is written against a fixed `@`-path vocabulary —
 `@abilities.str.mod`, `@attributes.baseAttackBonus.value`,
@@ -105,18 +130,46 @@ formula evaluator (§4.1) and effective-stat computation (§5).
 
 ### 4.1 Formula evaluator
 
+**Implemented**: `backend/src/rules-engine/formula-evaluator.js`, with
+real test coverage in the matching `.test.js` (`npm test` in
+`backend/`, Node's built-in `node --test` runner — no new dependency).
+
 A small, sandboxed evaluator for formula strings like
 `max(1, floor(@attributes.baseAttackBonus.value/2))` or a duration formula
 like `@details.cl.value` (rounds). **Not `eval()`** — a restricted
-recursive-descent parser supporting: `@`-path lookups against the
-Character Context, arithmetic, `max`/`min`/`floor`/`ceil`, and dice
-notation (`1d6`) *as a formula component*, not as a replacement for
-physical dice. That distinction matters and is worth stating plainly:
-players roll IRL (per the project's own stated design, `12-project-scope-
-overview.md` assumes physical presence) — this evaluator is for things
-*the system* computes on its own (a spell's duration in rounds, a DC, a
-scaling bonus), never for rolling an attack or damage roll a human is
-expected to roll and report.
+recursive-descent parser. `@`-path lookups against the Character Context
+and `+-*/` arithmetic were always the core; the function/operator set
+below is not what this doc originally guessed at (`max`/`min`/`floor`/
+`ceil` only) — checked live against all 184 distinct `@`-formulas
+actually present across `aon-cache`'s `modifiers[]`/`duration` fields,
+that original set covered barely half of them. What's actually needed,
+and implemented:
+
+- `max`/`min`/`floor`/`ceil`/`round`/`sign` — plain math.
+- `eq`/`ne`/`gt`/`gte`/`lt`/`lte`/`ternary`/`lookup`/`lookupRange` —
+  ported **verbatim** from the Foundry system's own
+  `Roll.registerMathFunctions()` (`src/module/rolls/roll.js:91-124` in
+  the local checkout), not reimplemented from a guess at their
+  semantics — `lookupRange` in particular is a step function (the result
+  attached to the highest threshold not greater than the input value)
+  that a handful of class-scaling formulas (Envoy, Operative, Solarian,
+  Evolutionist, Nanocyte) depend on getting exactly right.
+- Dice notation (`1d6`) *as a formula component*, not as a replacement
+  for physical dice — that distinction matters and is worth stating
+  plainly: players roll IRL (per the project's own stated design,
+  `12-project-scope-overview.md` assumes physical presence) — this
+  evaluator is for things *the system* computes on its own (a spell's
+  duration in rounds, a DC, a scaling bonus), never for rolling an
+  attack or damage roll a human is expected to roll and report. Also
+  covers **computed** dice counts/sides (`(floor(@item.level/3))d4`,
+  `1d(ternary(gte(@classes.envoy.levels, 13), 8, 6))`), confirmed live
+  as a real pattern across Solarian/Operative formulas, not a
+  hypothetical.
+
+Anything outside this grammar (property access, string literals, any
+function not in the list above) is a syntax error, not a silent no-op —
+confirmed live: `process.exit()` and `require('fs')` both throw rather
+than doing anything.
 
 ## 5. Effective stat computation
 
@@ -291,10 +344,10 @@ actual schema/code (not assumed) before being decided.
 Ordered so each phase is independently useful and later phases build on
 state already established, same intent as GalaxyGen's phasing.
 
-1. **Character Context + formula evaluator** (§4, §4.1) — no UI change,
-   a pure computation layer with real test coverage (feed it a known
-   character + known formula, assert the resolved number). Everything
-   else depends on this being right first.
+1. **Character Context + formula evaluator** (§4, §4.1) — **done.** No UI
+   change, a pure computation layer with real test coverage (feed it a
+   known character + known formula, assert the resolved number).
+   Everything else depends on this being right first.
 2. **Attach a Compendium entry to a character** (§9) — a Hephaistos-import
    resolver (match imported feat/item names against `aon_entries`) plus a
    manual attach UI for anything unresolved or homebrew. A genuine
