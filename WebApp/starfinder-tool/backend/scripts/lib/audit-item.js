@@ -80,7 +80,13 @@ function describeTarget(effectType, valueAffected) {
 // valueAffected is non-empty anyway, that's a genuine anomaly worth a
 // human's attention, but a *silent, deterministic* one, not something to
 // hand the LLM a broken sentence about and trust its verdict on.
-const BROAD_EFFECT_TYPES = new Set(["all-skills", "saves", "all-attacks", "all-damage", "all-speeds", "damage-reduction"]);
+// NOT damage-reduction, despite also reading as "applies broadly" by
+// name — confirmed live, `valueAffected` there is the DR's bypass type
+// ("DR 5/piercing", `racial-features/incompressible.json`), completely
+// standard SF1e notation, not a contradiction. Including it here
+// originally was a bug in this file: it produced a false "anomaly" on
+// every DR modifier that has a bypass type at all, which is most of them.
+const BROAD_EFFECT_TYPES = new Set(["all-skills", "saves", "all-attacks", "all-damage", "all-speeds"]);
 
 function modifierClaims(mechanics) {
   const claims = [];

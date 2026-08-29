@@ -695,6 +695,48 @@ improvement (e.g. a 7-entry `conditions` sample dropped from 5 flagged to
 in this session — left for a future run using the same `--random --seed=N`
 commands documented above.
 
+#### The 61 anomalies: root cause and fix
+
+Every anomaly flagged across `conditions`/`effects`/`racial-features`
+(61 total) turned out to share one root cause, confirmed by reading every
+one's own `notes` field rather than assuming from the pattern alone: a
+"broad" modifier (`all-skills`/`saves`/`all-attacks`/`all-damage`/
+`all-speeds`) with a non-empty `valueAffected` that's never actually
+meaningful there — `halfling-luck.json`'s "+1 to all saving throws"
+(unconditional, per its own `notes`) carries `valueAffected: "int"`;
+`orbital-adaptation.json`'s "+2 vs radiation" save carries `valueAffected:
+"analog"` — a weapon property code, not a save-related concept at all.
+The values are drawn from unrelated vocabularies (skill codes, ability
+codes, AC-selector codes, weapon-property codes) with zero correlation to
+what each modifier's own `notes` says it actually does — reads like a
+single shared/reused dropdown field in the Foundry authoring sheet
+retaining whatever was last selected in a different context, not
+per-entry data-entry mistakes.
+
+**Fixed at the source**: `valueAffected` cleared to `""` on all 57
+confirmed cases (54 files) directly in `aon-cache/`. This is a deliberate
+exception to "aon-cache stays a clean, regeneratable output of the
+importers" (`import-foundry.js`/`scrape-aon.js` would silently reintroduce
+the wrong values on a future full re-import of these three folders) — the
+tradeoff was judged worth it because a wrong value actively misleads
+anything reading `mechanics.modifiers` downstream (the Compendium, a
+future rules engine, ...), while an absent one honestly represents "the
+real scope isn't captured in structured data, see `notes`." No
+information was lost — `notes` (the actual source of truth for these
+entries' real scope, e.g. "against Fear effects") was never touched.
+Verified clean afterward, not just assumed: re-running the audit against
+all three categories shows 0 anomalies, confirming no cases were missed
+and the fix didn't need a second pass.
+
+Also fixed in the same pass: `damage-reduction` was wrongly included in
+the "broad" effectType set to begin with — confirmed live,
+`racial-features/incompressible.json`'s "DR 5/piercing or slashing" uses
+`valueAffected` as the bypass type, completely standard SF1e notation,
+not a contradiction. Every DR modifier with a bypass type was getting a
+false "anomaly" (and, separately, was never even being checked at all,
+since the broad-type branch always skips claim generation) until this was
+removed from `BROAD_EFFECT_TYPES`.
+
 **A recurring pattern that survived every fix, and looks like a real,
 independent data issue rather than checker noise**: a modifier's own
 `name` field sometimes doesn't match its parent entry at all —
