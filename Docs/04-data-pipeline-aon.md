@@ -759,9 +759,17 @@ model's own verdict label on unreviewed. Applied retroactively to the
 already-completed run too (`scripts/lib` has no reprocessing script
 committed — this was a one-off against the sidecar files directly) rather
 than re-spending the hours re-running the LLM pass just for a
-reclassification.
+reclassification. `SILENT_NOTE_RE` needed widening once more after a
+clean full re-run with every other fix applied: "never mentions"/"has no
+description" used the same silence meaning as the original pattern in
+different words and slipped through — caught by spot-checking the
+*surviving* mismatches after the "fixed" run, not assuming the fix was
+complete just because the count dropped. Final numbers after all of the
+above, the full un-sampled category: 4,203 checked, 2,644 with nothing
+checkable, **180 mismatches, 49 anomalies**, 5 call failures (down from
+392 raw mismatches on the very first pass).
 
-Of the ~208 mismatches that survived reclassification, spot-checking
+Of the mismatches that survived reclassification, spot-checking
 surfaced two more real, distinct issues — one in this checker, one in the
 data:
 - **A phrasing bug of this file's own**: Foundry represents healing the

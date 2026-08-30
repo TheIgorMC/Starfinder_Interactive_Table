@@ -241,7 +241,12 @@ export function buildItemAuditPrompt(entry) {
 // notes containing a contrastive word ("mentions cold but does not
 // specify fire damage") turned out to be genuine vagueness, not a
 // disguised real contradiction, every time sampled.
-const SILENT_NOTE_RE = /does ?n[o']?t mention|does ?n[o']?t specify|not mentioned|no mention/i;
+// Broadened after the full equipment run: "never mentions"/"has no
+// description" slipped through the original pattern (0 residual matches
+// of the original phrasing confirmed after reclassification, but a
+// second pass over the same output caught 7 more under this wider net —
+// same silence-not-contradiction meaning, different wording).
+const SILENT_NOTE_RE = /does ?n[o']?t mention|does ?n[o']?t specify|not mentioned|no mention|never mentions?|no description/i;
 
 function reclassifySilentMismatches(verdict, note) {
   if (verdict === "mismatch" && SILENT_NOTE_RE.test(note || "")) return "uncertain";
