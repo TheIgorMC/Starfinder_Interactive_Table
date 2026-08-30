@@ -805,6 +805,34 @@ what already exists (a human/GM needs to hand-set this one per-character),
 which is exactly the checker doing its job — not every flagged item has a
 data-side fix, and this one shouldn't be "resolved" by suppressing it.
 
+**Equipment's own 49 anomalies were the same `conditions`/`effects`/
+`racial-features` pattern from earlier, not yet applied here** — an
+oversight caught only when directly asked "are these fixed" rather than
+assumed from the earlier fix's existence. Verified before fixing, not
+just pattern-matched by category name: sampled several of equipment's 49
+and confirmed each one's `notes` describes something with zero relation
+to its spurious `valueAffected` (e.g. `godheart-talavet.json`'s "+X to
+recall knowledge" carrying `valueAffected: "com"` — Computers, unrelated).
+Cleared all 49 the same way (`valueAffected` → `""`), count matched
+exactly (49 found, 49 cleared) — see git history for the exact list
+rather than duplicating it here.
+
+**Honest status, not a completed audit**: unlike the anomalies (now
+fully accounted for, verified by an exact count match), **the 180
+mismatches were not all individually reviewed.** A representative sample
+(~35-45 of 180, plus the 10 confirmed `cmd`→`ac` cases) was checked
+against raw `aon-cache` data to confirm no further *systematic* checker
+bug remained — that sample was mostly genuine, which is a reasonable
+basis for trusting the *category* of finding, but it is not the same as
+having verified all 180 individually. A verification re-run to confirm
+the anomaly fix (expected: 0/49) was started and abandoned partway
+through for time — full un-sampled categories take on the order of hours
+each, and this one wasn't worth the wait mid-session. The 180 mismatches
+remain exactly where the whole point of this pipeline says they should:
+`DataEntry/output/_audits/equipment/_findings.json`, each `"status":
+"open"`, ready to pick back up (same `--random --seed=N` commands
+documented above) rather than something silently marked resolved.
+
 **A recurring pattern that survived every fix, and looks like a real,
 independent data issue rather than checker noise**: a modifier's own
 `name` field sometimes doesn't match its parent entry at all —
