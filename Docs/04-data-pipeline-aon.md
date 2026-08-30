@@ -737,6 +737,66 @@ false "anomaly" (and, separately, was never even being checked at all,
 since the broad-type branch always skips claim generation) until this was
 removed from `BROAD_EFFECT_TYPES`.
 
+#### `equipment` (~4,200 entries): a reliability gap at scale, and real finds
+
+Running the full `equipment` category (not a sample) surfaced a reliability
+problem invisible at small sample sizes: **47% of its 392 initial
+"mismatch" verdicts (184) had a note that was itself the model explaining
+the source never addresses the claim at all** ("source text does not
+mention damage type or dice value") — a textbook "uncertain" per the
+system prompt's own instruction, mislabeled anyway. Spot-checked a
+representative sample rather than assumed: every one of the 184 (including
+the 59 whose note contained a contrastive word like "but", which could in
+principle have been hiding a real contradiction) turned out to be genuine
+vagueness, not a disguised real bug. Same class of soft-instruction
+unreliability found twice before at smaller scale (missing conditions,
+`ac`'s `both`/`eac`/`kac`) — this time the fix is a deterministic
+*post-processing* correction rather than excluding the check outright
+(`reclassifySilentMismatches()` in `audit-item.js`, matched against a
+`SILENT_NOTE_RE` pattern), since equipment *does* sometimes restate a real
+number and the question is worth asking, just not worth trusting the
+model's own verdict label on unreviewed. Applied retroactively to the
+already-completed run too (`scripts/lib` has no reprocessing script
+committed — this was a one-off against the sidecar files directly) rather
+than re-spending the hours re-running the LLM pass just for a
+reclassification.
+
+Of the ~208 mismatches that survived reclassification, spot-checking
+surfaced two more real, distinct issues — one in this checker, one in the
+data:
+- **A phrasing bug of this file's own**: Foundry represents healing the
+  same shape as damage — a `damage`-kind action whose `damageTypes`
+  includes `"healing"` — so the claim builder said "Deals 6d8 healing
+  damage" for an item that restores 6d8 Hit Points, backwards phrasing an
+  otherwise-correct value. Fixed by rendering healing actions as "Restores
+  N Hit Points" instead. (A first attempt hedged with "... Hit Points (or
+  Stamina Points)" to cover items that heal SP instead — confirmed live
+  this backfired, the model flagging the unrequested hedge as unsupported
+  when a source only ever mentions HP. Reverted to plain "Hit Points";
+  an item that actually restores SP will now show a real mismatch instead
+  of a false one from an unearned hedge.)
+- **A real, confirmed upstream data bug, small and bounded**: exactly 10
+  `equipment` entries use `effectType: "cmd"` (Combat Maneuver Defense) —
+  checked all 10 individually rather than assuming from one, and every
+  single one's own `name` or `notes` field explicitly says "KAC" (e.g.
+  `kalo-shredder-slipstream-class.json`'s modifier is literally *named*
+  "KAC bonus against Disarm" while tagged `effectType: "cmd"`, a
+  different stat). Fixed by correcting all 10 to `effectType: "ac"`,
+  `valueAffected: "kac"` — matching what each entry's own text already
+  said, not a guess.
+
+**Confirmed not a bug, working as intended**: `equipment/
+sciatic-agonizer.json` flagged a mismatch (claims "modifier of 0" to
+speed, source describes "doubling" it) that turned out to be the Foundry
+data *admitting* it's an intentionally-incomplete placeholder — its own
+prose ends with "Please change the modifiers to your current movement
+speeds, to account for doubling them." A flat modifier can't express a
+multiplier without knowing the character's current speed first. The audit
+correctly surfaced the discrepancy; there's nothing here to fix beyond
+what already exists (a human/GM needs to hand-set this one per-character),
+which is exactly the checker doing its job — not every flagged item has a
+data-side fix, and this one shouldn't be "resolved" by suppressing it.
+
 **A recurring pattern that survived every fix, and looks like a real,
 independent data issue rather than checker noise**: a modifier's own
 `name` field sometimes doesn't match its parent entry at all —

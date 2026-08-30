@@ -170,7 +170,23 @@ function actionClaims(mechanics) {
   return (mechanics?.actions || [])
     .filter((a) => a.kind === "damage" && SIMPLE_FORMULA_RE.test(a.formula || ""))
     .map((a) => {
-      const text = `Deals ${a.formula} ${(a.damageTypes || []).join("/") || "untyped"} damage${a.onCritical ? " on a critical hit" : ""}.`;
+      // Foundry represents healing the same way as damage — a "damage"
+      // action whose damageTypes includes "healing" — since a rules
+      // engine applies both as "add this formula's result to a pool",
+      // just a different pool. Confirmed live this produced claims like
+      // "Deals 6d8 healing damage" against prose that says "restores 6d8
+      // Hit Points" — backwards phrasing (a claim asserting damage is
+      // dealt when the item does the opposite), not a data issue.
+      // Confirmed live: hedging with "(or Stamina Points)" backfired —
+      // the model correctly noted the source only mentions Hit Points,
+      // treating the unrequested hedge as an unsupported claim. Plain
+      // "Hit Points" matches the common case; an item that actually heals
+      // Stamina Points will show a real (and correct) mismatch here
+      // rather than a false one from an unearned hedge.
+      const isHealing = (a.damageTypes || []).includes("healing");
+      const text = isHealing
+        ? `Restores ${a.formula} Hit Points.`
+        : `Deals ${a.formula} ${(a.damageTypes || []).join("/") || "untyped"} damage${a.onCritical ? " on a critical hit" : ""}.`;
       return { llmText: text, displayText: text };
     });
 }
@@ -210,6 +226,28 @@ export function buildItemAuditPrompt(entry) {
 // `anomalies` are deterministic (no LLM call), so they always apply
 // regardless of whether `checks` came back at all — a caller should merge
 // them into the same findings list, distinguished by verdict "anomaly".
+// The system prompt already tells the model "when the source simply
+// doesn't mention the claim, that's uncertain, never mismatch" — but
+// confirmed live at scale (a 4,203-entry `equipment` run), it doesn't
+// reliably follow that: 184 of 392 "mismatch" verdicts (47%) had a note
+// that was itself the model explaining the source never addresses the
+// claim at all ("source text does not mention damage type or dice
+// value") — a textbook "uncertain", mislabeled. Same class of soft-
+// instruction unreliability already found twice before (missing
+// conditions, AC "both"/eac/kac) — the fix there was to stop asking the
+// question at all; here the question is worth asking (equipment
+// *sometimes* does restate a number), so instead the answer is corrected
+// deterministically rather than trusted as given. Spot-checked live: even
+// notes containing a contrastive word ("mentions cold but does not
+// specify fire damage") turned out to be genuine vagueness, not a
+// disguised real contradiction, every time sampled.
+const SILENT_NOTE_RE = /does ?n[o']?t mention|does ?n[o']?t specify|not mentioned|no mention/i;
+
+function reclassifySilentMismatches(verdict, note) {
+  if (verdict === "mismatch" && SILENT_NOTE_RE.test(note || "")) return "uncertain";
+  return verdict;
+}
+
 export function applyItemAuditResults(entry, checks, claimMeta, anomalies = []) {
   const anomalyEntries = anomalies.map((text) => ({ field: "mechanics", claim: text, verdict: "anomaly", note: "" }));
   const byN = new Map(claimMeta.map((c) => [c.n, c]));
@@ -217,7 +255,8 @@ export function applyItemAuditResults(entry, checks, claimMeta, anomalies = []) 
     .map((c) => {
       const meta = byN.get(c.n);
       if (!meta) return null;
-      return { field: meta.field, claim: meta.text, verdict: c.verdict || "uncertain", note: c.note || "" };
+      const note = c.note || "";
+      return { field: meta.field, claim: meta.text, verdict: reclassifySilentMismatches(c.verdict || "uncertain", note), note };
     })
     .filter(Boolean);
   return [...anomalyEntries, ...checkEntries];
