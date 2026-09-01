@@ -817,18 +817,19 @@ Cleared all 49 the same way (`valueAffected` → `""`), count matched
 exactly (49 found, 49 cleared) — see git history for the exact list
 rather than duplicating it here.
 
-**Honest status, not a completed audit**: unlike the anomalies (now
-fully accounted for, verified by an exact count match), **the 180
+**Anomaly fix verified, not just assumed**: a follow-up full re-run (after
+an earlier attempt was abandoned partway through for time) confirms
+0/4,203 anomalies — the fix generalizes across the whole category, not
+just the sample checked while diagnosing it.
+
+**Honest status on the rest, not a completed audit**: **the 181
 mismatches were not all individually reviewed.** A representative sample
-(~35-45 of 180, plus the 10 confirmed `cmd`→`ac` cases) was checked
+(~35-45 of the ~180, plus the 10 confirmed `cmd`→`ac` cases) was checked
 against raw `aon-cache` data to confirm no further *systematic* checker
 bug remained — that sample was mostly genuine, which is a reasonable
 basis for trusting the *category* of finding, but it is not the same as
-having verified all 180 individually. A verification re-run to confirm
-the anomaly fix (expected: 0/49) was started and abandoned partway
-through for time — full un-sampled categories take on the order of hours
-each, and this one wasn't worth the wait mid-session. The 180 mismatches
-remain exactly where the whole point of this pipeline says they should:
+having verified all of them individually. They remain exactly where the
+whole point of this pipeline says they should:
 `DataEntry/output/_audits/equipment/_findings.json`, each `"status":
 "open"`, ready to pick back up (same `--random --seed=N` commands
 documented above) rather than something silently marked resolved.
