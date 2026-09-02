@@ -34,12 +34,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildRaceAuditPrompt, applyAuditResults } from "./lib/audit-race.js";
 import { buildItemAuditPrompt, applyItemAuditResults } from "./lib/audit-item.js";
+import { buildRaceRawAuditPrompt } from "./lib/audit-race-raw.js";
 import { askOllamaJson, pingOllama } from "./lib/ollama-client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Categories with a real normalize-entries.js draft to audit in place.
 const NORMALIZED_BUILDERS = { races: buildRaceAuditPrompt };
+
+// Categories that read aon-cache/ directly (like any plain folder name)
+// but need a custom claim builder instead of the generic buildItemAuditPrompt
+// — because the raw entry shape doesn't fit the modifiers/actions mold
+// audit-item.js expects. Key is the CLI category name; value is
+// { cacheDir: <actual aon-cache/ folder to read>, builder }. "races-raw"
+// exists because "races" is already claimed by NORMALIZED_BUILDERS above
+// for the separate normalized-draft pipeline — see audit-race-raw.js's own
+// header for why the two need genuinely different checks, not just a
+// different data source for the same one.
+const RAW_BUILDERS = { "races-raw": { cacheDir: "races", builder: buildRaceRawAuditPrompt } };
 
 // Deterministic shuffle (mulberry32 PRNG) rather than Math.random() — a
 // --seed re-run reproduces the exact same sample, useful for comparing
@@ -86,9 +98,10 @@ async function main() {
   // all assume you're running from backend/ where aon-cache/ actually
   // lives — confirmed live, using __dirname for it looked for aon-cache/
   // inside scripts/ and failed.
+  const rawBuilder = RAW_BUILDERS[args.category];
   const readDir = isNormalized
     ? path.resolve(__dirname, args.dir, args.category)
-    : path.resolve(args.cache, args.category);
+    : path.resolve(args.cache, rawBuilder ? rawBuilder.cacheDir : args.category);
   const sidecarDir = isNormalized ? null : path.resolve(__dirname, args.dir, "_audits", args.category);
 
   let files;
@@ -130,7 +143,11 @@ async function main() {
     const slug = file.replace(/\.json$/, "");
     process.stdout.write(`\r[audit ${args.category} ${checked + 1}/${limited.length}] ${slug.padEnd(30)}`);
     const doc = JSON.parse(await readFile(path.join(readDir, file), "utf8"));
-    const built = isNormalized ? NORMALIZED_BUILDERS[args.category](doc) : buildItemAuditPrompt(doc);
+    const built = isNormalized
+      ? NORMALIZED_BUILDERS[args.category](doc)
+      : rawBuilder
+        ? rawBuilder.builder(doc)
+        : buildItemAuditPrompt(doc);
     const { system, user, claimMeta } = built;
     const anomalies = built.anomalies || [];
 
