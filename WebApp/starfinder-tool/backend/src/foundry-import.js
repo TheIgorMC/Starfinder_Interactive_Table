@@ -591,20 +591,32 @@ export function mapFoundryJournalPage(page, topicName, category) {
 
 // --- RollTable-shaped content (tables/) ------------------------------------
 //
-// A third shape again: { name, formula, results: [{ name, range: [min,
-// max], weight, documentUuid }] }. No source book field exists on these at
-// all (confirmed — matches the existing precedent of the "Drone" class
-// entry having no parseable source line either, per
-// Docs/04-data-pipeline-aon.md's "Classes" note). `documentUuid` points at
-// another compendium's internal id (e.g.
-// "Compendium.sfrpg.races.Item.AMBcyDZDtJ1OOzh3") which doesn't resolve to
-// anything in our own database — kept as a raw string for reference rather
-// than resolved, since `result.name` already carries the human-readable
-// value a GM/player actually needs.
+// A third shape again: { name, formula, results: [{ name, type, description,
+// range: [min, max], weight, documentUuid }] }. No source book field exists
+// on these at all (confirmed — matches the existing precedent of the
+// "Drone" class entry having no parseable source line either, per
+// Docs/04-data-pipeline-aon.md's "Classes" note).
+//
+// Two distinct result shapes, confirmed against the live source
+// (github.com/foundryvtt-starfinder/foundryvtt-starfinder, src/items/tables)
+// after 17/46 tables turned up with every result blank — including every
+// critical hit/fumble table — from trusting `result.name` alone:
+// - `type: "document"` results (race/subspecies tables) DO carry the
+//   human-readable label in `name` directly (e.g. "Android"), with
+//   `documentUuid` (e.g. "Compendium.sfrpg.races.Item.GHIntVN70xTt2Tlo") as
+//   extra metadata that doesn't resolve to anything in our own database —
+//   kept unresolved, `name` already has what's needed.
+// - `type: "text"` results (chaos-ammo, both critical tables, drift-crisis
+//   treasure, ...) instead carry `name: ""` and put the actual label in
+//   `description` as Foundry rich-text HTML (e.g. "<b>Degloved</b> Normal
+//   damage...") — confirmed live this is exactly the 17 that turned up
+//   empty. Falls back to `description` (through the same
+//   foundryTextToPlain() every other field already uses) whenever `name`
+//   is blank, rather than assuming `name` is always where the value lives.
 export function mapFoundryRollTable(raw) {
   if (!raw || !Array.isArray(raw.results)) return null;
   const results = raw.results.map((r) => ({
-    name: r.name || "",
+    name: r.name || foundryTextToPlain(r.description) || "",
     min: Array.isArray(r.range) ? r.range[0] : null,
     max: Array.isArray(r.range) ? r.range[1] : null,
     weight: r.weight ?? 1,

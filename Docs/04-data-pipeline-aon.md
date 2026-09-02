@@ -1390,28 +1390,54 @@ look: `setting/centus-ii-centus-ii.json` says atmosphere "Thick and
 **toix**" (almost certainly "toxic") — not corrected, since I can't
 confirm the intended word with certainty from data alone.
 
-**`tables` (46) — a real, significant, confirmed gap**: a deterministic
+**`tables` (46) — a real, confirmed gap, now fixed**: a deterministic
 range-consistency check (do each table's `min`/`max` result ranges
 exactly cover 1 through the formula's max, no gaps or overlaps) found
-**17 of 46 tables (37%) are functionally empty** — every result row has
+**17 of 46 tables (37%) were functionally empty** — every result row had
 the correct roll range but a **blank `name`**, meaning the actual
-roll-result text was never captured. This includes **every critical hit
+roll-result text was never captured. This included **every critical hit
 and critical fumble table** (`critical-hit`/`critical-fumble` ×
 `energy`/`kinetic`/`spell`/`extreme`, 8 tables — arguably the single
 most-rolled table group in actual SF1e combat), `starship-critical-
 damage-effects`, `chaos-ammo`, `confusion-table`, four `drift-crisis-
-treasure-*` tables, and `roll-table-wall-of-warped-time`. Root cause
-traced in code, not guessed: [`mapFoundryRollTable()`](../WebApp/starfinder-tool/backend/src/foundry-import.js:604)
-extracts only `{name, min, max, weight}` from each Foundry result and
-explicitly discards `documentUuid` (a pointer to where the real text
-actually lives), on the documented assumption that `name` always carries
-the human-readable value — true for 29 of 46 tables, false for these 17.
-**Not fixed**: resolving those UUIDs needs the raw Foundry source
-checkout, which isn't present on this machine right now. This needs
-either that checkout back on disk (to extend `mapFoundryRollTable()` to
-resolve `documentUuid` when `name` is empty, then re-run the importer) or
-hand-authoring these 17 tables from the physical books. Flagged here
-rather than silently left for the next person to rediscover.
+treasure-*` tables, and `roll-table-wall-of-warped-time`.
+
+Root cause traced against the live source
+(github.com/foundryvtt-starfinder/foundryvtt-starfinder,
+`src/items/tables`), not guessed at from the code alone — a first look at
+[`mapFoundryRollTable()`](../WebApp/starfinder-tool/backend/src/foundry-import.js:604)
+suggested the culprit was an unresolved `documentUuid` reference, which
+turned out to be wrong in the specifics: Foundry's roll-table results
+come in two different shapes, and the code only handled one of them.
+`type: "document"` results (race/subspecies tables) really do carry the
+label directly in `name` (e.g. `"Android"`), with `documentUuid` as inert
+extra metadata — the original code's assumption was correct for these,
+which is why 29 of 46 tables were already fine. But `type: "text"`
+results — every one of the 17 broken tables — carry `name: ""` and put
+the actual label in `description` instead, as Foundry rich-text HTML
+(e.g. `"<b>Degloved</b> Normal damage..."`), a shape the mapper never
+handled at all. Confirmed by fetching the raw source directly rather
+than assuming; also caught that the local reference checkout at
+`Docs/ReferenceFoundry/foundryvtt-starfinder-development/` — which an
+earlier pass through this same session claimed wasn't present on this
+machine — was there all along and current, just missed by an
+insufficiently broad search.
+
+**Fixed**: `mapFoundryRollTable()` now falls back to `description` (run
+through the same `foundryTextToPlain()` every other field already uses
+for Foundry's rich-text HTML) whenever `name` is blank, rather than
+assuming `name` is always where the value lives. Re-ran
+`node scripts/import-foundry.js tables` against the real local checkout
+— no GitHub fetching needed once it turned out to be present — and
+confirmed **0 of 46 tables have any blank result names anymore**,
+`critical-fumble-energy.json`'s 53 results now read like
+`"I hope my insurance covers this! Apply the wound critical hit effect to
+yourself..."` instead of `""`. Re-ran the range-consistency check too:
+same pre-existing, benign quirks as before (two of the critical tables'
+"53" max results include two extra rows Foundry itself uses as UI links
+to the physical Critical Hit/Fumble card product and the "Extreme"
+table variant, not real roll outcomes — harmless, the real 1–53 range is
+still fully and correctly covered), nothing newly broken.
 
 **Coverage after this second pass**: every category in `aon-cache` has
 now been either fully hand-checked (`class-features`, `equipment`,
