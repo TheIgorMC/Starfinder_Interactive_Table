@@ -1009,17 +1009,117 @@ generalizes as cleanly as the earlier fixes:
   deleting or correcting it would require knowing Chain Surge's true base
   damage, which isn't in this entry's own grounding text.
 
-**Honest status on the rest, not a completed audit**: the same caveat as
-equipment applies here — **the 57 mismatches were not all individually
-reviewed.** A representative sample (the entries discussed above, plus
-several more of the formula-flattening kind — a scaling bonus, like
-"equals your attack roll bonus for this maneuver," stored as today's flat
-integer snapshot rather than a formula, which the checker correctly flags
-as not matching the prose) was checked against raw `aon-cache` data to
-confirm no further systematic checker bug remained beyond the "modifier"
-vs. "gain" pattern above. They remain exactly where they should:
-`DataEntry/output/_audits/class-features/_findings.json`, each
-`"status": "open"`.
+**Update: all 57 mismatches were individually hand-checked**, unlike every
+prior category in this pipeline (equipment's 180, conditions/effects/
+racial-features' smaller counts — all sampled, never exhaustively
+reviewed). Asked directly whether the data was actually good rather than
+just "count went down," so this round got the full treatment: every one
+of the 37 distinct entries behind the 57 findings read against its own
+`aon-cache` source text, using
+[audit-item.js](../WebApp/starfinder-tool/backend/scripts/lib/audit-item.js)'s
+own `buildItemAuditPrompt()` (imported directly, not re-implemented) to
+get the *exact* claim each finding's `mechanics[N]` field refers to —
+necessary because `N` indexes the filtered claim list, not the entry's
+raw `modifiers`/`actions` array, and a first attempt at this hand-check
+that assumed otherwise misattributed several claims to the wrong raw
+object (caught by a re-derived claim not matching the finding's recorded
+one, e.g. `dimension-of-time-greater-anchor`'s real offending modifier
+turned out to be a second, differently-shaped one further down its array,
+not the first).
+
+Result, all 57 accounted for:
+- **8 confirmed, unambiguous data bugs, fixed**: `protean-second-lesson`
+  (modifier `4` → `2`, source plainly says "+2 bonus on saving throws", no
+  dynamic-scaling excuse); `focused-resilience-ex`'s Reflex and Will
+  modifiers (`type` `circumstance` → `enhancement` — both the source text
+  *and* the modifier's own `notes` field say enhancement; the sibling
+  Fortitude modifier already had this right, so this was a two-thirds
+  copy/paste slip); `dimension-of-time-greater-anchor` (a modifier's
+  `effectType`/`valueAffected` said `skill`/`acr` — Acrobatics — while its
+  own `notes` field describes a saves-against-specific-conditions bonus;
+  fixed to `effectType: "saves"`, matching how every other broad
+  conditional save bonus in this dataset is represented); `strength-in-
+  silence-ex` (`effectType: "skill"` when the source is explicit this is
+  "+1 insight bonus to the attack roll" — fixed to `all-attacks`);
+  `circle-of-devastation-su` and `powerful-propulsion-su` (both had empty
+  `damageTypes` on a damage action despite the source unconditionally
+  naming a type — "force" and "bludgeoning"/"force" respectively — filled
+  in); `unwieldy-opportunist-ex-powerhouse-style-3rd` (`effectType:
+  "weapon-property-damage"` when the source describes an attack-roll
+  penalty, not damage — fixed to `weapon-property-attacks`); and
+  `choreography-of-death-ex` (the reverse mislabel — `effectType:
+  "weapon-attacks"` when the source is explicit this is a damage-roll
+  bonus — fixed to `weapon-damage`). Every fix re-verified by re-running
+  `buildItemAuditPrompt()` against the corrected file: each now produces
+  a claim that matches its own source text exactly, with no new anomalies
+  introduced.
+- **~26 confirmed false positives or already-known acceptable
+  limitations, left as-is** — the checker was right to ask, wrong to flag:
+  a "reduce the penalty by 1" phrased as "+1 modifier" (mathematically the
+  same thing in an additive stack, `staccato-strut-ex`); the checker
+  matching a claim against the wrong sentence in a multi-clause source
+  text (`aquatic-propulsion-ex`'s stated +1 to combat maneuvers is real
+  and separate from the underwater attack-penalty clause the checker
+  compared it to; `the-bigger-they-are-ex`'s flat "+5" is the size-
+  escalation clause, not the base "5d6" the checker matched it to;
+  `blazing-orbit-su`'s two damage actions are two genuinely separate
+  effects — scaling flame damage and a flat burning-condition tick — not
+  one value stated two ways); the "grant"/"gain" vs. "modifier" wording
+  gap identified earlier (confirmed on direct reading: `exploratory-form-
+  ex` x4, `elemental-first-lesson` x3 of its x4 — the 4th, Fire, has a
+  real separate bug: source calls it an *enhancement* bonus, data says
+  `untyped`, not yet fixed); a condition that's real but lives only in
+  `notes` rather than the structured `condition` field, the same
+  established false-positive class from earlier rounds
+  (`adaptive-camouflage-ex`, `rebounding-bludgeon-ex`); this file's own
+  translation of `bulk` as "carrying capacity" not matching the source's
+  own "bulk limit" wording (`personal-modification-ex` — a self-inflicted
+  phrasing gap, not a data problem); and flat resistance/DR values being
+  compared against the word "modifier" when the source just states a flat
+  number with no bonus-type language at all (`shock-absorption-ex`,
+  `springy-sheath`'s resistance modifier, `fiend-third-lesson`).
+- **~10 confirmed instances of one known, documented, and intentional
+  limitation**: a value that legitimately varies by another dynamic stat
+  (an attack-roll bonus, a spell's level) stored as today's flat-number
+  snapshot rather than a live formula, because this schema has no way to
+  express "equals your bonus to X" as data. Some of these entries say so
+  explicitly in their own source text — `fiend-first-lesson`/
+  `celestial-first-lesson`'s DR and `primal-defense-ex`'s DR/ER modifiers
+  all carry an explicit in-game instruction to hand-edit the value
+  ("DR must be edited in the Modifiers tab..."), the same acknowledged-
+  placeholder pattern already confirmed once before in equipment
+  (`sciatic-agonizer.json`) — `alien-archive-ex` is a second confirmed
+  instance of that exact pattern (its own text: "change the Trick Attack
+  bonus to the used skill"). Others (`intuitive-deconstruction-ex`,
+  `push-off-ex`, `hold-on-tight-ex`, `energy-reflection-ex`) don't say so
+  explicitly but are the same shape. None of these are wrong, exactly —
+  they're accurate defaults for an inherently per-character value — so
+  none were changed.
+- **3 genuine bugs confirmed but deliberately left unfixed**, because no
+  confident fix exists without inventing a value: `tenebrous-bulwark-su`
+  and `hungering-conflagration-sp` (both above, unchanged from the
+  original finding), plus `primal-defense-ex`'s specific case is worth
+  separating from the acknowledged-placeholder bucket above — its default
+  is `0`, not a plausible 1st-level value the way `fiend-first-lesson`'s
+  `1` is, so it's a slightly worse placeholder even though it's the same
+  underlying pattern.
+- **A new pattern surfaced, not yet investigated**: `fiend-first-lesson`,
+  `celestial-first-lesson`, and `fiend-third-lesson` — three near-
+  identical "gain DR/resistance N" class features — carry three different,
+  unconfirmed bonus `type` values (`circumstance`, `circumstance`,
+  `morale`) that none of their own source text actually states. Same
+  *shape* of problem as the spurious-`valueAffected` anomaly pattern
+  fixed earlier this session (a Foundry dropdown value that doesn't trace
+  back to anything in the entry's own text), but manifesting on the
+  `type` field instead, which the deterministic anomaly check doesn't
+  examine. Not fixed or counted as anomalies this round — flagged here as
+  a lead for a future pass, the same way this pipeline has always
+  surfaced findings rather than silently absorbing them.
+
+The fixes above are the only aon-cache changes from this hand-check; the
+`_findings.json` still lists all 57 (each `"status": "open"`) as the
+running record — flipping status on the ones now resolved is future
+bookkeeping, not required for the data itself to be correct.
 
 ## Querying by source
 
