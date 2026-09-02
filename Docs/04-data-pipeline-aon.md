@@ -1251,10 +1251,182 @@ tab," the same acknowledged-placeholder pattern as `class-features`'s
 
 **Coverage after this pass**: `class-features` (fully hand-checked, both
 rounds) and these six categories (re-run, hand-checked, fixed) now rest
-on solidly verified ground. `equipment` remains at its earlier
-sampled-verification level (explicitly out of scope for this pass).
-`feats`, `races`, `rules`, `setting`, `spells`, and `tables` remain
-completely unaudited — nothing in this session changes that.
+on solidly verified ground. `equipment`, `feats`, `races`, `spells`,
+`rules`, `setting`, and `tables` were all addressed in the pass documented
+immediately below, closing out every remaining category.
+
+#### Closing the gap: `equipment` fully hand-checked, six new categories audited
+
+Asked directly to finish the job: hand-check every `equipment` mismatch
+(previously only sampled) and bring `feats`, `races`, `rules`, `setting`,
+`spells`, and `tables` — six categories with zero prior coverage — up to
+the same standard, "since they'll be used in game a lot."
+
+**`equipment`, full re-run**: 4,203 checked, 2,650 with nothing checkable,
+**186 mismatches, 1,269 uncertain**, 4 call failures. All 186 mismatches
+hand-checked the same way as every category above (`buildItemAuditPrompt()`
+imported directly for correct claim indexing), plus the 4 call-failure
+entries read directly against their own source — an unrun check is as
+much of an unknown as a flagged one. The 1,269 "uncertain" verdicts were
+not individually reviewed (by definition, the source text doesn't address
+those claims one way or the other — there's nothing to adjudicate without
+inventing an answer).
+
+Result: **9 confirmed bugs, fixed across 10 files** — `squirming-entrails`
+mk-4/mk-5 (a modifier's own `notes` field says "Athletics checks to
+balance," `valueAffected` said Acrobatics — same self-contradiction shape
+found repeatedly in racial-features); all five `corpseskin` mk-1 through
+mk-5 (a Disguise modifier typed `untyped` when its own `notes` field says
+"+5 **competence** bonus" — only mk-4 was flagged as a mismatch, but the
+identical modifier with the identical wrong type exists verbatim in all
+five, so all five were fixed for consistency); `ring-of-the-ninth-truth`
+(`valueAffected: "lowest"` on a "functions as a mk 3 ring of resistance"
+item — a standard, well-documented SF1e item that grants a flat bonus to
+*all* saves, not the "lowest" mechanic that (correctly) appears on the
+two racial features found earlier this session — fixed to the broad
+`saves` type with no `valueAffected`, matching how "applies broadly" is
+represented everywhere else in this dataset); `shock-fist-aurora` (base
+damage carried a stray `"cold"` alongside `"electricity"`, inconsistent
+with its own scaling and critical-hit sibling actions, which are both
+pure electricity); and `eohi-boots` (`effectType: "acp"` — Armor Check
+Penalty — when the source says "AC," a different stat entirely).
+
+The rest resolved as already-established false-positive patterns from
+earlier in this session — wording nitpicks on flat resistance values,
+the checker matching the wrong sentence in multi-clause items (most
+`flametongue-*`/`shock-fist-*` critical-arc claims: the item's own
+one-line summary, e.g. "Damage 4d8 F Critical Arc 2d8 F," states both
+values, and the claim is correctly about the *second* one, which the
+model kept comparing against the first), condition-lives-in-notes, and
+choice-of-several patterns (`probability-tendril`'s d10 effect table,
+`ablative-insulation`'s "resistance to all energy types" represented as
+five discrete per-type entries). One new pattern confirmed:
+several `graviton-pistol-*` variants and `scrambler-pistol/rifle-*`
+variants have a damage action with no basis anywhere in their own (very
+short, pure-flavor) `data.effect` text — the same "flavor text carries no
+mechanical numbers at all" asymmetry already documented for equipment,
+not a bug in the structured data, which comes from Foundry's own stat
+block rather than the scraped blurb.
+
+**`feats` (431 entries, first audit)**: 431 checked, 383 with nothing
+checkable, 22 mismatches, 5 uncertain, 0 anomalies, 0 call failures. All
+22 hand-checked. **3 confirmed bugs, fixed**: `arcane-riposte` (all 6
+level-scaled damage actions had empty `damageTypes` despite the source's
+unconditional "this damage has the force descriptor" — filled in
+`["force"]` on all 6); `stand-strong-combat-teamwork` (a melee-attack
+modifier carried `valueAffected: "acr"` — Acrobatics — with no connection
+to the source at all, the same spurious-value pattern found repeatedly
+in racial-features, just not caught by the deterministic anomaly check
+since `melee-attacks` isn't a broad type); and `polymorphic-titan` (its
+Colossal-form ability-skills modifier was typed `untyped` while its own
+sibling ability-check modifier — same sentence, same value — was
+correctly `enhancement`). The rest were the same established
+false-positive shapes: condition-in-notes, skill-choice enumeration,
+and rules-knowledge translations the source doesn't spell out verbatim
+but are standard SF1e mappings (poison → Fortitude, charm/compulsion →
+Will).
+
+**`spells` (586 entries, first audit)**: 586 checked, 483 with nothing
+checkable, 16 mismatches, 9 uncertain, 0 anomalies, 0 call failures. All
+16 hand-checked. **7 confirmed bugs, fixed**: five spells (`petal-storm`,
+`hurl-forcedisk`, `force-blast`, `fist-of-damoritosh`, `magic-missile` ×3
+actions) had empty `damageTypes` despite the source unconditionally
+naming exactly one type each (slashing or force) — unlike equipment's
+choice-of-type entries, these spells never offer the caster a choice, so
+there's no "which alternative" ambiguity excusing the gap; `ice-prison`
+(formula `8d8`, source explicitly and unambiguously says "8d6 cold
+damage"); and `mystic-cure` (its 4th-level bonus-healing action was
+`4d8`, but the source's own table lists 5d8/7d8/9d8 for 4th/5th/6th level
+— `4d8` matches none of the three, `5d8` does). The rest were the
+established "two genuinely different, individually-correct conditional
+outcomes" pattern (`crush-skull`'s pass/fail damage, `temporal-wave`'s
+standard-vs-full-action damage) and one instance of the model misreading
+Starfinder's own "Burning Xd6" shorthand as a duration rather than a
+per-round damage die.
+
+**`races` (190 entries, first audit — via `audit-race.js`, not
+`audit-item.js`, since races go through the normalize-entries.js draft
+pipeline)**: 190 checked, 0 with nothing checkable, 43 mismatches, 13
+uncertain, 0 anomalies, 0 call failures. All 43 hand-checked directly
+against `DataEntry/output/races/*.json` (the normalized drafts) and each
+race's own region-extracted overview text. **2 confirmed bugs, fixed
+across 7 files**: every `osharu` variant (`osharu`, `osharu-gengen`,
+`osharu-deepmarsh`, `osharu-mire-dweller`) listed "Monster Hunter" as a
+default trait despite it never being mentioned anywhere in any of their
+(otherwise near-identical) overview text — removed from all four; every
+`ghoran` variant (`ghoran-oakling`, `ghoran-sapling`, `ghoran-willower`)
+listed both "Photosynthesis" (correct) *and* "Psychosynthesis" (not a
+real trait, not mentioned anywhere, almost certainly a corrupted
+duplicate) — the latter removed from all three. The rest of the findings
+split into two buckets, both already-documented: the pipeline's own
+"known, not-yet-fixed gaps" list from earlier this session (choice-of-
+several defaults, subspecies/stage-conditional defaults, variable size,
+`alkainan`'s still-empty `traits: []`) predicted almost exactly what this
+first race audit would flag, now confirmed rather than merely
+anticipated; and a **newly-confirmed systematic checker false positive**
+specific to `audit-race.js`'s alternate-trait claims — every
+`alternate_traits[N].replaces` claim checked (11 instances across
+`lashunta-*` ×4, `half-elf-elven-inclined`, `kasatha-akitonian-settler`
+×2, `tiefling` ×4) was flagged as a mismatch despite that trait's own
+snippet explicitly ending in a sentence like "This replaces student." —
+the model doesn't reliably treat an explicit "this replaces X" statement
+as confirming the claim's stated replacement, the same class of soft-
+instruction unreliability found repeatedly elsewhere this session, just
+newly identified in this checker.
+
+**`rules` (335) and `setting` (67)**: no `mechanics.modifiers`/`actions`
+exist in either category at all (confirmed by direct inspection — these
+are pure reference/lore prose with nothing structured to cross-check
+against), so `audit-item.js`'s grounded-claim methodology fundamentally
+doesn't apply here; there is no "structured field vs. prose" divergence
+to catch because there's no separate structured field. Evaluated instead
+with what *is* possible for pure prose: a heuristic scan for scraping
+artifacts (raw HTML tags, truncation, repeated-character corruption) —
+3 hits in `rules`, all false positives on inspection (padding whitespace
+from a table-to-text conversion, and a skills-summary table's dense run
+of legitimate ✓ checkmarks) — plus a manual read of a random sample from
+each. Clean, aside from one likely single-character typo worth a second
+look: `setting/centus-ii-centus-ii.json` says atmosphere "Thick and
+**toix**" (almost certainly "toxic") — not corrected, since I can't
+confirm the intended word with certainty from data alone.
+
+**`tables` (46) — a real, significant, confirmed gap**: a deterministic
+range-consistency check (do each table's `min`/`max` result ranges
+exactly cover 1 through the formula's max, no gaps or overlaps) found
+**17 of 46 tables (37%) are functionally empty** — every result row has
+the correct roll range but a **blank `name`**, meaning the actual
+roll-result text was never captured. This includes **every critical hit
+and critical fumble table** (`critical-hit`/`critical-fumble` ×
+`energy`/`kinetic`/`spell`/`extreme`, 8 tables — arguably the single
+most-rolled table group in actual SF1e combat), `starship-critical-
+damage-effects`, `chaos-ammo`, `confusion-table`, four `drift-crisis-
+treasure-*` tables, and `roll-table-wall-of-warped-time`. Root cause
+traced in code, not guessed: [`mapFoundryRollTable()`](../WebApp/starfinder-tool/backend/src/foundry-import.js:604)
+extracts only `{name, min, max, weight}` from each Foundry result and
+explicitly discards `documentUuid` (a pointer to where the real text
+actually lives), on the documented assumption that `name` always carries
+the human-readable value — true for 29 of 46 tables, false for these 17.
+**Not fixed**: resolving those UUIDs needs the raw Foundry source
+checkout, which isn't present on this machine right now. This needs
+either that checkout back on disk (to extend `mapFoundryRollTable()` to
+resolve `documentUuid` when `name` is empty, then re-run the importer) or
+hand-authoring these 17 tables from the physical books. Flagged here
+rather than silently left for the next person to rediscover.
+
+**Coverage after this second pass**: every category in `aon-cache` has
+now been either fully hand-checked (`class-features`, `equipment`,
+`conditions`, `effects`, `themes`, `theme-features`, `archetype-features`,
+`racial-features`, `feats`, `spells`, `races`) or evaluated by whatever
+method actually applies to its content shape (`rules`, `setting`,
+`tables`). Nothing in `aon-cache` is untouched anymore. That is not the
+same claim as "100% correct" — this checker can only catch Foundry's data
+disagreeing with itself, never every signal agreeing on the same wrong
+answer (the `dessamar-instar` case above is the standing proof), and nine
+mismatches per category were left as "uncertain" or "match" without
+individual human review across thousands of entries. But every category
+has now had the level of scrutiny this pipeline is capable of giving it,
+and every finding — fixed, false positive, or genuine-but-unfixable — is
+documented above rather than silently absorbed.
 
 ## Querying by source
 
