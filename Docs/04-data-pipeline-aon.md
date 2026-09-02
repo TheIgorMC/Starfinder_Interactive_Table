@@ -925,6 +925,102 @@ worked around):
   Medium, or Large) don't have one fixed size at all; the schema assumes
   a single `size` value per race.
 
+#### `class-features` (2,148 entries): two new checker gaps, two confirmed upstream bugs
+
+Same grounded checker, run against the last remaining large `aon-cache/`
+category. First full pass: 2,148 checked, 167 mismatches, 8 anomalies, 5
+call failures.
+
+**Anomalies**: all 8 inspected individually rather than assumed from the
+category name. 6 were the same spurious-`valueAffected` pattern fixed
+earlier in `conditions`/`effects`/`racial-features`/`equipment` (a broad
+`effectType` carrying a `valueAffected` unrelated to its own `notes`) —
+cleared the same way (`valueAffected` → `""`). The other 2
+(`burn-enchantment-su`, `gravitic-reinforcement-su`) were **deliberately
+left uncleared**: both carry `valueAffected: "lowest"` on a `saves`
+`effectType`, and unlike every other anomaly in this pattern, `"lowest"`
+genuinely matches their own `notes` — both describe a real "bonus to your
+lowest saving throw" mechanic, not a leftover dropdown artifact. Clearing
+these would have deleted real information. A re-run after the fix
+confirmed exactly 2 anomalies remain, both these two — the fix
+generalized correctly and nothing was missed.
+
+**A new, confirmed upstream data bug, the same shape as equipment's
+`cmd`-vs-`ac` find**: 5 `class-features` entries also use
+`effectType: "cmd"` for what their own text calls AC. Checked all 5
+individually against their full `data.effect` prose before fixing, not
+pattern-matched from the equipment precedent: `cellular-redoubt-ex`,
+`chaoskin`, `gravity-anchor-su`, `shed-skin-ex`, `unyielding-bulwark-ex`
+all explicitly say "AC" or "KAC" in their own text. Fixed by correcting
+`effectType` to `"ac"` and `valueAffected` to `"kac"` or `"both"` —
+matching what each entry's own text said, not a guess.
+
+**A checker gap of this file's own, caught before the final run**: complex
+formulas (`ternary(...)`, `lookupRange(...)`, `@`-paths) were already
+excluded from damage-action claims (`SIMPLE_FORMULA_RE`, from the
+racial-features round) but not from `mechanics.modifiers[].modifier` —
+so a modifier whose raw value was a formula string, not a number, still
+got compared to prose as if it were a fixed claim. Fixed by adding the
+same plain-number guard (`/^[+-]?\d+(\.\d+)?$/`) to `modifierClaims()` in
+[audit-item.js](../WebApp/starfinder-tool/backend/scripts/lib/audit-item.js).
+Verified on a targeted 4-entry sample before the full re-run, not assumed:
+all 4 (including `shed-skin-ex`, one of the 5 `cmd`→`ac` fixes above)
+correctly returned "no checkable claims" post-fix.
+
+Final numbers after all three fixes, full category re-run: 2,148 checked,
+2,023 with nothing checkable, **57 mismatches, 45 uncertain, 2 anomalies**,
+2 call failures — down from 167 raw mismatches and 8 anomalies on the
+first pass.
+
+**Spot-checking the surviving 57 surfaced one new checker false-positive
+class and two genuine upstream bugs — not fixed this round, documented
+here instead**, since the session was closing out and none of the three
+generalizes as cleanly as the earlier fixes:
+
+- **A new false-positive pattern, not yet fixed**: several entries were
+  flagged for saying "modifier" when the source text says "gain"/
+  "increase"/"grant" instead. Checked directly against `aon-cache`, not
+  assumed: `exploratory-form-ex`'s own data is a plain `+30`/`+15` constant
+  modifier to climb/swim speed, and its source text says "gain ... a climb
+  speed of 30 feet" and "increase that speed by 15 feet" — the same fact,
+  different verb. The checker's system prompt has no clause telling the
+  model these are equivalent, so it treats the wording mismatch as a
+  substantive one. Affects roughly 10 of the 57 (`exploratory-form-ex` x4,
+  `elemental-first-lesson` x3, plus similar wording nitpicks on flat
+  resistance/DR values in `springy-sheath`, `shock-absorption-ex`,
+  `fiend-third-lesson`). Left as `_findings.json` entries rather than
+  patched, since a same-session prompt tweak risks the same
+  soft-instruction unreliability found twice before (missing conditions,
+  `ac`'s subtypes) — worth a dedicated pass with its own verification, not
+  a rushed addition here.
+- **A real, confirmed upstream data bug**: `tenebrous-bulwark-su`'s own
+  `mechanics.actions` has `formula: "0"` for its cold-damage action, while
+  its own `data.effect` text describes a dynamic amount — "additional cold
+  damage equal to half the number of Hit Points you lost." A flat `"0"`
+  can't express that. Left unfixed (the schema has no way to encode "half
+  HP lost" as a formula here without a broader change), but confirmed via
+  direct read of the source file, not just the checker's say-so.
+- **A real, confirmed upstream data bug**: `hungering-conflagration-sp`
+  has two damage actions — `13d12` fire and `5d6` fire — but its own
+  `data.effect` text only ever mentions "5d6 fire damage." The `13d12`
+  entry has no basis anywhere in this entry's own source text; likely a
+  leftover from the base spell (Chain Surge) this feature modifies, copied
+  in during Foundry's conversion. Left unfixed rather than guessed at —
+  deleting or correcting it would require knowing Chain Surge's true base
+  damage, which isn't in this entry's own grounding text.
+
+**Honest status on the rest, not a completed audit**: the same caveat as
+equipment applies here — **the 57 mismatches were not all individually
+reviewed.** A representative sample (the entries discussed above, plus
+several more of the formula-flattening kind — a scaling bonus, like
+"equals your attack roll bonus for this maneuver," stored as today's flat
+integer snapshot rather than a formula, which the checker correctly flags
+as not matching the prose) was checked against raw `aon-cache` data to
+confirm no further systematic checker bug remained beyond the "modifier"
+vs. "gain" pattern above. They remain exactly where they should:
+`DataEntry/output/_audits/class-features/_findings.json`, each
+`"status": "open"`.
+
 ## Querying by source
 
 `GET /api/aon?category=feat&source=Starfinder+Core+Rulebook&q=adaptive` —

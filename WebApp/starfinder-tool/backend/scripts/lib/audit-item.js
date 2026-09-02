@@ -132,6 +132,15 @@ function modifierClaims(mechanics) {
     // Skip these the same deterministic way as the broad types, rather
     // than keep sending a claim this data shape can't fairly support.
     if (m.effectType === "ac" && ["both", "eac", "kac"].includes(m.valueAffected)) continue;
+    // Same category error as the damage-action formula fix below, found
+    // one level up: `modifier` isn't always a plain number
+    // ("weapon-specialization-ex-evolutionist.json" carries `ternary(
+    // @item.properties.operative, floor(@details.level.value / 2),
+    // @details.level.value)`) — sending that verbatim produces a claim
+    // the model correctly notes isn't restated in prose using that
+    // syntax, which is true but not a real value discrepancy. Skip
+    // anything that isn't a plain (optionally signed) number.
+    if (!/^[+-]?\d+(\.\d+)?$/.test(String(m.modifier))) continue;
     // The modifier's own display `name` used to be embedded inline in the
     // claim sentence ('... ("Perceptive")') — confirmed live this caused
     // the model to sometimes treat the label itself as an asserted fact
