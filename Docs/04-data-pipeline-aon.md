@@ -1121,6 +1121,141 @@ The fixes above are the only aon-cache changes from this hand-check; the
 running record — flipping status on the ones now resolved is future
 bookkeeping, not required for the data itself to be correct.
 
+#### Second pass: re-running and hand-checking every other audited category
+
+Asked directly whether the whole of `aon-cache` could be called complete.
+It can't — six categories (`feats`, `races`, `rules`, `setting`, `spells`,
+`tables`, ~1,655 entries) have never been run through this checker at
+all, and every audited category except `class-features` still had its
+*original* LLM-flagged mismatches sitting unreviewed, several run before
+this session's later checker fixes (silence reclassification, the
+complex-formula-in-modifiers skip) existed. Re-ran the six smaller/
+medium audited categories with mismatches — `conditions`, `effects`,
+`themes`, `theme-features`, `archetype-features`, `racial-features` —
+explicitly excluding `equipment` (too large for this pass) and
+`class-features` (already fully hand-checked above). Reprocessing alone
+dropped every count: conditions 4→2, effects 4→2, themes 1→1,
+theme-features 15→13, archetype-features 23→16 (+1 call failure),
+racial-features 68→51 (+4 call failures).
+
+All 85 surviving mismatches, across 43 distinct entries, were then hand-
+checked the same way as `class-features` — `buildItemAuditPrompt()`
+imported directly to get the exact claim each finding refers to, each
+entry's own `aon-cache` file read in full. The 5 call-failure entries
+(never given any verdict at all) were hand-checked too, on the reasoning
+that an unrun check is exactly as much of an unknown as a flagged one.
+
+**The standout finding: the spurious-`valueAffected` pattern (fixed
+earlier this session on broad `effectType`s like `saves`/`all-skills`,
+where a Foundry dropdown value bleeds in from something unrelated) is not
+limited to the types the deterministic anomaly check examines.** It
+showed up repeatedly on `melee-attacks`, `ranged-attacks`, `initiative`,
+`hit-points`, and `melee-damage` modifiers too — types the anomaly check
+never looks at, so these were invisible until an LLM read the actual
+sentence and rejected the nonsense: `grappler`'s +2 grapple-maneuver
+bonus carried `valueAffected: "cold"` (a race with nothing thematically
+related to cold); `frenzy`'s melee attack bonus carried `"reflex"` (a
+save code, not an attack-roll qualifier); `cooperative-wrikreechee`
+carried `"sen"` (Sense Motive, on a ranged-attack bonus for providing
+covering fire); `scrappy-ysoki`'s Hit Point bonus carried `"acr"`
+(Acrobatics); `hill-giant`'s bull-rush/grapple bonus carried `"fire"`;
+`skittish` carried both `"reflex"` on an Initiative bonus and `"ste"` on
+a melee-attack bonus in the same entry; `snag` carried `"both"` (an
+AC-specific code) and `"reflex"` on its two melee-attack modifiers;
+`early-stage-adaptation` and `malleable-limbs` (both call-failures, never
+even checked) carried `"dip"` and `"both"` respectively, same shape.
+**11 instances, 9 entries, all cleared to `""`.**
+
+**A second, more serious variant of the same root problem, confirmed
+once**: `racial-features/tough-hide.json` — named for a Maraquoi trait
+("+2 species bonus to Survival checks" per its own `data.effect`) —
+carried a modifier named `"Tough Hide"` whose own `notes` field read
+"Megalonyxas gain DR 5/—" (a *different race's* trait, wholesale). Not a
+stray field value this time but an entire modifier's content transplanted
+from an unrelated entry — the same "modifier name doesn't match its
+parent" pattern flagged as a lead in the equipment section above, now
+confirmed with a concrete instance. Fixed by replacing the modifier's
+content to match this entry's own source text (`+2 racial modifier to
+Survival checks`), not by guessing what the DR-5 modifier should have
+said or where it belonged.
+
+**Plain value/type bugs, unambiguous against source, fixed**:
+`conditions/fatigued.json` (bulk penalty `-2`, source says "reduced by
+1"); `racial-features/sneaky-halfling.json` (`+1` Stealth, source says
+"+2"); `racial-features/hydrobody.json` (land speed `25`, source says
+"a land speed of 30 feet" — its stated swim speed of 30 feet has no
+modifier at all, left as a documented gap rather than inventing one);
+`racial-features/scrounger.json` (the Survival bonus typed `untyped`
+while its two siblings from the same sentence are correctly `racial`);
+`racial-features/hill-giant.json` (an AC bonus against combat maneuvers
+using `effectType: "acp"` — Armor Check Penalty, a different stat
+entirely — instead of `"ac"`); `racial-features/stony-plates.json` (four
+energy-resistance siblings all correctly say `1` per "energy resistance
+1"; the cold one anomalously said `5`); `racial-features/phantasm.json`
+(`valueAffected: "eng"` — Engineering — when the source is unambiguous:
+"+4 species bonus to Stealth checks"); `racial-features/malleable-
+limbs.json` (a `+10-foot enhancement bonus` per source, typed `untyped`;
+a `+4 species bonus`, typed `untyped` instead of the `racial` every
+sibling in this category uses for "species bonus"); and
+`archetype-features/psychic-crush-greater-phrenic-power-su.json` (empty
+`damageTypes` on an action whose source explicitly says "nonlethal
+damage"). Every one of these fixes re-verified the same way as
+`class-features`'s: re-running `buildItemAuditPrompt()` against the
+corrected file produces a claim (or correctly no claim) that matches the
+entry's own source text, with no new anomalies.
+
+**New false-positive patterns confirmed, not fixed** (same "checker
+right to ask, wrong to flag" character as every prior round):
+- **"Reduce a penalty by N" phrasing = "+N modifier"**, the same
+  equivalence already established for `staccato-strut-ex` in
+  class-features, confirmed again on `racial-features/head-frill.json`
+  ("reducing any armor check penalty... by 1" ↔ `+1 modifier to acp`).
+- **Toggleable alternates are situational *totals*, not additive
+  stacks** — clarified by `racial-features/thermal-consumption.json`,
+  whose own top-level notes make it explicit ("System does not currently
+  allow stacking... emulate by editing the modifier"): a base value and a
+  toggleable alternate (e.g. `high-mountain-native`'s "+2 Athletics" vs.
+  "+6 Athletics to climb", `survivor`'s "+2" vs. "+3 underground") are
+  each meant to be enabled *instead of* the other for that specific
+  circumstance, not summed. The checker doesn't know this convention and
+  flags the "narrower condition, different value" shape as a mismatch
+  every time — the same established "condition lives in `notes`" pattern,
+  just clarified with more precision this round.
+- **"Choose one skill/damage type from a list" as several discrete
+  alternate entries** — the same pattern already confirmed on
+  `power-sphere-su`/`scour-soul-divine-niche` in class-features, seen
+  again on `theme-features/hurl-debris.json` (ten precomputed `Nd6`
+  actions, one exact instantiation of "1d6 per bulk" for each bulk value
+  3 through 12 — not ten contradictions of one one value) and
+  `archetype-features/not-today.json` (three skill-specific rerolls,
+  Engineering/Mysticism/Computers, standing in for "whatever skill the
+  trap actually required").
+- **A translation gap in this checker's own vocabulary**: `conditions/
+  entangled.json`'s `0.5` multiplier to `effectType: "multiply-all-
+  speeds"` is exactly "move at half speed" (0.5× = half) — correct data,
+  but `EFFECT_TYPE_PHRASES` has no entry for this one effectType (used
+  nowhere else in the dataset), so the raw key leaked into the claim
+  sentence unreadably. Left alone rather than patched for a single call
+  site.
+
+**Known limitations reconfirmed, not fixed** (a value that can't be a
+flat number without inventing one): `effects/effect-dead-lift.json`
+("treat your Strength score as 4× higher for calculating carry
+capacity" has no flat bulk-bonus equivalent without knowing the
+character's base Strength); `theme-features/dragon-skin.json` (energy
+resistance against "that type of damage" — whichever type triggers it
+first, not a fixed one); `archetype-features/overclocked-systems-ex.json`
+and `magic-moves-su.json` (both explicitly say "edit... in the Modifier
+tab," the same acknowledged-placeholder pattern as `class-features`'s
+`fiend-first-lesson`).
+
+**Coverage after this pass**: `class-features` (fully hand-checked, both
+rounds) and these six categories (re-run, hand-checked, fixed) now rest
+on solidly verified ground. `equipment` remains at its earlier
+sampled-verification level (explicitly out of scope for this pass).
+`feats`, `races`, `rules`, `setting`, `spells`, and `tables` remain
+completely unaudited — nothing in this session changes that.
+
 ## Querying by source
 
 `GET /api/aon?category=feat&source=Starfinder+Core+Rulebook&q=adaptive` —
