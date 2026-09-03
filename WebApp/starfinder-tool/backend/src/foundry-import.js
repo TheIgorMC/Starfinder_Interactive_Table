@@ -125,17 +125,60 @@ const SOURCE_BOOKS = {
   TR: "Tech Revolution",
 };
 
-// Page markers show up as " pg. 42", ", p. 60", " pg, 51" (typo), "CRB.277"
-// (conditions/effects/universal-creature-rules favor this dotted form) —
-// inconsistent across items and categories, so match either shape rather
-// than assuming one exact format.
+// Page markers show up as " pg. 42", ", p. 60", " pg, 51" (typo), " pp.
+// 316-317" (a page *range*, on rules/setting citing a multi-page section),
+// "CRB.277" (conditions/effects/universal-creature-rules favor this dotted
+// form with no "pg"/"p" token at all), and even "GEM pg .23" (a stray
+// period before the digits) — inconsistent across items and categories, so
+// the separator between the page token and the digits is matched
+// permissively (any run of periods/commas/spaces) rather than one exact
+// shape. Confirmed live against every distinct raw `source` string in the
+// Foundry checkout (Docs/04-data-pipeline-aon.md's audit trail) — see
+// PR discussion / commit history for the specific broken cases this
+// replaced (a plural "pp." or an extra period before "pg" used to corrupt
+// the book code, e.g. "CRB, pp. 316-317" -> book "CRB, p").
 export function normalizeSource(raw) {
   if (!raw) return { book: "", page: null };
-  const cleaned = raw.replace(/,\s*$/, "").trim();
-  const m = cleaned.match(/^(.*?),?\s*(?:pg|p)\.?,?\s*(\d+)/i) || cleaned.match(/^([A-Za-z0-9 ]+?)\.(\d+)$/);
-  const codeOrName = (m ? m[1] : cleaned).trim();
-  const page = m && m[2] ? Number(m[2]) : null;
-  return { book: SOURCE_BOOKS[codeOrName] || codeOrName, page };
+  const cleaned = raw.replace(/\s+/g, " ").trim();
+  const pageMatch = /\b(?:pg|pp|p)[.,\s]*(\d+)/i.exec(cleaned);
+  let bookPart, page;
+  if (pageMatch) {
+    bookPart = cleaned.slice(0, pageMatch.index);
+    page = Number(pageMatch[1]);
+  } else {
+    const dotted = /^([A-Za-z0-9 ]+?)\.(\d+)$/.exec(cleaned);
+    // A bare "BOOK, 179" with no "pg"/"p" token at all (equipment/
+    // grenade_arrow_ii.json and its siblings) — only taken when the
+    // digits are the very end of the string, so a mid-string number that
+    // isn't a page ("AP #34" or a book edition number) is never misread.
+    const bareTrailingNumber = /^(.*?),\s*(\d+)$/.exec(cleaned);
+    if (dotted) {
+      bookPart = dotted[1];
+      page = Number(dotted[2]);
+    } else if (bareTrailingNumber) {
+      bookPart = bareTrailingNumber[1];
+      page = Number(bareTrailingNumber[2]);
+    } else {
+      bookPart = cleaned;
+      page = null;
+    }
+  }
+  // No digits ever showed up (e.g. "EN pg." with the page left blank
+  // upstream) — the mandatory \d+ above never matched, so a dangling
+  // "pg"/"p"/"pp" token is still sitting on the end of bookPart; drop it
+  // rather than showing "EN pg." as if that were the book's name.
+  bookPart = bookPart.replace(/[,]?\s*\b(?:pg|pp|p)\.?\s*$/i, "");
+  bookPart = bookPart.replace(/[.,]+\s*$/, "").trim();
+  // A free-text prefix before the real code (racial-features/cheek-pouches.json's
+  // "Ysoki - CRB pg. 54") — only unwrapped when the suffix after the last
+  // " - " is itself a recognized book, so a genuine label like "Operative -
+  // Alternate Class Feature" (no page, no real book after the dash) is left
+  // exactly as-is rather than guessed at.
+  if (!SOURCE_BOOKS[bookPart] && bookPart.includes(" - ")) {
+    const suffix = bookPart.slice(bookPart.lastIndexOf(" - ") + 3).trim();
+    if (SOURCE_BOOKS[suffix]) bookPart = suffix;
+  }
+  return { book: SOURCE_BOOKS[bookPart] || bookPart, page };
 }
 
 // Resolves Foundry's own @UUID[...]{Label}, @Item[...]{Label}, and

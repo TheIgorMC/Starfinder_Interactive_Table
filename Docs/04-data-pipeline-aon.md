@@ -1624,6 +1624,72 @@ category has been checked" was never the same claim as "every field in
 every category has been checked," and it's worth periodically asking
 which fields still haven't been.
 
+#### `normalizeSource()`: several raw page-citation shapes never matched
+
+Spotted live in the Compendium: entries citing the same book under
+different-looking `source` values (`"CRB, p"` next to `"Starfinder Core
+Rulebook"`), which both fragments the source filter dropdown into
+duplicate buckets *and* silently breaks the GM's "Only my sources" filter
+— `ownedSources.includes(r.source)` in `Compendium.jsx` does an exact
+string match, so a book the GM has checked off as owned under its correct
+name stops matching any entry whose `source` field got mangled into a
+different string for the same book.
+
+`normalizeSource()`'s original regex assumed one page-marker shape
+(`pg`/`p` + optional `.`/`,` + digits) and silently degraded to storing
+the *whole raw string* as the book name whenever real data deviated from
+it. Collected every distinct raw `system.source` string and "Source:"
+journal paragraph across the whole Foundry checkout (1,596 of them) and
+diffed old-vs-new output to find every shape that broke, rather than
+fixing one observed case and hoping the regex generalized:
+
+- **A page *range* using "pp." instead of "pg"/"p"** (`"CRB, pp.
+  316-317"`) — the alternation only knew `pg`/`p`, so on `"pp."` it fell
+  through to matching a single stray `p`, corrupting the book capture to
+  `"CRB, p"`. All 13 rules/setting entries citing a multi-page range hit
+  this.
+- **A period landing before the page token instead of after the book
+  code** (`"GEM. pg 33"`, `"TR. pg 34"`) — left `"GEM."`/`"TR."` as the
+  book name instead of resolving to the full title.
+- **A page token with no digits at all** (`"EN pg."`, page left blank
+  upstream) — the mandatory `\d+` never matched, so the whole raw string
+  including the dangling `pg.` was stored as-is instead of at least
+  resolving the book part.
+- **A bare `"BOOK, ###"` citation with no `pg`/`p` token whatsoever**
+  (`"CRB, 179"`, equipment/grenade_arrow_ii.json and its two siblings).
+- **A free-text prefix in front of the real code**
+  (`"Ysoki - CRB pg. 54"`, racial-features/cheek_pouches.json) — stored
+  `"Ysoki - CRB"` as the book instead of recognizing `CRB` after the dash.
+
+Rewrote `normalizeSource()` around a single permissive separator
+(`[.,\s]*`) between the page token and its digits instead of one exact
+punctuation shape, added the bare-`"BOOK, ###"` and dash-prefix fallbacks,
+and confirmed via the full before/after diff that exactly 20 of the 1,596
+distinct raw strings changed output — all genuine fixes, zero
+regressions (one apparent 21st diff was an artifact of the throwaway test
+script's own text extraction, not a real Foundry input). Six raw strings
+that still don't parse to a page (`"Operative - Alternate Class
+Feature"` and five siblings for other classes) are confirmed *not* a
+parsing bug: that literally is the entire raw `system.source` value
+Foundry stores for those alternate-class-feature entries — there never
+was a book/page to extract, so passing it through unchanged is correct.
+
+Also confirmed and deliberately left alone: a handful of raw Alien
+Archive citations (`"AA#, p. 147"`, `"AA31, p. 51"`, `"AA#29, p. 53"`)
+that don't specify which of the four Alien Archive volumes they mean (or,
+for `"AA31"`, may be an upstream typo for `AA3`) — guessing the volume
+risks attributing content to the wrong book, so these stay as their raw
+code rather than being silently mapped to a possibly-wrong title.
+
+Re-ran the same surgical resync used earlier in this document (recompute
+via `mapFoundryItem()`/`mapFoundryJournalPage()`, merge only the affected
+fields into the existing `aon-cache` entry) across all 16 Foundry-sourced
+categories, extended this time to also sync `source`/`data.sourcePage`
+(previously the resync only touched `data.effect`). 24 entries changed;
+spot-checked that every `mechanics.*` hand-fix from earlier in this
+document survived. Distinct `source` values across the whole cache: 211
+→ 201.
+
 ## Querying by source
 
 `GET /api/aon?category=feat&source=Starfinder+Core+Rulebook&q=adaptive` —
