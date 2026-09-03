@@ -155,23 +155,69 @@ export function parseTargets(str) {
 
 // "Str 13", "Base attack bonus +1", "Weapon Focus (longarm)", "5th level",
 // joined by "," or ";" — each clause becomes its own requirement Condition.
-const ABILITY_NAMES = { str: "str", dex: "dex", con: "con", int: "int", wis: "wis", cha: "cha" };
+const ABILITY_NAMES = {
+  str: "str", strength: "str", dex: "dex", dexterity: "dex", con: "con", constitution: "con",
+  int: "int", intelligence: "int", wis: "wis", wisdom: "wis", cha: "cha", charisma: "cha",
+};
+
+// Skill full-name → code, matching foundry-import.js's SKILL_NAMES (kept as
+// a separate copy rather than imported, since foundry-import.js already
+// imports parsePrerequisites from this file — importing back would cycle).
+const SKILL_CODES = {
+  acrobatics: "acr", athletics: "ath", bluff: "blu", computers: "com", culture: "cul",
+  diplomacy: "dip", disguise: "dis", engineering: "eng", intimidate: "int",
+  "life science": "lsc", medicine: "med", mysticism: "mys", perception: "per",
+  "physical science": "phs", piloting: "pil", profession: "pro", "sense motive": "sen",
+  "sleight of hand": "sle", stealth: "ste", survival: "sur",
+};
+const SKILL_NAME_RE = Object.keys(SKILL_CODES).sort((a, b) => b.length - a.length).join("|");
+
+// A real Starfinder feat name is a short, capitalized proper noun phrase —
+// it never contains a digit, and it never ends in one of these words, which
+// show up constantly in *other* kinds of prerequisite clause ("Key ability
+// score 19", "Fly speed with average maneuverability or better", "Mobility
+// or trick attack class feature") that also happen to start with a capital
+// letter and otherwise fit the old, too-permissive shape. Confirmed live
+// across all 431 feats: of 117 distinct clauses this file classified as
+// hasFeat before this fix, roughly half were one of these, not a feat at
+// all — a real, load-bearing bug (anything filtering "does this character
+// have the prerequisite feat X" would silently and wrongly gate on made-up
+// feat names like "Key ability score 19"). Falls back to `raw` instead of
+// guessing wrong, per this file's own stated design.
+const NOT_A_FEAT_NAME_RE = /\b(score|ranks?|type|trait|feature|class skill|speed|level|better|more|spells?|ability|abilities|proficiency|proficient)\b/i;
 
 function parsePrereqClause(clause) {
   const c = clause.trim();
   if (!c) return null;
 
-  const ability = c.match(/^(Str|Dex|Con|Int|Wis|Cha)\s+(\d+)/i);
+  // Prefix match, not end-anchored — a lone clause (no comma to split on)
+  // keeps its source sentence's trailing period ("Con 13."), and "or
+  // higher"/similar can trail a minimum too. The \d+ requirement right
+  // after the ability word already keeps this from over-matching.
+  const ability = c.match(/^(Str(?:ength)?|Dex(?:terity)?|Con(?:stitution)?|Int(?:elligence)?|Wis(?:dom)?|Cha(?:risma)?)\s+(\d+)/i);
   if (ability) return { type: "abilityScore", ability: ABILITY_NAMES[ability[1].toLowerCase()], min: Number(ability[2]) };
 
   const bab = c.match(/^Base attack bonus \+?(\d+)/i);
   if (bab) return { type: "babMin", value: Number(bab[1]) };
 
-  const level = c.match(/^(\d+)(?:st|nd|rd|th) level/i);
-  if (level) return { type: "minLevel", value: Number(level[1]) };
+  // Four observed shapes: "5th level", "Character level 10", "Character
+  // level 3rd", bare "Level 3" — with an optional trailing period, same
+  // reason as above.
+  const level = c.match(/^(?:(\d+)(?:st|nd|rd|th) level|(?:Character )?level\s+(\d+)(?:st|nd|rd|th)?)\.?$/i);
+  if (level) return { type: "minLevel", value: Number(level[1] || level[2]) };
+
+  // \.? before the end anchor, same reason as the ability-score match above:
+  // a lone clause keeps its source sentence's trailing period.
+  const skillRank = new RegExp(`^(${SKILL_NAME_RE})\\s+(\\d+)\\s+ranks?\\.?$`, "i").exec(c);
+  if (skillRank) return { type: "skillRank", skill: SKILL_CODES[skillRank[1].toLowerCase()], ranks: Number(skillRank[2]) };
+
+  const trainedSkill = new RegExp(`^(${SKILL_NAME_RE})\\.?$`, "i").exec(c);
+  if (trainedSkill) return { type: "trainedSkill", skill: SKILL_CODES[trainedSkill[1].toLowerCase()] };
 
   const feat = c.match(/^([A-Z][\w' -]*?)(?:\s*\(([^)]+)\))?$/);
-  if (feat) return { type: "hasFeat", name: feat[1].trim(), option: feat[2] || undefined };
+  if (feat && !NOT_A_FEAT_NAME_RE.test(c) && !/\d/.test(feat[1])) {
+    return { type: "hasFeat", name: feat[1].trim(), option: feat[2] || undefined };
+  }
 
   return { type: "raw", text: c };
 }

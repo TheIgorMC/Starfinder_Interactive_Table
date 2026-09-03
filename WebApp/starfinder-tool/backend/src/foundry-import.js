@@ -159,9 +159,23 @@ export function foundryTextToPlain(html) {
 }
 
 // Pulls "Prerequisites: ..." out of a feat's stripped description text —
-// used as a fallback when system.requirements (a cleaner field) is blank.
+// used as a fallback when system.requirements (a cleaner field) is blank,
+// which turns out to be most of the time (confirmed live: every one of a
+// sample of feats needing this fallback had an empty system.requirements
+// upstream). Stops at "Benefit:" as well as a literal newline, not just a
+// newline alone — confirmed live this was a real, load-bearing bug on ~45
+// feats (bear-hug.json among them): Foundry's source HTML has
+// "Prerequisites: ..." and "Benefit: ..." as separate <p> tags, but
+// foundryTextToPlain()'s cheerio .text() conversion doesn't reliably insert
+// a newline between block elements, so the newline-only stop condition
+// swallowed the entire rest of the feat's description into `prerequisites`
+// — which then got fed to parsePrerequisites() as if it were one giant
+// comma-separated requirements list, producing garbage. "Benefit:" is the
+// near-universal next heading in this format, so stopping there as well
+// (case-sensitive, bolded in the source) fixes the common case without
+// guessing at every possible heading that could follow.
 function extractPrerequisitesFromText(plainText) {
-  const m = plainText.match(/Prerequisites?:\s*(.+?)(?:\n|$)/i);
+  const m = plainText.match(/Prerequisites?:\s*(.+?)(?:\n|Benefit:|$)/i);
   return m ? m[1].trim() : "";
 }
 

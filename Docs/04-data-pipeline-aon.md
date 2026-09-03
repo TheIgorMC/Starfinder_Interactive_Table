@@ -1540,6 +1540,90 @@ checker's verdict:
 checked against the data that's actually served, not a disconnected
 draft.
 
+#### `mechanics.requirements` (feats/archetypes prerequisites): a real gap the audit never covered
+
+Every round above checked `mechanics.modifiers`/`actions`/`abilityModifiers`
+— never `mechanics.requirements`, the structured form of a feat's
+Prerequisites line. Asked directly whether this meant prerequisites
+couldn't be filtered on (e.g. for a combat-feat browser), and the honest
+answer was worse than "unverified": checking it directly turned up two
+real, confirmed, previously-unknown bugs, one in each of the two places a
+requirement gets built.
+
+**Bug 1, in `parsePrereqClause()` (`mechanics-parser.js`)**: its "is this a
+feat name" check was just "starts with a capital letter, no punctuation"
+— which is ordinary sentence-starting capitalization, true of nearly any
+short clause regardless of content. Confirmed live across all 431 feats:
+of 117 distinct clauses classified `hasFeat` before this fix, roughly
+half weren't feat names at all — "Key ability score 19", "Mysticism 5
+ranks", "Fly speed with average maneuverability or better", even a bare
+race name ("Anassanoi"). Anything filtering "does this character have
+the prerequisite feat X" would have silently and wrongly gated on
+made-up feat names. Root cause: clauses split on `,`/`;` only carry a
+trailing period if they were the *last* clause in the original sentence
+(cut short by the split, not truncation) — so "Key ability score 19,
+caster level 7." split into "Key ability score 19" (no period, wrongly
+matched the loose feat-name shape) and " caster level 7." (kept its
+period, correctly fell through to `raw`). Fixed by: adding a `skillRank`
+type (`{skill, ranks}`) and a `trainedSkill` type (bare skill name, no
+rank) — the single largest missing bucket, since a common prerequisite
+shape ("Mysticism 5 ranks") had no home before this at all and fell
+through to the equally-wrong `hasFeat` guess; extending `abilityScore` to
+accept spelled-out ability names ("Strength 15") alongside abbreviations
+("Str 15"); extending `minLevel` to accept bare "Level N" and "Character
+level N" in addition to "5th level"; and tightening the `hasFeat` check
+itself to reject any clause containing a digit or one of a list of
+telltale non-feat-name words ("ranks", "score", "trait", "speed", "class
+skill", "proficiency", ...), falling back to `raw` instead of guessing —
+consistent with this file's own stated design ("prose it can't
+confidently parse is kept as a `raw` fallback rather than guessed at").
+Result across all 431 feats: `hasFeat` 161 → 70 (later 77, see below),
+`raw` 432 → 328, `skillRank` and `trainedSkill` (0 before) → 85 and 5.
+Applied by regenerating just `mechanics.requirements` from each feat's
+existing `data.prerequisites` — not a full re-import — since nothing
+else about the entry needed to change. `archetypes` uses the same parser
+(`deriveArchetypeMechanics`) — checked too, 0/46 changed, its
+prerequisite clauses were already simple enough not to trigger this bug.
+
+**Bug 2, in `extractPrerequisitesFromText()` (`foundry-import.js`)**, found
+while spot-checking the `raw` bucket for clauses that looked like they
+shouldn't be there: 45 of 431 feats had their entire "Benefit: ..."
+description text leaking into `data.prerequisites` itself, upstream of
+the parser entirely — `bear-hug.json`'s prerequisites, for one, was 223
+characters of the full feat description, not just its actual
+prerequisite. Root cause traced against the real Foundry source, not
+guessed: `bear-hug`'s own `system.requirements` field is empty, so the
+importer falls back to regexing "Prerequisites: ..." out of the
+description text, stopping at the next newline. But Foundry's source has
+"Prerequisites: ..." and "Benefit: ..." as two separate `<p>` tags, and
+`foundryTextToPlain()`'s HTML→text conversion doesn't reliably insert a
+newline between block elements — so the newline-only stop condition ran
+straight through into the entire rest of the feat, which then got fed to
+`parsePrerequisites()` as if it were one comma-separated requirements
+list, producing the garbled multi-clause `raw` entries visible in the
+sample above (`crescendo-of-violence-combat.json`'s prerequisites, before
+the fix, included an entire sentence about morale bonuses). Fixed by
+stopping at a literal "Benefit:" as well as a newline — the near-
+universal next heading in this format. Required a full
+`node scripts/import-foundry.js feats` re-run (not just the surgical
+requirements-only patch above) since this fixes `data.prerequisites`
+itself, not just its derived `mechanics.requirements` — which meant
+reapplying the three feats fixes from the earlier `equipment`/`feats`
+hand-check round that a fresh import would otherwise have silently
+reverted (`arcane-riposte`, `stand-strong-combat-teamwork`,
+`polymorphic-titan`); reapplied and reverified against the fresh import,
+not assumed to still be there. Confirmed after both fixes: 0/431 feats
+have "Benefit:" leaking into `prerequisites` anymore.
+
+Neither bug was novel-pattern-wise — both are the same "conservative
+fallback would have been safer than confidently guessing wrong" lesson
+this whole document keeps relearning in new fields — but neither had
+ever been looked at before this, because no prior round in this pipeline
+checked `mechanics.requirements` at all. Worth remembering: "every
+category has been checked" was never the same claim as "every field in
+every category has been checked," and it's worth periodically asking
+which fields still haven't been.
+
 ## Querying by source
 
 `GET /api/aon?category=feat&source=Starfinder+Core+Rulebook&q=adaptive` —
