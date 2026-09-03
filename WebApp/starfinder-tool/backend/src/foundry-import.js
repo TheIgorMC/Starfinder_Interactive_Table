@@ -143,11 +143,50 @@ export function normalizeSource(raw) {
 // (items) and mapFoundryJournalPage() (rules/setting), which additionally
 // needs the cheerio DOM itself (not just the final text) to strip out a
 // leading "Source: ..." paragraph before converting to plain text.
+//
+// The final bare-@UUID strip (no confirmed real-world case found, applied
+// live for the Compendium bug that surfaced the exact opposite — see next)
+// exists because a small number of Foundry references never got a
+// `{Label}` attached at all (e.g. conditions/bleeding.json's leading
+// `@UUID[Compendium.sfrpg.rules.Item.0yJjfyvWg5pDLcVR]`, no braces) — the
+// labeled pattern above can't match those (nothing to extract), so without
+// this they'd leak the raw internal document path straight into the
+// Compendium. There's no live document resolver here to turn the id into
+// a real label, so this drops it entirely rather than showing an opaque
+// hash — confirmed live this doesn't lose real information: every
+// instance found this way is a redundant self-reference to the entry's
+// own condition/rule page, not a link to some other distinct concept.
 function resolveFoundryLinks(html) {
   return html
     .replace(/@UUID\[[^\]]*\]\{([^}]*)\}/g, "$1")
     .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]\{([^}]*)\}/gi, "$2")
-    .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]/gi, (_, type) => `${SKILL_NAMES[type] || type} check`);
+    .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]/gi, (_, type) => `${SKILL_NAMES[type] || type} check`)
+    // (?:&gt;\s*)? — confirmed live these bare references are always
+    // preceded by a literal "&gt;" (a ">" blockquote-style marker,
+    // rendered by Foundry's own UI as a "quick reference" callout) with
+    // no space in between; stripped together so the leftover ">" doesn't
+    // survive on its own once the reference itself is gone.
+    .replace(/(?:&gt;\s*)?@UUID\[[^\]]*\]/gi, "");
+}
+
+// Cheerio's own `.text()` concatenates every text node with no separator
+// at all between block-level elements — confirmed live this made roughly
+// half of equipment (2,229/3,825), most of themes (53/60), and sizeable
+// chunks of racial-features/spells/effects/archetype-features completely
+// unreadable: a source with `<p>...</p><h2>SECTION</h2><p>...</p>` (a
+// very common Foundry shape — themes in particular use an `<h2>` heading
+// per tier) collapses into one run-on paragraph with the heading fused
+// directly onto the end of the previous sentence and the start of the
+// next ("...creation.LONE WOLF (6TH)You know..."). Inserted as literal
+// newline characters into the HTML string itself, immediately after each
+// block tag's close, before cheerio ever parses it — they land as their
+// own (whitespace-only) text nodes in the DOM, which `.text()` includes
+// same as any other text content, so this is a one-line fix applied
+// upstream of parsing rather than a DOM-walking rewrite.
+function blockBoundariesToNewlines(html) {
+  return html
+    .replace(/<\/(p|h[1-6]|li|div|tr|blockquote)>/gi, "$&\n")
+    .replace(/<(br|hr)\s*\/?>/gi, "\n");
 }
 
 // Converts Foundry's rich-text HTML (including its own @UUID[...]{Label}
@@ -155,7 +194,7 @@ function resolveFoundryLinks(html) {
 // fields, matching what the AoN scraper already produces.
 export function foundryTextToPlain(html) {
   if (!html) return "";
-  return load(resolveFoundryLinks(html)).text().replace(/\n{3,}/g, "\n\n").trim();
+  return load(resolveFoundryLinks(blockBoundariesToNewlines(html))).text().replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // Pulls "Prerequisites: ..." out of a feat's stripped description text —
@@ -587,7 +626,7 @@ export function mapFoundryJournalPage(page, topicName, category) {
   if (page.type !== "text") return null;
   const html = page.text?.content;
   if (!html) return null;
-  const $ = load(resolveFoundryLinks(html));
+  const $ = load(resolveFoundryLinks(blockBoundariesToNewlines(html)));
   const { book, page: pageNum } = extractAndStripJournalSource($);
   const plain = $.text().replace(/\n{3,}/g, "\n\n").trim();
   if (plain.length < 15) return null;

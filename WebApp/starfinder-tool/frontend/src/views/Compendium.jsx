@@ -20,6 +20,49 @@ const numOrNull = (v) => (v == null || v === "" ? null : Number(v));
 // "L" (light bulk) sorts just above negligible ("-"), everything else is its face value.
 const bulkValue = (b) => (b == null || b === "" || b === "-" ? 0 : /^l$/i.test(b) ? 0.1 : Number(b) || 0);
 
+// Foundry's own @-path formula syntax (e.g. "@details.cl.value round",
+// "2d8 + @abilities.str.mod") is meant for a rules engine to evaluate
+// against a specific character, not to be read as-is — confirmed live
+// this was showing up completely raw in the Compendium (duration, range,
+// area, and weapon/spell damage all pull a `.formula` string straight
+// from mechanics.* with no translation at all). There's no character to
+// evaluate against here, so this can't resolve to a specific number, but
+// swapping the internal @-path for the short plain-language label it
+// actually means is enough to make the *shape* of the value readable
+// ("2d8 + Str mod" instead of "2d8 + @abilities.str.mod"). Ability/skill
+// abbreviations reuse the same 3-letter codes used everywhere else in
+// this file's data (see SKILL_NAMES in foundry-import.js for the
+// backend's equivalent table) — not exhaustive, unrecognized @-paths
+// fall back to a de-punctuated version of the path itself rather than
+// hiding it, so a gap here is visible, not silently wrong.
+const ABILITY_LABELS = { str: "Str", dex: "Dex", con: "Con", int: "Int", wis: "Wis", cha: "Cha" };
+const SKILL_LABELS = {
+  acr: "Acrobatics", ath: "Athletics", blu: "Bluff", com: "Computers", cul: "Culture",
+  dip: "Diplomacy", dis: "Disguise", eng: "Engineering", int: "Intimidate",
+  lsc: "Life Science", med: "Medicine", mys: "Mysticism", per: "Perception",
+  phs: "Physical Science", pil: "Piloting", pro: "Profession", sen: "Sense Motive",
+  sle: "Sleight of Hand", ste: "Stealth", sur: "Survival",
+};
+function humanizeAtPath(path) {
+  const abilityMod = /^abilities\.(\w+)\.mod$/.exec(path);
+  if (abilityMod) return `${ABILITY_LABELS[abilityMod[1]] || cap(abilityMod[1])} mod`;
+  const skillRanks = /^skills\.(\w+)\.ranks$/.exec(path);
+  if (skillRanks) return `${SKILL_LABELS[skillRanks[1]] || cap(skillRanks[1])} ranks`;
+  if (path === "details.cl.value") return "caster level";
+  if (path === "details.level.value") return "character level";
+  if (path === "item.level") return "item level";
+  if (path === "attributes.baseAttackBonus.value") return "base attack bonus";
+  const classLevels = /^classes\.(\w+)\.levels$/.exec(path);
+  if (classLevels) return `${cap(classLevels[1])} level`;
+  // Fallback: de-punctuate the raw path so a gap here still reads as
+  // roughly plain English rather than staying obviously internal syntax.
+  return path.replace(/[._]/g, " ");
+}
+function humanizeFormula(formula) {
+  if (!formula) return formula;
+  return formula.replace(/@([\w.]+)/g, (_, path) => humanizeAtPath(path));
+}
+
 function formatCondition(c) {
   if (!c) return "";
   switch (c.type) {
@@ -28,6 +71,12 @@ function formatCondition(c) {
     case "babMin": return `BAB +${c.value}`;
     case "minLevel": return `level ${c.value}+`;
     case "hasFeat": return c.option ? `${c.name} (${c.option})` : c.name;
+    // skillRank/trainedSkill: added to mechanics-parser.js's requirement
+    // types after this file already existed — without a case here they
+    // fell to the raw `c.type` string below, showing the literal word
+    // "skillRank" instead of "Piloting 5+ ranks".
+    case "skillRank": return `${SKILL_LABELS[c.skill] || c.skill} ${c.ranks}+ ranks`;
+    case "trainedSkill": return `trained in ${SKILL_LABELS[c.skill] || c.skill}`;
     case "and": return (c.conditions || []).map(formatCondition).join(" and ");
     case "or": return (c.conditions || []).map(formatCondition).join(" or ");
     case "raw": return c.text;
@@ -47,14 +96,14 @@ function formatRange(r) {
       : `${cap(r.category)}${r.raw ? ` (${r.raw})` : ""}`;
   }
   if (r.value != null) return `${r.value} ${r.unit === "mi" ? "mi." : "ft."}`;
-  if (r.formula) return `${r.formula} ${r.unit === "mi" ? "mi." : "ft."}`;
+  if (r.formula) return `${humanizeFormula(r.formula)} ${r.unit === "mi" ? "mi." : "ft."}`;
   return r.raw || "";
 }
 
 function formatArea(a) {
   if (!a) return "";
   if (a.size != null) return `${a.size}-${a.unit || "ft"}. ${a.shape}`;
-  if (a.formula) return `${a.formula} ${a.unit || "ft"}. ${a.shape}`;
+  if (a.formula) return `${humanizeFormula(a.formula)} ${a.unit || "ft"}. ${a.shape}`;
   return a.shape || a.raw || "";
 }
 
@@ -63,7 +112,7 @@ function formatDuration(d) {
   const suffix = d.dismissible ? " (D)" : "";
   if (["instantaneous", "permanent", "concentration"].includes(d.unit)) return cap(d.unit) + suffix;
   if (d.value != null) return `${d.value} ${d.unit}${d.value > 1 ? "s" : ""}${d.perLevel ? "/level" : ""}${suffix}`;
-  if (d.formula) return `${d.formula} ${d.unit}${suffix}`;
+  if (d.formula) return `${humanizeFormula(d.formula)} ${d.unit}${suffix}`;
   return (d.raw || "") + suffix;
 }
 
@@ -76,7 +125,7 @@ function formatSavingThrow(s) {
 }
 
 function formatModifier(m) {
-  const parts = [m.name || "modifier", `${m.modifier}`];
+  const parts = [m.name || "modifier", humanizeFormula(`${m.modifier}`)];
   if (m.valueAffected) parts.push(`to ${m.valueAffected}`);
   else if (m.effectType) parts.push(`to ${fieldLabel(m.effectType)}`);
   if (m.condition) parts.push(`(${m.condition})`);
@@ -114,7 +163,7 @@ function formatTargeting(t) {
 function formatAction(a) {
   if (a.kind !== "damage") return a.text || a.kind;
   const types = (a.damageTypes || []).join("/");
-  return `${a.formula}${types ? ` ${types}` : ""}${a.onCritical ? " (critical)" : ""}`;
+  return `${humanizeFormula(a.formula)}${types ? ` ${types}` : ""}${a.onCritical ? " (critical)" : ""}`;
 }
 
 function formatArmorClass(ac) {
@@ -210,7 +259,7 @@ const SECTIONS = [
     ranges: [{ key: "level", label: "Level", get: levelCol.get }, { key: "price", label: "Price", get: priceCol.get }],
   },
   {
-    key: "ammo", label: "Ammunition", categories: ["ammunition", "weaponAccessory", "fusion"],
+    key: "ammo", label: "Ammunition", categories: ["ammunition"],
     columns: [
       { key: "name", label: "Name", get: (r) => r.name },
       typeCol,
@@ -219,6 +268,22 @@ const SECTIONS = [
       bulkCol, levelCol, priceCol, sourceCol,
     ],
     facets: [{ key: "ammoType", label: "Ammo Type", get: (r) => r.data?.ammunitionType || "" }],
+    ranges: [{ key: "level", label: "Level", get: levelCol.get }, { key: "price", label: "Price", get: priceCol.get }],
+  },
+  {
+    // Fusions and accessories are both things you install *into*/*onto* a
+    // weapon, not ammunition — confirmed live these were previously
+    // grouped under the "Ammunition" section (categories:
+    // ["ammunition", "weaponAccessory", "fusion"]), a real user-facing
+    // mislabel (119 fusions + 26 accessories showing up under a section
+    // that's supposed to mean "consumable ammo").
+    key: "weaponUpgrades", label: "Weapon Fusions & Accessories", categories: ["fusion", "weaponAccessory"],
+    columns: [
+      { key: "name", label: "Name", get: (r) => r.name },
+      typeCol,
+      bulkCol, levelCol, priceCol, sourceCol,
+    ],
+    facets: [],
     ranges: [{ key: "level", label: "Level", get: levelCol.get }, { key: "price", label: "Price", get: priceCol.get }],
   },
   {
