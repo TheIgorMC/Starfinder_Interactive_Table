@@ -138,35 +138,42 @@ export function normalizeSource(raw) {
   return { book: SOURCE_BOOKS[codeOrName] || codeOrName, page };
 }
 
-// Resolves Foundry's own @UUID[...]{Label} and @Check[type:x|dc:y]{Label}
-// rich-text link syntax to plain labels — shared by foundryTextToPlain()
-// (items) and mapFoundryJournalPage() (rules/setting), which additionally
-// needs the cheerio DOM itself (not just the final text) to strip out a
-// leading "Source: ..." paragraph before converting to plain text.
+// Resolves Foundry's own @UUID[...]{Label}, @Item[...]{Label}, and
+// @Check[type:x|dc:y]{Label} rich-text link syntax to plain labels — shared
+// by foundryTextToPlain() (items) and mapFoundryJournalPage() (rules/
+// setting), which additionally needs the cheerio DOM itself (not just the
+// final text) to strip out a leading "Source: ..." paragraph before
+// converting to plain text.
 //
-// The final bare-@UUID strip (no confirmed real-world case found, applied
-// live for the Compendium bug that surfaced the exact opposite — see next)
-// exists because a small number of Foundry references never got a
-// `{Label}` attached at all (e.g. conditions/bleeding.json's leading
-// `@UUID[Compendium.sfrpg.rules.Item.0yJjfyvWg5pDLcVR]`, no braces) — the
-// labeled pattern above can't match those (nothing to extract), so without
-// this they'd leak the raw internal document path straight into the
-// Compendium. There's no live document resolver here to turn the id into
-// a real label, so this drops it entirely rather than showing an opaque
-// hash — confirmed live this doesn't lose real information: every
+// The bare-@UUID strip exists because a small number of Foundry references
+// never got a `{Label}` attached at all (e.g. conditions/bleeding.json's
+// leading `@UUID[Compendium.sfrpg.rules.Item.0yJjfyvWg5pDLcVR]`, no braces)
+// — the labeled pattern above can't match those (nothing to extract), so
+// without this they'd leak the raw internal document path straight into
+// the Compendium. There's no live document resolver here to turn the id
+// into a real label, so this drops it entirely rather than showing an
+// opaque hash — confirmed live this doesn't lose real information: every
 // instance found this way is a redundant self-reference to the entry's
 // own condition/rule page, not a link to some other distinct concept.
 function resolveFoundryLinks(html) {
   return html
-    .replace(/@UUID\[[^\]]*\]\{([^}]*)\}/g, "$1")
+    // A leading "&gt;" (a ">" blockquote-style marker, rendered by
+    // Foundry's own UI as a "quick reference" callout) is dropped up front,
+    // before either link syntax resolves — confirmed live it can appear
+    // doubled (class-features/against_the_odds_(ex)_(5th).json's
+    // "&gt;&gt;@UUID[...]{Blitz}") as well as singly, in front of @Item as
+    // well as @UUID (archetype-features/eye_for_danger.json's
+    // "&gt;@Item[...]{Safety Inspector}"), and with an inline tag sitting
+    // between the arrow and the reference (class-features/
+    // scouring_aura_(su).json's "&gt;<span>@UUID[...]{Arcane}</span>") —
+    // `+` handles any repeat count and the optional `<[^>]+>*` skips over
+    // such a wrapper tag, so the arrow(s) never survive once the
+    // reference itself is resolved or gone.
+    .replace(/(?:&gt;\s*)+(?:<[^>]+>\s*)*(?=@(?:UUID|Item)\[)/gi, "")
+    .replace(/@(?:UUID|Item)\[[^\]]*\]\{([^}]*)\}/g, "$1")
     .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]\{([^}]*)\}/gi, "$2")
     .replace(/@Check\[type:([a-z-]+)(?:\|dc:[^\]]*)?\]/gi, (_, type) => `${SKILL_NAMES[type] || type} check`)
-    // (?:&gt;\s*)? — confirmed live these bare references are always
-    // preceded by a literal "&gt;" (a ">" blockquote-style marker,
-    // rendered by Foundry's own UI as a "quick reference" callout) with
-    // no space in between; stripped together so the leftover ">" doesn't
-    // survive on its own once the reference itself is gone.
-    .replace(/(?:&gt;\s*)?@UUID\[[^\]]*\]/gi, "");
+    .replace(/@(?:UUID|Item)\[[^\]]*\]/gi, "");
 }
 
 // Cheerio's own `.text()` concatenates every text node with no separator

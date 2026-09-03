@@ -125,7 +125,15 @@ function formatSavingThrow(s) {
 }
 
 function formatModifier(m) {
-  const parts = [m.name || "modifier", humanizeFormula(`${m.modifier}`)];
+  // "New Modifier" is Foundry's own default placeholder name for a
+  // modifier its author never renamed (confirmed live in
+  // equipment/photon-crystal-least.json) — showing it literally reads as
+  // more informative than it is ("New Modifier 1d3 to All Damage"), so
+  // treat it the same as no name at all rather than print it.
+  const name = m.name && m.name !== "New Modifier" ? m.name : null;
+  const parts = [];
+  if (name) parts.push(name);
+  parts.push(humanizeFormula(`${m.modifier}`));
   if (m.valueAffected) parts.push(`to ${m.valueAffected}`);
   else if (m.effectType) parts.push(`to ${fieldLabel(m.effectType)}`);
   if (m.condition) parts.push(`(${m.condition})`);
