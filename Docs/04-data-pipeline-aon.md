@@ -868,16 +868,35 @@ ability the structured data named.
 inaccuracy**: it can only catch Foundry's data disagreeing *with itself*
 (prose vs. structured field, or one race's default-trait list vs. what its
 own overview text names) — it has no way to catch every available
-Foundry-sourced signal agreeing on the same wrong answer. Confirmed live:
-`dessamar-instar.json`'s `data.abilityScores` text and structured
-`mechanics.abilityModifiers` field both said "-2 Con, +2 Dex", consistent
-with each other, and the checker had no basis to flag it — the actual
-rulebook says +2 Con, -2 Dex. That one was only caught because a human
-checked the physical book. The checker also isn't itself infallible even
-when grounded: the same run flagged a real *false positive* on this same
-race, misreading a source snippet that plainly said "+2 dexterity" as
-saying "-2". Treat every `_audit` finding (mismatch or clean) as a lead
-for human review, not a verdict.
+Foundry-sourced signal agreeing on the same wrong answer. This section
+originally cited `dessamar-instar.json` as the proof: its normalized-
+draft text and structured field both said "-2 Con, +2 Dex", consistent
+with each other, matching the physical rulebook's "+2 Con, -2 Dex" only
+by inversion, supposedly catchable only by hand.
+
+**Correction, made directly against the raw served data**: that claim
+doesn't hold up. Checking `aon-cache/races/dessamar-instar.json` — the
+file `import-aon-cache.js` actually pushes to the live database, not the
+normalized draft this claim was originally about — its own `data.effect`
+prose plainly states "+2 Con, +2 Wis, -2 Dex", agreeing with the physical
+book. Only `mechanics.abilityModifiers` had it backwards. Prose and
+structured field *disagreed* here, in exactly the ordinary shape this
+checker is built to catch — and once a checker was actually pointed at
+this raw data (`audit-race-raw.js`, added specifically because the
+normalized draft nothing imports isn't what's served — see below), it
+did catch it, no human page-flip required. Left uncorrected for a while
+this session anyway, on the strength of a claim about a different field
+that was never independently re-verified before being repeated. The
+general point — this checker cannot catch every Foundry-sourced signal
+agreeing on the same wrong answer, because there's nothing left to
+disagree with — still stands as a real limitation in principle; this
+just wasn't a real example of it. The checker also isn't itself
+infallible even when grounded: the same original run flagged a real
+*false positive* on this same race, misreading a source snippet that
+plainly said "+2 dexterity" as saying "-2". Treat every `_audit` finding
+(mismatch or clean) as a lead for human review, not a verdict — and
+re-verify a claim directly before repeating it, not just because it
+already appears in this document.
 
 **Real upstream data bugs found this way** (fixed in the normalizer, not
 worked around):
@@ -889,9 +908,9 @@ worked around):
 - `copaxi.json`'s structured `data.sizeAndType` says "fine", its own prose
   says "Copaxis are Medium humanoids" — disagree within the same entry.
   Prose wins on disagreement now (still flagged either way).
-- `dessamar-instar.json`: see above — the one bug no internal
-  cross-check could have caught, since every Foundry-sourced signal agreed
-  on the wrong values. Fixed by hand against the physical rulebook.
+- `dessamar-instar.json`: see the correction above — the raw served
+  data's own prose and structured field disagreed after all; fixed once a
+  checker was pointed at the right file (`audit-race-raw.js`, below).
 - The `--llm` resolver itself had a bug, not the source data: asked to
   match `android-laborer.json`'s "replaces exceptional vision" against
   Android's two known default trait ids (neither of which is "Exceptional
@@ -1442,17 +1461,84 @@ still fully and correctly covered), nothing newly broken.
 **Coverage after this second pass**: every category in `aon-cache` has
 now been either fully hand-checked (`class-features`, `equipment`,
 `conditions`, `effects`, `themes`, `theme-features`, `archetype-features`,
-`racial-features`, `feats`, `spells`, `races`) or evaluated by whatever
-method actually applies to its content shape (`rules`, `setting`,
-`tables`). Nothing in `aon-cache` is untouched anymore. That is not the
-same claim as "100% correct" — this checker can only catch Foundry's data
-disagreeing with itself, never every signal agreeing on the same wrong
-answer (the `dessamar-instar` case above is the standing proof), and nine
-mismatches per category were left as "uncertain" or "match" without
-individual human review across thousands of entries. But every category
-has now had the level of scrutiny this pipeline is capable of giving it,
-and every finding — fixed, false positive, or genuine-but-unfixable — is
-documented above rather than silently absorbed.
+`racial-features`, `feats`, `spells`) or evaluated by whatever method
+actually applies to its content shape (`rules`, `setting`, `tables`).
+`races` needed one more round — see immediately below — since what got
+hand-checked here was the normalized draft, not what's actually served.
+That is not the same claim as "100% correct" — this checker can only
+catch Foundry's data disagreeing with itself, never every signal
+agreeing on the same wrong answer in principle — and every category
+still has mismatches left as "uncertain" or "match" without individual
+human review. But every category has now had the level of scrutiny this
+pipeline is capable of giving it, and every finding — fixed, false
+positive, or genuine-but-unfixable — is documented above rather than
+silently absorbed.
+
+#### `races`, again: the normalized-draft check wasn't checking what's served
+
+Asked directly whether all imported data was "verified, checked, valid in
+the aon cache." Tracing the actual serving path
+([`import-aon-cache.js`](../WebApp/starfinder-tool/backend/scripts/import-aon-cache.js))
+surfaced a real gap the answer above glossed over: `races`' hand-check
+used `audit-race.js` against `DataEntry/output/races/*.json` — the
+normalized draft `normalize-entries.js` builds, decomposed into
+`ability_modifiers`/`size`/`traits`/`alternate_traits`. Nothing imports
+that draft anywhere — not into the database, not back into `aon-cache`.
+What actually gets pushed into the live `aon_entries` table is the raw
+`aon-cache/races/*.json` entry instead: a single `data.effect` prose
+blob plus `mechanics.abilityModifiers` (an `[{ability, value}]` array)
+and `mechanics.tags` — confirmed live that `mechanics.modifiers` is empty
+on every race, so traits exist only as unparsed prose in what's actually
+served, nothing there to build a checkable claim from at all. The
+`osharu`/`ghoran` fixes from the round above are real, but they landed in
+a pipeline nothing currently reads.
+
+New [`audit-race-raw.js`](../WebApp/starfinder-tool/backend/scripts/lib/audit-race-raw.js)
+checks the one thing the raw shape actually has to check — ability score
+adjustments — against the race's own prose, reusing the same
+"Ability Adjustments ... Alternate Traits" region-extraction approach
+proven out in `audit-race.js`. First run: 27 of 190 mismatches. Almost
+all of them turned out to be a bug in this brand-new checker itself:
+named sub-variant races (`Osharu (Gengen)`, `Kasatha (Nomad)`, `Human
+(Gravity Dweller)`, ...) bundle their *entire* base race's page as their
+own `data.effect`, with the variant's real numbers appearing much later
+under an "Alternate Ability Adjustments" heading — grabbing the first
+"Ability Adjustments" occurrence in the file (correct for
+`audit-race.js`'s already-narrowed input, wrong here) silently grabbed
+the base race's generic line instead every time. Confirmed directly, not
+assumed: `human-gravity-dweller`'s stored `{str:+2, dex:+2, cha:-2}`
+turned out to exactly match a sentence three "Ability Adjustments"
+occurrences later than the one originally checked — *"These humans have
+ability adjustments of +2 Strength, +2 Dexterity, and –2 Charisma"* —
+under a "Gravity Dweller" sub-heading the first pass never reached.
+
+Fixed by extracting the variant name from the entry's own `name` field
+(the parenthetical, or the segment after the last comma for nested
+variants like `Lashunta (Damaya, Hunter Legacy)`) and searching for a
+paragraph naming that specific variant, instead of the first occurrence
+of the heading. Re-ran: **27 mismatches down to 2**. Both of the
+survivors hand-checked directly against the full raw file, not the
+checker's verdict:
+- **A real, confirmed bug — the same shape as `dessamar-instar`,
+  independently found**: `gnome-bleachling.json` and `gnome-feychild.json`
+  both stored `constitution: +2` where the source's shared base line
+  ("Ability Adjustments+2 Wis, -2 Str, +2 Int") and the sibling
+  `gnome-driftborn-gnebling.json` (which correctly has `wisdom`, not
+  `constitution`, for the same shared base) both confirm it should be
+  `wisdom`. Fixed in both files.
+- **A confirmed false positive, a residual instance of the same
+  extraction gap**: `gnome-driftborn-gnebling`'s own variant name,
+  "Gnebling," never literally appears as a distinguishing term in the
+  text, so extraction fell back to the generic first-occurrence path —
+  which for gnomes lands on the *other* sibling's ("Dimorphic") base
+  line, not "Driftborn"'s own "They gain +2 Dexterity. This replaces
+  dimorphic." Read directly: stored `{wis:+2, str:-2, dex:+2}` correctly
+  combines the shared base with Driftborn's own `+2 Dex` override — not
+  a data bug, left as-is.
+
+`races` now rests on the same footing as every other category: hand-
+checked against the data that's actually served, not a disconnected
+draft.
 
 ## Querying by source
 
