@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSystemZones } from "../lib/planetGen.js";
 import { POPULATION_BANDS } from "../lib/populationBands.js";
 import { slugify } from "../lib/slug.js";
@@ -300,7 +300,15 @@ export default function OrreryView({ system, onUpdateBodies }) {
         <p className="small muted">No body selected — click one above, or add a new one below.</p>
       )}
 
-      <AddBodyRow bodies={primaries} onAdd={addBody} />
+      <AddBodyRow
+        bodies={primaries}
+        onAdd={addBody}
+        // Clicking a body to select it should also prime "attach a moon/
+        // station to" with that same body — a satellite has no primaries
+        // of its own to host anything, so default to *its* parent instead,
+        // same as clicking the parent directly would.
+        defaultHostSlug={selected ? selected.parent || selected.slug : ""}
+      />
     </div>
   );
 }
@@ -425,8 +433,15 @@ function BodyEditor({ body, bodies, onChange, onDelete }) {
   );
 }
 
-function AddBodyRow({ bodies, onAdd }) {
-  const [hostSlug, setHostSlug] = useState("");
+function AddBodyRow({ bodies, onAdd, defaultHostSlug }) {
+  const [hostSlug, setHostSlug] = useState(defaultHostSlug);
+  // Re-primes whenever the orrery's own selection changes (a click on a
+  // different body) — but doesn't fight a manual pick made in between two
+  // selection changes, since this only runs when defaultHostSlug itself
+  // changes.
+  useEffect(() => {
+    setHostSlug(defaultHostSlug);
+  }, [defaultHostSlug]);
   return (
     <div className="gg-new-form">
       <label className="small muted" style={{ marginTop: 0 }}>Add</label>
