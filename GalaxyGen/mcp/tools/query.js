@@ -9,6 +9,8 @@ import {
   actorToEntry,
   organizationToEntry,
   eventToEntry,
+  shipModelToEntry,
+  companyToEntry,
 } from "../../src/lib/persistence.js";
 import * as state from "../lib/state.js";
 import { tool } from "../lib/respond.js";
@@ -49,6 +51,8 @@ export function register(server) {
       await writeEntries(root, "actors", project.actors, actorToEntry);
       await writeEntries(root, "organizations", project.organizations, (o) => organizationToEntry(o, project.actors));
       await writeEntries(root, "events", project.events, eventToEntry);
+      await writeEntries(root, "ship_models", project.shipModels, shipModelToEntry);
+      await writeEntries(root, "companies", project.companies, companyToEntry);
 
       return {
         dir: root,
@@ -59,6 +63,8 @@ export function register(server) {
           actors: project.actors.length,
           organizations: project.organizations.length,
           events: project.events.length,
+          shipModels: project.shipModels.length,
+          companies: project.companies.length,
         },
       };
     }),

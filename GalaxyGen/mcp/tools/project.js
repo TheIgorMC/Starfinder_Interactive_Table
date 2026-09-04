@@ -69,6 +69,8 @@ function summarize(project, filePath) {
       organizations: project.organizations.length,
       events: project.events.length,
       bodies: project.systems.reduce((n, s) => n + (s.bodies?.length || 0), 0),
+      shipModels: project.shipModels?.length || 0,
+      companies: project.companies?.length || 0,
     },
   };
 }

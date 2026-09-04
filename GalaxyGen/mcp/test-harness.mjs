@@ -91,6 +91,30 @@ await call("create_organization", { name: "Test Cartel", ideology: "profit", par
 const orgs = await call("list_organizations", {});
 if (orgs.length !== 1) throw new Error("create_organization failed");
 
+const models = await call("generate_ship_models", {});
+if (!models || models.modelCount < 16) throw new Error("generate_ship_models produced too few models");
+const modelList = await call("list_ship_models", { role: "cargo" });
+if (!modelList.length) throw new Error("no cargo ship models generated");
+
+const companiesResult = await call("generate_companies", {});
+if (!companiesResult || companiesResult.generatedCount < 1) throw new Error("generate_companies produced 0 companies");
+const companies = await call("list_companies", {});
+const testCompanySlug = companies[0].slug;
+const companyDetail = await call("get_company", { slug: testCompanySlug });
+if (!Array.isArray(companyDetail.fleet) || companyDetail.fleet.length === 0) throw new Error("company has no fleet");
+
+const newCompany = await call("create_company", { name: "Harness Test Line", kind: "cargo-line", scale: "small" });
+await call("add_fleet_entry", { companySlug: newCompany.slug, modelSlug: modelList[0].slug, count: 5 });
+const afterFleet = await call("get_company", { slug: newCompany.slug });
+if (afterFleet.fleet[0].count !== 5) throw new Error("add_fleet_entry didn't persist");
+await call("add_notable_ship", { companySlug: newCompany.slug, name: "Test Flagship", modelSlug: modelList[0].slug });
+const afterShip = await call("get_company", { slug: newCompany.slug });
+if (afterShip.notableShips.length !== 1) throw new Error("add_notable_ship didn't persist");
+await call("update_notable_ship", { companySlug: newCompany.slug, shipSlug: afterShip.notableShips[0].slug, status: "lost" });
+await call("remove_fleet_entry", { companySlug: newCompany.slug, modelSlug: modelList[0].slug });
+await call("remove_notable_ship", { companySlug: newCompany.slug, shipSlug: afterShip.notableShips[0].slug });
+await call("delete_company", { slug: newCompany.slug });
+
 await call("get_ai_index", {});
 const info = await call("project_info", {});
 console.log("counts:", info.counts);

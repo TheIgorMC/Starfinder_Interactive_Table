@@ -73,6 +73,7 @@ mcp/
     factions.js
     actors.js
     organizations.js
+    fleet.js               ship models + companies (the ship/fleet economy layer)
     query.js              get_ai_index, get_raw_project, export_sdf
   test-harness.mjs     spawns the real server via a real MCP client and
                         exercises a full workflow — run after any change
@@ -158,6 +159,7 @@ compiles cleanly with no functional check.
 - **factions**: `list_factions`, `get_faction`, `create_faction`, `update_faction`, `delete_faction`, `generate_factions`
 - **actors**: `list_actors`, `get_actor`, `create_actor`, `update_actor`, `delete_actor`, `generate_background_actors`
 - **organizations**: `list_organizations`, `get_organization`, `create_organization`, `update_organization`, `delete_organization`
+- **fleet**: `list_ship_models`, `get_ship_model`, `generate_ship_models`, `list_companies`, `get_company`, `generate_companies`, `create_company`, `update_company`, `delete_company`, `add_fleet_entry`, `remove_fleet_entry`, `add_notable_ship`, `update_notable_ship`, `remove_notable_ship`
 - **query**: `get_ai_index`, `get_raw_project`, `export_sdf`
 
 Not yet covered: the event/effect log (§9 — see above), sector vertex
