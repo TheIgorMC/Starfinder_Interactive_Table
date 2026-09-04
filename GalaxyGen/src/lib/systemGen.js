@@ -4,6 +4,8 @@ import { generateSystemName } from "./names.js";
 import { GRID_SIZE, sampleBilinear } from "./grid.js";
 import { slugify } from "./slug.js";
 import { pointInPolygon } from "./geometry.js";
+import { generateBodies } from "./planetGen.js";
+import { POPULATION_BANDS } from "./populationBands.js";
 
 const STAR_TYPES = [
   { value: "O-type blue giant", weight: 1 },
@@ -15,17 +17,6 @@ const STAR_TYPES = [
   { value: "M-type red dwarf", weight: 30 },
   { value: "binary pair", weight: 6 },
   { value: "neutron star remnant", weight: 2 },
-];
-
-// Ordered low → high population; index is chosen from the painted
-// population field (+noise), not picked independently of it.
-export const POPULATION_BANDS = [
-  { value: "uninhabited / automated only", stationOnly: true },
-  { value: "outpost (< 500)", stationOnly: true },
-  { value: "small colony (500 - 50,000)", stationOnly: false },
-  { value: "colony (50,000 - 1 million)", stationOnly: false },
-  { value: "major colony (1 - 50 million)", stationOnly: false },
-  { value: "core world (50 million+)", stationOnly: false },
 ];
 
 // Docs/10-galaxy-mapgen.md §5 — sector focus biases what a system trades.
@@ -178,7 +169,7 @@ export function generateSystems(project, options = {}) {
       const exportGoods = pickN(trade.export, Math.round(exportDensity * trade.export.length));
       const importGoods = pickN(trade.import, Math.round(importDensity * trade.import.length));
 
-      systems.push({
+      const system = {
         id: crypto.randomUUID(),
         slug,
         name,
@@ -209,7 +200,13 @@ export function generateSystems(project, options = {}) {
         control: null,
         warChance: null,
         hyperlanes: [],
-      });
+        bodies: [],
+      };
+      // §8 planet generation — a system-scoped rng (not the shared `rng`
+      // above) so rerolling one system's bodies later doesn't reshuffle
+      // every other system's Poisson placement/detail rolls downstream.
+      system.bodies = generateBodies(createRng(`${project.seed}:bodies:${slug}`), system);
+      systems.push(system);
       popBias.push(bandIndex / (POPULATION_BANDS.length - 1));
       lockedMask.push(false);
     }
@@ -256,7 +253,7 @@ export function placeSystemAt(project, x, y) {
   const exportGoods = pickN(trade.export, Math.round(exportDensity * trade.export.length));
   const importGoods = pickN(trade.import, Math.round(importDensity * trade.import.length));
 
-  return {
+  const system = {
     id: crypto.randomUUID(),
     slug,
     name,
@@ -277,5 +274,8 @@ export function placeSystemAt(project, x, y) {
     control: null,
     warChance: null,
     hyperlanes: [],
+    bodies: [],
   };
+  system.bodies = generateBodies(rng, system);
+  return system;
 }

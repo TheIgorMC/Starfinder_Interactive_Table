@@ -1,7 +1,7 @@
 import { createRng, randRange } from "./rng.js";
 import { generateActorName } from "./names.js";
 import { slugify } from "./slug.js";
-import { POPULATION_BANDS } from "./systemGen.js";
+import { POPULATION_BANDS } from "./populationBands.js";
 
 // Docs/10-galaxy-mapgen.md §6.1 — a system with meaningful presence from a
 // faction other than its sole owner still gets that faction's own small

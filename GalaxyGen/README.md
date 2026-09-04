@@ -11,7 +11,7 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
 (whose own future is undecided). Exports content following
 `../Docs/06-data-format-sdf.md`.
 
-## Status: Phase 6 underway, client-side AI integration (§13 of the design doc)
+## Status: Phase 6 underway (client-side AI integration), plus planet/body generation delivered out of order (§13 of the design doc)
 
 **Phase 1** — canvas, density fields, sectors:
 - Pan/zoom 2D canvas over the galaxy bounds
@@ -343,9 +343,52 @@ hand-writing hundreds more words. Verified: 2000 generated actor names
 and 2000 generated system names, zero collisions in both (the old pool
 would have been almost entirely numbered fallbacks by that volume).
 
+**Phase 7 (planet/body generation, done — delivered out of §13's original
+order, straight off a GM request rather than waiting on Phase 6/7 first)**:
+- Every system now rolls 1-6 bodies (`GalaxyGen/src/lib/planetGen.js`,
+  wired into both system-creation paths in `systemGen.js`): rocky/
+  terrestrial worlds, ice worlds, gas giants, asteroid belts, moons, and
+  orbital stations, each with its own independent habitability roll and
+  resource-type roll (a resource pool keyed by body kind — an asteroid
+  belt skews toward ore/rare minerals/salvage, a gas giant toward fuel/
+  exotic gases, and so on).
+- **Colonization resolution** (§8): every body resolves to exactly one of
+  `colonized` (population capped at its parent system's own population
+  band — a colony can't outgrow the system it's rated for), `extraction`
+  (resource-rich but not colonized — automated or minimal-crew, tagged
+  accordingly), or `untouched`. A `stationOnly` system (population band
+  "uninhabited" or "outpost") can still roll an extraction site, but never
+  a real colony — matches the system-level population band it inherited.
+  Orbital stations are always `colonized` by definition (they're built
+  infrastructure, not a body that gets settled).
+- Deterministic per system (seeded off `${project.seed}:bodies:<slug>`,
+  independent of every other system's rolls or the shared galaxy-gen rng)
+  — verified: 500 trials × 4 systems spanning every population band,
+  every roll stayed within its 1-6 body-count bound, colonized bodies
+  always carried a population, untouched bodies never did, and rerolling
+  the same seed reproduced byte-identical output.
+- System inspector gained a **Bodies** section (`SectorList.jsx`) listing
+  each body's kind/habitability/resources/status, plus a **Reroll bodies**
+  button for hand-curating one system's bodies without touching the rest
+  of the galaxy (same "manual action, not seeded off the project seed"
+  pattern as hand-placing a system). Verified live: generated a real
+  53-system galaxy through the actual UI, inspected a system, and rerolled
+  its bodies — renders and updates cleanly, no console errors.
+- Exported for real: `persistence.js`'s `systemToEntry` now serializes
+  `data.bodies[]` from the system's actual rolled bodies (previously a
+  hardcoded `[]` placeholder) — confirmed against a real system's export.
+  A body has no typed ref of its own and isn't addressable by the AI
+  event-effect surface (§9) — it's a leaf list on its parent system's SDF
+  entry, not a new SDF category, so no `aiClient.js`/`effectEngine.js`
+  changes were needed.
+- Not yet built: still-deferred per §8 — actually assigning bodies a
+  government/settlement identity beyond the population-band string, and
+  surface maps (settlements/roads on a colonized body, a separate
+  smaller-scale generation pass).
+
 Not yet built: `project_timestep` (the projection-mode tool — decomposing
-a duration into several linked events), broadcasts, planet/surface
-generation — see §13 for the full phase breakdown.
+a duration into several linked events), broadcasts, surface maps for
+colonized bodies — see §13 for the full phase breakdown.
 
 ### Known simplifications so far
 

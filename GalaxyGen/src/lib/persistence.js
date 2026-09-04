@@ -91,7 +91,9 @@ export function sectorToEntry(sector) {
 
 // Docs/10-galaxy-mapgen.md §7 — systems/<slug>/entry.json shape. `control`/
 // `war_chance`/faction security are `null` until "Generate factions" has
-// run at least once; `bodies` fills in with the future planet-gen phase.
+// run at least once. `bodies` (§8) is a leaf list, not its own SDF
+// category — a body has no typed ref of its own, addressed only via its
+// parent system.
 export function systemToEntry(system) {
   return {
     sdf: 1,
@@ -115,7 +117,16 @@ export function systemToEntry(system) {
       hyperlanes: system.hyperlanes,
       war_chance: system.warChance,
       important: Math.max(0, Math.min(1, Number(system.important) || 0)),
-      bodies: [],
+      bodies: (system.bodies || []).map((b) => ({
+        slug: b.slug,
+        name: b.name,
+        kind: b.kind,
+        habitable: b.habitable,
+        resources: b.resources,
+        status: b.status,
+        population: b.population,
+        tags: b.tags,
+      })),
       ...(system.note ? { note: system.note } : {}),
     },
   };

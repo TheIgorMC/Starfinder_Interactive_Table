@@ -545,16 +545,10 @@ referencing two system slugs is a small, backwards-compatible addition.
 
 ## 8. Future scope (not v1, but shapes the model above)
 
-Explicitly deferred, called out so v1's data model doesn't box them out:
+**Planet generation and colonization resolution — done** (`GalaxyGen/src/lib/planetGen.js`, wired into `systemGen.js`'s two system-creation paths): every system rolls 1-6 `bodies[]` (rocky/terrestrial worlds, ice worlds, gas giants, asteroid belts, moons, orbital stations), each with an independent habitability roll and resource-type roll (resource pool keyed by body kind, e.g. an asteroid belt rolls ore/rare minerals/salvage, a gas giant rolls fuel/exotic gases), then a colonization-status pass exactly matching the three-way split originally scoped here: `colonized` (population capped at the parent system's own population band — a colony can't outgrow the system it's rated for), `extraction` (resource-rich but not colonized — "automated or minimal-crew," tagged as such), or `untouched`. Deterministic per system (seeded off `${project.seed}:bodies:${system.slug}`, independent of every other system's rolls, so rerolling one system's bodies — a GM-facing "Reroll bodies" button in the system inspector — never reshuffles the rest of the galaxy). A body has no typed ref of its own (§6.1) and isn't addressable by the AI event-effect surface (§9) — it's a leaf list embedded in its parent system's own SDF entry, not an eighth SDF category.
 
-- **Planet generation inside a system** — populate `system.data.bodies[]`
-  with rolled planets/moons/belts/stations, each getting its own
-  habitability/resource-type roll influenced by the system's inherited
-  sector focus (§5).
-- **Colonization resolution** — decide which bodies in a system are
-  colonized (population, government) vs extraction-only (station/outpost
-  tending automated or minimal-crew mining/gathering, no surface
-  settlement) vs untouched.
+Still explicitly deferred, called out so the model above doesn't box it out:
+
 - **Surface maps** — for colonized planets or major stations, a second
   generation pass at a smaller scale reusing the *same* node/edge/density
   pattern from this doc: settlements as nodes (like systems), roads as
@@ -1153,7 +1147,11 @@ release.
    Turns the tool from "reacts/projects when told" into "quietly evolves
    between sessions." Explicitly a stretch goal — Phase 6's on-demand
    projection already covers the "estimate behavior in a month" use case.
-9. **Planet/body generation & surfaces** — unchanged from §8: planet rolls
-   inside systems, colonization resolution, surface-scale generation
-   reusing the same node/edge/density engine. Comes after the galaxy-scale
-   simulator (phases 1–7) is proven, per the scope note in §1.
+9. **Planet/body generation & surfaces** — §8: planet rolls inside systems
+   plus colonization resolution are **done**, ahead of this phase's
+   original ordering (delivered directly off a GM request rather than
+   waiting on phases 1-7 first — the galaxy-scale simulator was already
+   solid enough that the dependency didn't hold in practice). Only
+   surface-scale generation (settlements/roads reusing the same node/edge/
+   density engine, for colonized bodies or major stations) remains
+   deferred.
