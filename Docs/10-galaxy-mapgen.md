@@ -545,7 +545,77 @@ referencing two system slugs is a small, backwards-compatible addition.
 
 ## 8. Future scope (not v1, but shapes the model above)
 
-**Planet generation and colonization resolution — done** (`GalaxyGen/src/lib/planetGen.js`, wired into `systemGen.js`'s two system-creation paths): every system rolls 1-6 `bodies[]` (rocky/terrestrial worlds, ice worlds, gas giants, asteroid belts, moons, orbital stations), each with an independent habitability roll and resource-type roll (resource pool keyed by body kind, e.g. an asteroid belt rolls ore/rare minerals/salvage, a gas giant rolls fuel/exotic gases), then a colonization-status pass exactly matching the three-way split originally scoped here: `colonized` (population capped at the parent system's own population band — a colony can't outgrow the system it's rated for), `extraction` (resource-rich but not colonized — "automated or minimal-crew," tagged as such), or `untouched`. Deterministic per system (seeded off `${project.seed}:bodies:${system.slug}`, independent of every other system's rolls, so rerolling one system's bodies — a GM-facing "Reroll bodies" button in the system inspector — never reshuffles the rest of the galaxy). A body has no typed ref of its own (§6.1) and isn't addressable by the AI event-effect surface (§9) — it's a leaf list embedded in its parent system's own SDF entry, not an eighth SDF category.
+**Planet generation and colonization resolution — done, rebuilt on real
+orbital mechanics** (`GalaxyGen/src/lib/planetGen.js` + `starTypes.js`,
+wired into `systemGen.js`'s two system-creation paths). First pass just
+rolled a body's kind/habitability/resources independent of any physical
+placement; a GM asked for an Elite-Dangerous-style orrery view plus
+"reasonable" planets (habitable strip, sizes, orbits), which the
+independent-roll model couldn't honor, so it was rebuilt bottom-up:
+
+- Every star type (`starTypes.js`) now carries real astrophysical
+  parameters — luminosity and mass in solar units, temperature, a render
+  color — not just a name. A system's **habitable zone** and **frost
+  line** are derived from that luminosity via the standard conservative
+  sqrt(L) scaling (`hzInner = sqrt(L/1.1)`, `hzOuter = sqrt(L/0.53)`,
+  `frostLine = 2.7 * sqrt(L)` AU), and the innermost possible orbit scales
+  with it too (closer in for a dim M-dwarf, much farther out for a
+  luminous O/B giant). A neutron star remnant gets a near-zero luminosity
+  plus an explicit "remnant" flag that forces every body irradiated and
+  uncolonizable outright, rather than trusting the tiny-HZ math alone to
+  produce the right answer.
+- Bodies are placed on **actual orbits** (`orbitAU`), stepped outward from
+  the star in a randomized 1.3x-2.2x geometric progression (not a
+  physically-derived law — real systems don't follow one strict rule —
+  but it keeps spacing in the same rough shape real systems show, rather
+  than clustering unrealistically). **A body's kind is chosen by where its
+  orbit actually falls**: rocky/scorched worlds dominate close in,
+  terrestrial candidates only spawn inside the habitable zone, ice worlds/
+  gas giants/asteroid belts dominate beyond the frost line. **Habitability
+  is now gated on position** — only a body actually sitting in the
+  habitable zone can roll habitable at all, fixing the original model's
+  independent random roll that could place a "habitable" world anywhere,
+  including right next to the star.
+- **Moons orbit their planet, not the star** — modeled as attachments
+  (`parent: <primary slug>`, no `orbitAU` of their own) rather than an
+  independent star-orbit slot, with more moon slots for gas giants than
+  rocky/terrestrial worlds (loosely matching real proportions — Jupiter/
+  Saturn have dozens, Earth/Mars have one or two). A moon of a body parked
+  in the habitable zone can itself roll habitable (a real orbital-
+  mechanics case, and standard sci-fi convention).
+- **Stations only spawn attached to a body that's actually colonized or
+  being worked for resources** (`parent: <primary slug>`), not floating at
+  a random, purposeless orbit — infrastructure exists because there's
+  something there to serve.
+- Sizes are drawn from **per-kind size classes** with realistic-order-of-
+  magnitude radii (e.g. a "Jupiter-class gas giant" rolls 50,000-75,000 km,
+  a "small rocky world" rolls 3,200-5,800 km), and **orbital period comes
+  straight from Kepler's third law** (`P(years) = sqrt(a(AU)^3 /
+  M(solar masses))`) — genuinely computed, not flavor text.
+- Deterministic per system (seeded off `${project.seed}:bodies:<slug>`,
+  independent of every other system's rolls, so rerolling one system's
+  bodies — a GM-facing "Reroll bodies" button in the system inspector —
+  never reshuffles the rest of the galaxy).
+- An **orrery view** (`GalaxyGen/src/components/OrreryView.jsx`) renders
+  the system inspector's Bodies section as a top-down map: the star at
+  center (colored/sized by real stellar temperature), the habitable zone
+  drawn as a shaded band and the frost line as a dashed ring using the
+  exact same numbers bodies were placed with, primaries on their real
+  orbit ring (log-scaled — one system's AU range can span three orders of
+  magnitude, a linear scale would crush every inner planet into the star),
+  moons/stations fanned out next to their parent rather than on their own
+  ring. Not to scale for body *size* (a gas giant drawn at its real size-
+  to-orbit ratio would be an invisible dot) — orbit distance is the one
+  dimension this actually renders proportionally. Click a body for its
+  detail.
+- Still true from before: colonization resolves to `colonized`
+  (population capped at the parent system's own population band —
+  a colony can't outgrow the system it's rated for), `extraction`
+  (resource-rich but not colonized — "automated or minimal-crew," tagged
+  as such), or `untouched`. A body has no typed ref of its own (§6.1) and
+  isn't addressable by the AI event-effect surface (§9) — it's a leaf list
+  embedded in its parent system's own SDF entry, not an eighth SDF
+  category.
 
 Still explicitly deferred, called out so the model above doesn't box it out:
 

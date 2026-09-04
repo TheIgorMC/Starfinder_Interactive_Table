@@ -345,42 +345,66 @@ would have been almost entirely numbered fallbacks by that volume).
 
 **Phase 7 (planet/body generation, done — delivered out of §13's original
 order, straight off a GM request rather than waiting on Phase 6/7 first)**:
-- Every system now rolls 1-6 bodies (`GalaxyGen/src/lib/planetGen.js`,
-  wired into both system-creation paths in `systemGen.js`): rocky/
-  terrestrial worlds, ice worlds, gas giants, asteroid belts, moons, and
-  orbital stations, each with its own independent habitability roll and
-  resource-type roll (a resource pool keyed by body kind — an asteroid
-  belt skews toward ore/rare minerals/salvage, a gas giant toward fuel/
-  exotic gases, and so on).
-- **Colonization resolution** (§8): every body resolves to exactly one of
-  `colonized` (population capped at its parent system's own population
-  band — a colony can't outgrow the system it's rated for), `extraction`
-  (resource-rich but not colonized — automated or minimal-crew, tagged
-  accordingly), or `untouched`. A `stationOnly` system (population band
-  "uninhabited" or "outpost") can still roll an extraction site, but never
-  a real colony — matches the system-level population band it inherited.
-  Orbital stations are always `colonized` by definition (they're built
-  infrastructure, not a body that gets settled).
-- Deterministic per system (seeded off `${project.seed}:bodies:<slug>`,
-  independent of every other system's rolls or the shared galaxy-gen rng)
-  — verified: 500 trials × 4 systems spanning every population band,
-  every roll stayed within its 1-6 body-count bound, colonized bodies
-  always carried a population, untouched bodies never did, and rerolling
-  the same seed reproduced byte-identical output.
-- System inspector gained a **Bodies** section (`SectorList.jsx`) listing
-  each body's kind/habitability/resources/status, plus a **Reroll bodies**
-  button for hand-curating one system's bodies without touching the rest
-  of the galaxy (same "manual action, not seeded off the project seed"
-  pattern as hand-placing a system). Verified live: generated a real
-  53-system galaxy through the actual UI, inspected a system, and rerolled
-  its bodies — renders and updates cleanly, no console errors.
-- Exported for real: `persistence.js`'s `systemToEntry` now serializes
-  `data.bodies[]` from the system's actual rolled bodies (previously a
-  hardcoded `[]` placeholder) — confirmed against a real system's export.
-  A body has no typed ref of its own and isn't addressable by the AI
-  event-effect surface (§9) — it's a leaf list on its parent system's SDF
-  entry, not a new SDF category, so no `aiClient.js`/`effectEngine.js`
-  changes were needed.
+- First cut just rolled a body's kind/habitability/resources independent
+  of any physical placement. A follow-up GM request — an Elite-Dangerous-
+  style orrery view, plus "reasonable" planets (habitable strip, sizes,
+  orbits) — meant that model couldn't just be extended, it had to be
+  rebuilt on real orbital mechanics:
+  - Every star type (`GalaxyGen/src/lib/starTypes.js`) now carries real
+    astrophysical parameters (luminosity/mass in solar units, temperature,
+    a render color), and a system's **habitable zone** and **frost line**
+    are derived from that luminosity via the standard conservative sqrt(L)
+    scaling — a K-type orange star's HZ sits close in, an O-type blue
+    giant's sits absurdly far out, a neutron star remnant gets forced
+    zero-HZ, every body irradiated and uncolonizable outright.
+  - Bodies get an actual **orbital distance** (`orbitAU`, geometric
+    progression outward from the star), and **a body's kind is chosen by
+    where that orbit falls** — rocky/scorched close in, terrestrial
+    candidates only inside the habitable zone, ice/gas/belts beyond the
+    frost line. **Habitability is now gated on position** — only a body
+    actually in the habitable zone can roll habitable, fixing the original
+    model's fully independent roll (which could place a "habitable" world
+    right next to the star).
+  - **Moons attach to their planet, not the star** (`parent: <primary
+    slug>`, no orbit of their own) — gas giants get more moon slots than
+    rocky worlds. **Stations only attach to a body that's actually
+    colonized or being worked for resources**, never floating at a
+    purposeless random orbit.
+  - Sizes come from per-kind size classes with realistic-order-of-
+    magnitude radii (a "Jupiter-class gas giant" rolls 50,000-75,000 km;
+    a "small rocky world" rolls 3,200-5,800 km), and **orbital period is
+    genuinely computed from Kepler's third law**, not flavor text.
+  - Deterministic per system (seeded off `${project.seed}:bodies:<slug>`,
+    independent of every other system's rolls) — verified across every
+    star type × every population band × 30 trials each: zero bodies with
+    a bad moon/station parent, zero habitable bodies outside their star's
+    habitable zone, zero NaNs, byte-identical output on a reroll of the
+    same seed.
+- An **orrery view** (`GalaxyGen/src/components/OrreryView.jsx`) replaced
+  the plain text list in the system inspector's Bodies section: the star
+  at center, the habitable zone as a shaded band and the frost line as a
+  dashed ring (the exact numbers bodies were placed with), primaries on
+  their real orbit ring (log-scaled — one system's AU range can span three
+  orders of magnitude), moons/stations fanned next to their parent. Click
+  a body for its detail (kind, size, radius, orbit, period, habitability,
+  resources, colonization status). Verified live: generated a real
+  53-system galaxy through the actual UI, inspected multiple systems
+  across different star types, clicked both a primary and an attached
+  station and confirmed the detail panel updated correctly, no console
+  errors. (One snag caught along the way, not a regression from this
+  change: `window.confirm()` dialogs — used by "Generate systems" and a
+  few other regen actions to warn before replacing unlocked entities — are
+  silently dismissed in this sandboxed browser tooling, which made
+  regeneration look like a no-op until traced to the confirm; unrelated to
+  GalaxyGen itself, just a testing-environment quirk worth remembering.)
+- Colonization still resolves to `colonized` (population capped at the
+  parent system's own band), `extraction` (resource-rich, automated/
+  minimal-crew), or `untouched` — unchanged from the first cut. A body
+  still has no typed ref of its own and isn't addressable by the AI
+  event-effect surface (§9); `persistence.js`'s `systemToEntry` exports
+  the full new field set (`orbit_au`, `orbit_period_days`, `size_class`,
+  `radius_km`, `parent`, etc.) as a leaf list on the parent system's SDF
+  entry.
 - Not yet built: still-deferred per §8 — actually assigning bodies a
   government/settlement identity beyond the population-band string, and
   surface maps (settlements/roads on a colonized body, a separate

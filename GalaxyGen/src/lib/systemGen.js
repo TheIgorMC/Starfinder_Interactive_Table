@@ -6,18 +6,7 @@ import { slugify } from "./slug.js";
 import { pointInPolygon } from "./geometry.js";
 import { generateBodies } from "./planetGen.js";
 import { POPULATION_BANDS } from "./populationBands.js";
-
-const STAR_TYPES = [
-  { value: "O-type blue giant", weight: 1 },
-  { value: "B-type blue-white", weight: 3 },
-  { value: "A-type white", weight: 6 },
-  { value: "F-type yellow-white", weight: 10 },
-  { value: "G-type yellow", weight: 16 },
-  { value: "K-type orange", weight: 20 },
-  { value: "M-type red dwarf", weight: 30 },
-  { value: "binary pair", weight: 6 },
-  { value: "neutron star remnant", weight: 2 },
-];
+import { STAR_TYPES } from "./starTypes.js";
 
 // Docs/10-galaxy-mapgen.md §5 — sector focus biases what a system trades.
 // Administrative sectors don't move cargo, they move people: high-security

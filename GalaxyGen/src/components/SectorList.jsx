@@ -3,6 +3,7 @@ import { SECTOR_FOCI } from "../lib/project.js";
 import { generateBodies } from "../lib/planetGen.js";
 import { createRng } from "../lib/rng.js";
 import AIPanel from "./AIPanel.jsx";
+import OrreryView from "./OrreryView.jsx";
 
 const TABS = [
   { key: "sectors", label: "Sectors" },
@@ -475,24 +476,21 @@ function SystemCard({ system, actors, onClose, onUpdate }) {
   );
 }
 
-const STATUS_LABEL = {
-  colonized: "colonized",
-  extraction: "extraction site",
-  untouched: "untouched",
-};
-
-// Docs/10-galaxy-mapgen.md §8 — planet rolls inside a system, plus
-// colonization resolution (colonized / extraction-only / untouched). A
-// body has no typed ref of its own (persistence.js's systemToEntry embeds
-// it under the parent system's own entry) so it's edited as a lump list,
-// not a separate selectable entity the way sectors/systems/factions are.
+// Docs/10-galaxy-mapgen.md §8 — planet rolls inside a system placed on
+// real orbits (habitable zone/frost line derived from the star's actual
+// luminosity), plus colonization resolution. A body has no typed ref of
+// its own (persistence.js's systemToEntry embeds it under the parent
+// system's own entry) so it's edited as a lump list, not a separate
+// selectable entity the way sectors/systems/factions are — the orrery
+// view below is how a body actually gets inspected.
 function BodiesSection({ system, onUpdate }) {
   const bodies = system.bodies || [];
+  const primaryCount = bodies.filter((b) => !b.parent).length;
   return (
     <div style={{ marginTop: 8, marginBottom: 8 }}>
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <label className="small muted" style={{ margin: 0 }}>
-          Bodies ({bodies.length})
+          Bodies ({primaryCount} primary, {bodies.length} total)
         </label>
         <button
           title="Reroll every body in this system — not seeded off the project seed, so it won't reproduce the same way a full galaxy regen does"
@@ -501,17 +499,7 @@ function BodiesSection({ system, onUpdate }) {
           Reroll bodies
         </button>
       </div>
-      {bodies.length === 0 && <p className="small muted">No bodies rolled yet.</p>}
-      {bodies.map((b) => (
-        <p key={b.slug} className="small muted" style={{ margin: "2px 0" }}>
-          <strong>{b.name}</strong> — {b.kind}
-          {b.habitable ? ", habitable" : ""}
-          {b.resources?.length > 0 ? `, ${b.resources.join("/")}` : ""}
-          {" · "}
-          {STATUS_LABEL[b.status] || b.status}
-          {b.population ? ` (${b.population})` : ""}
-        </p>
-      ))}
+      {bodies.length === 0 ? <p className="small muted">No bodies rolled yet.</p> : <OrreryView system={system} />}
     </div>
   );
 }
