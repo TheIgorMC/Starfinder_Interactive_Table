@@ -141,6 +141,7 @@ export function GeneratePanel({
   backgroundActorCount,
   onGenerateBackgroundActors,
   onRedistributeSystems,
+  onGeneratePlanets,
   hasSectors,
 }) {
   return (
@@ -177,6 +178,18 @@ export function GeneratePanel({
           title="Re-scatters every unlocked system's position using the spacing above — name, star type, population, trade goods, bodies, control, and security are all untouched. Locked systems never move."
         >
           Redistribute positions
+        </button>
+      </section>
+
+      <section>
+        <h3>Planets</h3>
+        <p className="small muted">
+          Rerolls every unlocked system's bodies (planets, moons, belts,
+          stations) in place — positions, names, and every other rolled
+          field stay untouched. Locked systems' bodies are never touched.
+        </p>
+        <button disabled={systemCount === 0} onClick={onGeneratePlanets}>
+          Generate planets
         </button>
       </section>
 

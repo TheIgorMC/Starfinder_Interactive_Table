@@ -545,6 +545,39 @@ each with `[min, max]` ranges for population, docks, and physical length
   then edited a station's population/services/goods through the new editor
   and confirmed the change persisted through the autosave.
 
+**Fixed orbit distribution — planets were clustering entirely interior to
+the HZ**: a GM caught it live ("they often are all before the HZ, while gas
+giants, ice bodies and rocky bodies can be both close and far from the
+star"). Root cause: `rollOrbits` walked outward from a tiny `minOrbit`
+(~0.03-0.06 AU) by a fixed ×1.3-2.2 step per body — with the common 2-4-body
+count (`primaryCount` skews low), that walk never reached even the
+habitable zone (~1 AU) before running out of bodies, let alone the frost
+line (~2.7 AU for a sun-like star), so nearly every system's primaries
+ended up crowded in the inner system regardless of star type. Rewrote it to
+log-space the whole body count across the *entire* span from `minOrbit` out
+to a system-wide outer edge (2.2x-4.5x the frost line), with per-body
+multiplicative jitter — guarantees a spread across close/HZ/far every time,
+even for a 2-body system, rather than depending on count to eventually walk
+that far. `pickKind`'s existing position-based weighting already let gas
+giants/rocky planets show up both close-in (rare "hot Jupiter"/scorched
+edge cases) and far out, and ice worlds only ever past the frost line — the
+bug was that orbits essentially never *reached* far out in the first place.
+Also added a **"Generate planets" button** (Generate tab, `systemGen.js`'s
+`regeneratePlanets`) that bulk-rerolls every unlocked system's bodies in
+place — same seeding as a fresh galaxy generation (`${seed}:bodies:<slug>`,
+reproducible), so an existing galaxy can be re-rolled onto this corrected
+model without touching system positions, names, or anything else. Verified:
+a standalone sweep (12 star types × 6 population bands × 40 trials, 6,009
+primaries) found 0 bad orbits, 61.9% inner / 3.5% HZ / 34.6% past the frost
+line, and **100% of systems now have at least one body past the frost
+line** (previously effectively 0 for low-body-count systems); confirmed
+gas giants land both close (413 inner) and far (720 outer), rocky planets
+both close (2,246) and rarely far (186), ice worlds far-only (688, 0
+inner/HZ). Live in the app: clicked "Generate planets" on a 52-system test
+galaxy, confirmed a gas giant landed at 0.033 AU in one system and 16.185
+AU in another, and the orrery rendered the wider spread correctly with no
+console errors.
+
 ### Known simplifications so far
 
 - Sector vertices can't be dragged/edited after creation — delete and

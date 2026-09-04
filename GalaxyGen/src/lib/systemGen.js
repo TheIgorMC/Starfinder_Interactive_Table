@@ -399,3 +399,20 @@ export function redistributeSystems(project, options = {}) {
 
   return { systems, hyperlanes };
 }
+
+// GM-facing "Generate planets" bulk action (Generate tab) — rerolls the
+// body list for every *unlocked* system in place, same lock contract as
+// "Generate systems"/redistribute (a locked system's bodies are exactly as
+// hand-tuned as its name/position, so they're never touched here). Unlike
+// the per-system "Reroll bodies" button in the system inspector (manual
+// rng, not reproducible), this is seeded the same way `generateSystems`
+// itself seeds each system's bodies (`${project.seed}:bodies:<slug>`), so
+// running it twice with nothing else changed reproduces the same galaxy —
+// useful after a `planetGen.js` change (e.g. an orbit-distribution fix)
+// to re-roll an existing galaxy's bodies onto the corrected model without
+// touching system placement, names, or any other rolled data.
+export function regeneratePlanets(project) {
+  return project.systems.map((s) =>
+    s.locked ? s : { ...s, bodies: generateBodies(createRng(`${project.seed}:bodies:${s.slug}`), s) },
+  );
+}

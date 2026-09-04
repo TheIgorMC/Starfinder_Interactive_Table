@@ -8,7 +8,7 @@ import { createDefaultProject, normalizeProject, FIELD_DEFS } from "./lib/projec
 import { GRID_SIZE, paintGrid } from "./lib/grid.js";
 import { pointInPolygon } from "./lib/geometry.js";
 import { slugify } from "./lib/slug.js";
-import { generateSystems, placeSystemAt, redistributeSystems } from "./lib/systemGen.js";
+import { generateSystems, placeSystemAt, redistributeSystems, regeneratePlanets } from "./lib/systemGen.js";
 import { generateHyperlanes, buildEdge } from "./lib/hyperlaneGen.js";
 import { resolveFactions } from "./lib/factionGen.js";
 import { generateBackgroundActors } from "./lib/actorGen.js";
@@ -364,6 +364,18 @@ export default function App() {
     const { systems, hyperlanes } = redistributeSystems(project, spacing);
     setProject((p) => ({ ...p, systems, hyperlanes }));
   }, [project, spacing]);
+
+  // Bulk reroll of every unlocked system's bodies — separate from "Generate
+  // systems" (which would also reshuffle positions/names) so a GM can pull
+  // an existing galaxy onto a corrected planetGen.js model, or just get a
+  // fresh set of planets, without touching anything else.
+  const handleGeneratePlanets = useCallback(() => {
+    if (project.systems.length === 0) return;
+    if (!window.confirm("Reroll every unlocked system's bodies? Locked systems' bodies are left exactly as they are.")) {
+      return;
+    }
+    setProject((p) => ({ ...p, systems: regeneratePlanets(p) }));
+  }, [project.systems.length]);
 
   const handleGenerateHyperlanes = useCallback(() => {
     if (project.systems.length < 2) return;
@@ -835,6 +847,7 @@ export default function App() {
               systemCount={project.systems.length}
               onGenerateSystems={handleGenerateSystems}
               onRedistributeSystems={handleRedistributeSystems}
+              onGeneratePlanets={handleGeneratePlanets}
               hyperlaneCount={project.hyperlanes.length}
               onGenerateHyperlanes={handleGenerateHyperlanes}
               factionCount={project.factions.length}

@@ -231,17 +231,41 @@ function primaryCount(rng, system) {
   return Math.max(1, Math.min(7, base + bonus));
 }
 
-// Successive orbits step out by a random 1.3x-2.2x ratio from the previous
-// one — not physically derived (real systems don't follow a single rule;
-// Titius-Bode-style relations are a loose historical pattern, not a law),
-// but it keeps orbits spread out in the same rough-geometric-progression
-// shape real systems tend to show rather than clustering unrealistically.
-function rollOrbits(rng, count, minOrbit) {
+// Log-spaced from minOrbit out to a system-wide outer edge well past the
+// frost line (2.2x-4.5x it), rather than a fixed per-step multiplier
+// walked outward from minOrbit. The old version compounded a 1.3x-2.2x
+// ratio starting from a tiny minOrbit (~0.03-0.06 AU) — with the common
+// 2-4-body count (primaryCount skews low), that walk never reached even
+// the habitable zone (~1 AU) before running out of bodies, let alone the
+// frost line (~2.7 AU for a sun-like star), so nearly every system's
+// primaries ended up crowded interior to the HZ regardless of count (a GM
+// caught this live: "systems often are all before the HZ"). Spacing the
+// whole body count log-uniformly across the *entire* minOrbit-to-outer-edge
+// span instead guarantees a spread across close/HZ/far every time, even
+// for a 2-body system — matching how gas giants and ice worlds (which
+// pickKind only places past the frost line, barring rare hot-Jupiter/
+// marginal edge cases) are actually supposed to show up at all. Per-body
+// multiplicative jitter keeps it from reading as too evenly spaced (same
+// concern systemGen.js's own system-spacing jitter addresses at the galaxy
+// scale), with a minimum-separation clamp afterward so jitter can't shove
+// two orbits into a collision.
+function rollOrbits(rng, count, zones) {
+  const { minOrbit, frostLine } = zones;
+  const outerEdge = Math.max(minOrbit * 4, frostLine * (2.2 + rng() * 2.3));
+  if (count === 1) return [minOrbit * (1.2 + rng() * (outerEdge / minOrbit - 1.2))];
+
+  const logMin = Math.log(minOrbit);
+  const logMax = Math.log(outerEdge);
   const orbits = [];
-  let a = minOrbit * (0.85 + rng() * 0.3);
   for (let i = 0; i < count; i++) {
-    orbits.push(a);
-    a *= 1.3 + rng() * 0.9;
+    const t = i / (count - 1);
+    const base = Math.exp(logMin + t * (logMax - logMin));
+    const jitter = 0.75 + rng() * 0.5; // ±25%, doesn't reorder neighbors given the log spacing below
+    orbits.push(Math.max(minOrbit, base * jitter));
+  }
+  orbits.sort((a, b) => a - b);
+  for (let i = 1; i < orbits.length; i++) {
+    if (orbits[i] < orbits[i - 1] * 1.15) orbits[i] = orbits[i - 1] * 1.15;
   }
   return orbits;
 }
@@ -452,7 +476,7 @@ export function generateBodies(rng, system) {
   const remnant = !!profile.remnant;
   const z = starZones(profile);
   const count = primaryCount(rng, system);
-  z.orbits = rollOrbits(rng, count, z.minOrbit);
+  z.orbits = rollOrbits(rng, count, z);
 
   const bodies = [];
   let stationsPlaced = 0;

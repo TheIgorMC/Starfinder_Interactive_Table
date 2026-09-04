@@ -564,12 +564,17 @@ independent-roll model couldn't honor, so it was rebuilt bottom-up:
   plus an explicit "remnant" flag that forces every body irradiated and
   uncolonizable outright, rather than trusting the tiny-HZ math alone to
   produce the right answer.
-- Bodies are placed on **actual orbits** (`orbitAU`), stepped outward from
-  the star in a randomized 1.3x-2.2x geometric progression (not a
-  physically-derived law — real systems don't follow one strict rule —
-  but it keeps spacing in the same rough shape real systems show, rather
-  than clustering unrealistically). **A body's kind is chosen by where its
-  orbit actually falls**: rocky/scorched worlds dominate close in,
+- Bodies are placed on **actual orbits** (`orbitAU`), log-spaced across the
+  whole span from the star's minimum orbit out to a system-wide outer edge
+  (2.2x-4.5x the frost line) with per-body jitter — not a fixed per-step
+  multiplier walked outward from a tiny starting orbit, which (with the
+  common 2-4-body count) could run out of bodies before ever reaching the
+  habitable zone, let alone past the frost line, leaving every primary
+  crowded in the inner system regardless of star type. Log-spacing the
+  whole count across the full span guarantees at least one body reaches
+  past the frost line even for a 2-body system. **A body's kind is chosen
+  by where its orbit actually falls**: rocky/scorched worlds dominate close
+  in,
   terrestrial candidates only spawn inside the habitable zone, ice worlds/
   gas giants/asteroid belts dominate beyond the frost line. **Habitability
   is now gated on position** — only a body actually sitting in the
