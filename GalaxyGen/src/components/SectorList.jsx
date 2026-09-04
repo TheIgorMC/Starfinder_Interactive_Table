@@ -93,6 +93,15 @@ export default function SectorList({
   onCreateOrganization,
   onUpdateOrganization,
   onDeleteOrganization,
+  companies,
+  shipModels,
+  selectedCompanyId,
+  selectedCompany,
+  onSelectCompany,
+  onDeselectCompany,
+  onCreateCompany,
+  onUpdateCompany,
+  onDeleteCompany,
   events,
   onPreviewEvent,
   onCommitEvent,
@@ -124,6 +133,7 @@ export default function SectorList({
           actor={selectedActor}
           factions={factions}
           organizations={organizations}
+          companies={companies}
           systems={systems}
           onUpdate={onUpdateActor}
           onClose={onDeselectActor}
@@ -138,6 +148,18 @@ export default function SectorList({
           sectors={sectors}
           onUpdate={onUpdateOrganization}
           onClose={onDeselectOrg}
+        />
+      )}
+      {selectedCompany && (
+        <CompanyCard
+          company={selectedCompany}
+          companies={companies}
+          shipModels={shipModels}
+          factions={factions}
+          systems={systems}
+          sectors={sectors}
+          onUpdate={onUpdateCompany}
+          onClose={onDeselectCompany}
         />
       )}
 
@@ -232,7 +254,7 @@ export default function SectorList({
         <>
           <h3>Actors</h3>
 
-          <NewActorForm factions={factions} organizations={organizations} systems={systems} onCreate={onCreateActor} />
+          <NewActorForm factions={factions} organizations={organizations} companies={companies} systems={systems} onCreate={onCreateActor} />
 
           {actors.length === 0 && (
             <p className="muted small">
@@ -305,6 +327,46 @@ export default function SectorList({
                 </button>
               </li>
             ))}
+          </ul>
+        </>
+      )}
+
+      {activeTab === "companies" && (
+        <>
+          <h3>Companies</h3>
+
+          {shipModels.length === 0 && (
+            <p className="muted small">
+              No ship models yet — generate the ship-model catalog on the
+              Generate tab first, then companies can build a fleet from it.
+            </p>
+          )}
+
+          <NewCompanyForm factions={factions} sectors={sectors} systems={systems} onCreate={onCreateCompany} />
+
+          {companies.length === 0 && (
+            <p className="muted small">
+              None yet. Cargo lines, tourism operators, diplomatic couriers,
+              private charters, military contractors — "Generate companies"
+              (Generate tab) auto-seeds these per sector once ship models
+              exist.
+            </p>
+          )}
+
+          <ul className="gg-sector-list">
+            {companies.map((c) => {
+              const fleetTotal = c.fleet.reduce((n, f) => n + f.count, 0);
+              return (
+                <li key={c.id} className={c.id === selectedCompanyId ? "active" : ""}>
+                  <button className="gg-sector-select" onClick={() => onSelectCompany(c.id)} title={c.kind}>
+                    {c.name}{c.origin === "generated" ? " (auto)" : ""} — {fleetTotal} hull{fleetTotal === 1 ? "" : "s"}
+                  </button>
+                  <button className="gg-danger" onClick={() => onDeleteCompany(c.id)} title="Delete company">
+                    ×
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
@@ -647,18 +709,22 @@ function PendingFactionForm({ pendingFactionSeed, onCommit, onCancel }) {
   );
 }
 
-// `party:<slug>` is added onto the faction-only affiliation options every
-// actor/organization-editing form shares (Docs/10-galaxy-mapgen.md §6.2 —
-// `affiliation` is a typed slug reference, `faction:` or `party:`).
-function affiliationOptions(factions, organizations) {
+// `party:<slug>` and `company:<slug>` are added onto the faction-only
+// affiliation options every actor/organization-editing form shares
+// (Docs/10-galaxy-mapgen.md §6.2 — `affiliation` is a typed slug reference,
+// `faction:`/`party:`/`company:`) — this is how a hauler actor is marked
+// "employed by" or "affiliated with" a company, as distinct from
+// independently private (left unaffiliated).
+function affiliationOptions(factions, organizations, companies = []) {
   return [
     { value: "", label: "Unaffiliated" },
     ...factions.map((f) => ({ value: `faction:${f.slug}`, label: `Faction: ${f.name}` })),
     ...organizations.map((o) => ({ value: `party:${o.slug}`, label: `Organization: ${o.name}` })),
+    ...companies.map((c) => ({ value: `company:${c.slug}`, label: `Company: ${c.name}` })),
   ];
 }
 
-function NewActorForm({ factions, organizations, systems, onCreate }) {
+function NewActorForm({ factions, organizations, companies, systems, onCreate }) {
   const [show, setShow] = useState(false);
   const [name, setName] = useState("");
   const [kind, setKind] = useState("individual");
@@ -696,7 +762,7 @@ function NewActorForm({ factions, organizations, systems, onCreate }) {
       </select>
       <label className="small muted">Affiliation</label>
       <select value={affiliation} onChange={(e) => setAffiliation(e.target.value)}>
-        {affiliationOptions(factions, organizations).map((o) => (
+        {affiliationOptions(factions, organizations, companies).map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
@@ -736,7 +802,7 @@ function NewActorForm({ factions, organizations, systems, onCreate }) {
   );
 }
 
-function ActorCard({ actor, factions, organizations, systems, onUpdate, onClose }) {
+function ActorCard({ actor, factions, organizations, companies, systems, onUpdate, onClose }) {
   const locationSystem = systems.find((s) => s.slug === actor.location);
   return (
     <div className="gg-new-form">
@@ -774,7 +840,7 @@ function ActorCard({ actor, factions, organizations, systems, onUpdate, onClose 
         value={actor.affiliation || ""}
         onChange={(e) => onUpdate(actor.id, { affiliation: e.target.value || null })}
       >
-        {affiliationOptions(factions, organizations).map((o) => (
+        {affiliationOptions(factions, organizations, companies).map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
@@ -967,6 +1033,176 @@ function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose })
           ? members.map((a) => a.name).join(", ")
           : "none yet — set an actor's affiliation to this organization"}
       </p>
+    </div>
+  );
+}
+
+const COMPANY_KIND_VALUES = ["cargo-line", "tourism-operator", "diplomatic-courier", "private-charter", "military-contractor"];
+const COMPANY_ROLE_BY_KIND = {
+  "cargo-line": "cargo",
+  "tourism-operator": "tourism",
+  "diplomatic-courier": "diplomacy",
+  "private-charter": "private",
+  "military-contractor": "military",
+};
+const COMPANY_SCALES = ["small", "regional", "major"];
+
+// Docs/10-galaxy-mapgen.md §8-adjacent ship/fleet economy — a hand-authored
+// company starts with an empty fleet (App.jsx's handleCreateCompany); build
+// it up afterward via update_company (MCP) or hand-add ships once a fleet
+// editor exists (not yet — same "not yet built" honesty as anywhere else in
+// this app's partial features).
+function NewCompanyForm({ factions, sectors, systems, onCreate }) {
+  const [show, setShow] = useState(false);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState(COMPANY_KIND_VALUES[0]);
+  const [scale, setScale] = useState("small");
+  const [parentFaction, setParentFaction] = useState("");
+  const [homeSystem, setHomeSystem] = useState("");
+  const [homeSector, setHomeSector] = useState("");
+
+  if (!show) {
+    return (
+      <button style={{ width: "100%", marginBottom: 8 }} onClick={() => setShow(true)}>
+        + New Company
+      </button>
+    );
+  }
+
+  return (
+    <div className="gg-new-form">
+      <label className="small muted">Name</label>
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kreel Freight Co." autoFocus />
+      <label className="small muted">Kind</label>
+      <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        {COMPANY_KIND_VALUES.map((k) => (
+          <option key={k} value={k}>{k}</option>
+        ))}
+      </select>
+      <label className="small muted">Scale</label>
+      <select value={scale} onChange={(e) => setScale(e.target.value)}>
+        {COMPANY_SCALES.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
+      </select>
+      <label className="small muted">Parent faction (blank = independent)</label>
+      <select value={parentFaction} onChange={(e) => setParentFaction(e.target.value)}>
+        <option value="">Independent</option>
+        {factions.map((f) => (
+          <option key={f.id} value={f.slug}>{f.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Home system</label>
+      <select value={homeSystem} onChange={(e) => setHomeSystem(e.target.value)}>
+        <option value="">None</option>
+        {systems.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Home sector</label>
+      <select value={homeSector} onChange={(e) => setHomeSector(e.target.value)}>
+        <option value="">None</option>
+        {sectors.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      <div className="gg-tool-row">
+        <button
+          disabled={!name.trim()}
+          onClick={() => {
+            onCreate({
+              name: name.trim(),
+              kind,
+              role: COMPANY_ROLE_BY_KIND[kind],
+              scale,
+              parentFaction: parentFaction || null,
+              homeSystem: homeSystem || null,
+              homeSector: homeSector || null,
+            });
+            setName("");
+            setKind(COMPANY_KIND_VALUES[0]);
+            setScale("small");
+            setParentFaction("");
+            setHomeSystem("");
+            setHomeSector("");
+            setShow(false);
+          }}
+        >
+          Create company
+        </button>
+        <button className="gg-danger" onClick={() => setShow(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function CompanyCard({ company, shipModels, factions, systems, sectors, onUpdate, onClose }) {
+  const modelsBySlug = new Map(shipModels.map((m) => [m.slug, m]));
+  const fleetTotal = company.fleet.reduce((n, f) => n + f.count, 0);
+  return (
+    <div className="gg-new-form">
+      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <input
+          value={company.name}
+          onChange={(e) => onUpdate(company.id, { name: e.target.value })}
+          style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
+        />
+        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+      </div>
+      <p className="small muted">
+        {company.kind} · {company.scale}{company.origin === "generated" ? " · auto-seeded" : ""}
+      </p>
+      <label className="small muted">Parent faction</label>
+      <select value={company.parentFaction || ""} onChange={(e) => onUpdate(company.id, { parentFaction: e.target.value || null })}>
+        <option value="">Independent</option>
+        {factions.map((f) => (
+          <option key={f.id} value={f.slug}>{f.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Home system</label>
+      <select value={company.homeSystem || ""} onChange={(e) => onUpdate(company.id, { homeSystem: e.target.value || null })}>
+        <option value="">None</option>
+        {systems.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+      <label className="small muted">Home sector</label>
+      <select value={company.homeSector || ""} onChange={(e) => onUpdate(company.id, { homeSector: e.target.value || null })}>
+        <option value="">None</option>
+        {sectors.map((s) => (
+          <option key={s.id} value={s.slug}>{s.name}</option>
+        ))}
+      </select>
+
+      <label className="small muted" style={{ marginTop: 8 }}>Fleet ({fleetTotal} hulls)</label>
+      {company.fleet.length === 0 && <p className="muted small">No fleet yet.</p>}
+      <ul className="gg-sector-list">
+        {company.fleet.map((f) => {
+          const model = modelsBySlug.get(f.modelSlug);
+          return (
+            <li key={f.modelSlug}>
+              <span className="gg-sector-select" style={{ cursor: "default" }}>
+                {f.count}× {model ? model.name : `${f.modelSlug} (missing — regenerate ship models?)`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <label className="small muted" style={{ marginTop: 8 }}>Notable ships</label>
+      {company.notableShips.length === 0 && <p className="muted small">None.</p>}
+      <ul className="gg-sector-list">
+        {company.notableShips.map((ship) => {
+          const model = modelsBySlug.get(ship.modelSlug);
+          return (
+            <li key={ship.slug}>
+              <span className="gg-sector-select" style={{ cursor: "default" }}>
+                {ship.name} — {model ? model.name : ship.modelSlug} · {ship.status}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

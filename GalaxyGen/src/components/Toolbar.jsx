@@ -142,6 +142,10 @@ export function GeneratePanel({
   onGenerateBackgroundActors,
   onRedistributeSystems,
   onGeneratePlanets,
+  shipModelCount,
+  onGenerateShipModels,
+  companyCount,
+  onGenerateCompanies,
   hasSectors,
 }) {
   return (
@@ -233,6 +237,27 @@ export function GeneratePanel({
         </button>
         <p className="small muted">
           {backgroundActorCount} background actor{backgroundActorCount === 1 ? "" : "s"}.
+        </p>
+      </section>
+
+      <section>
+        <h3>Fleets</h3>
+        <p className="small muted">
+          Ship models are a galaxy-wide catalog (manufacturer + hull), not
+          placed per-system — generate this first. Companies (cargo lines,
+          tourism operators, diplomatic couriers, private charters, military
+          contractors) then seed per sector, each with an aggregate fleet
+          drawn from the catalog plus a few individually-named notable
+          ships.
+        </p>
+        <div className="gg-tool-row">
+          <button onClick={onGenerateShipModels}>Generate ship models</button>
+          <button disabled={systemCount === 0} onClick={onGenerateCompanies}>
+            Generate companies
+          </button>
+        </div>
+        <p className="small muted">
+          {shipModelCount} ship model{shipModelCount === 1 ? "" : "s"} · {companyCount} compan{companyCount === 1 ? "y" : "ies"}.
         </p>
       </section>
     </>

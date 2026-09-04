@@ -213,6 +213,61 @@ export function organizationToEntry(org, actors) {
   };
 }
 
+// Docs/10-galaxy-mapgen.md §8-adjacent — ship_models/<slug>/entry.json
+// shape. A catalog entry, not tied to any one system/sector — companies
+// reference it by slug from their own `fleet`/`notableShips` lists.
+export function shipModelToEntry(model) {
+  return {
+    sdf: 1,
+    type: "ship_model",
+    name: model.name,
+    summary: `${model.sizeCategory} ${model.hullClass} (${model.role}), by ${model.manufacturer}.`,
+    tags: [model.role, model.hullClass, model.costTier],
+    data: {
+      manufacturer: model.manufacturer,
+      hull_class: model.hullClass,
+      role: model.role,
+      size_category: model.sizeCategory,
+      maneuverability: model.maneuverability,
+      crew: model.crew,
+      cargo_tons: model.cargoTons,
+      speed_hexes: model.speedHexes,
+      combat_rating: model.combatRating,
+      cost_tier: model.costTier,
+    },
+  };
+}
+
+// Docs/10-galaxy-mapgen.md §8-adjacent — companies/<slug>/entry.json shape.
+// `fleet` stays an aggregate (model slug + count, Docs' "fleet aggregates +
+// named notables" scale decision) rather than one entry per hull.
+export function companyToEntry(company) {
+  return {
+    sdf: 1,
+    type: "company",
+    name: company.name,
+    summary: `${company.kind} (${company.scale}).`,
+    tags: [company.kind, company.role, company.scale, ...(company.extraTags || [])],
+    data: {
+      kind: company.kind,
+      role: company.role,
+      scale: company.scale,
+      parent_faction: company.parentFaction,
+      home_system: company.homeSystem,
+      home_sector: company.homeSector,
+      fleet: company.fleet.map((f) => ({ model: f.modelSlug, count: f.count })),
+      notable_ships: company.notableShips.map((s) => ({
+        slug: s.slug,
+        name: s.name,
+        model: s.modelSlug,
+        status: s.status,
+        current_system: s.currentSystem,
+        captain_actor: s.captainActor,
+      })),
+    },
+  };
+}
+
 // Docs/10-galaxy-mapgen.md §7, §9 pipeline step 5 — events/<slug>/entry.json
 // shape. Append-only: nothing in the app ever edits or re-derives an
 // existing event's own fields after commit, only removes it from the log.
@@ -246,15 +301,19 @@ export async function exportGalaxySDF(project) {
   const actorCount = project.actors.length;
   const organizationCount = project.organizations.length;
   const eventCount = project.events.length;
+  const companyCount = project.companies?.length || 0;
+  const shipModelCount = project.shipModels?.length || 0;
   if (
     sectorCount === 0 &&
     systemCount === 0 &&
     factionCount === 0 &&
     actorCount === 0 &&
     organizationCount === 0 &&
-    eventCount === 0
+    eventCount === 0 &&
+    companyCount === 0 &&
+    shipModelCount === 0
   ) {
-    return { mode: "none", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount };
+    return { mode: "none", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount, companyCount, shipModelCount };
   }
 
   if ("showDirectoryPicker" in window) {
@@ -329,7 +388,27 @@ export async function exportGalaxySDF(project) {
         await writable.close();
       }
     }
-    return { mode: "fs", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount };
+    if (shipModelCount > 0) {
+      const modelsDir = await root.getDirectoryHandle("ship_models", { create: true });
+      for (const model of project.shipModels) {
+        const dir = await modelsDir.getDirectoryHandle(model.slug, { create: true });
+        const fileHandle = await dir.getFileHandle("entry.json", { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(shipModelToEntry(model), null, 2));
+        await writable.close();
+      }
+    }
+    if (companyCount > 0) {
+      const companiesDir = await root.getDirectoryHandle("companies", { create: true });
+      for (const company of project.companies) {
+        const dir = await companiesDir.getDirectoryHandle(company.slug, { create: true });
+        const fileHandle = await dir.getFileHandle("entry.json", { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(companyToEntry(company), null, 2));
+        await writable.close();
+      }
+    }
+    return { mode: "fs", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount, companyCount, shipModelCount };
   }
 
   const combined = {
@@ -340,7 +419,9 @@ export async function exportGalaxySDF(project) {
     actors: Object.fromEntries(project.actors.map((a) => [a.slug, actorToEntry(a)])),
     organizations: Object.fromEntries(project.organizations.map((o) => [o.slug, organizationToEntry(o, project.actors)])),
     events: Object.fromEntries(project.events.map((e) => [e.slug, eventToEntry(e)])),
+    ship_models: Object.fromEntries((project.shipModels || []).map((m) => [m.slug, shipModelToEntry(m)])),
+    companies: Object.fromEntries((project.companies || []).map((c) => [c.slug, companyToEntry(c)])),
   };
   triggerDownload("galaxy-sdf.json", JSON.stringify(combined, null, 2));
-  return { mode: "download", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount };
+  return { mode: "download", sectorCount, systemCount, factionCount, actorCount, organizationCount, eventCount, companyCount, shipModelCount };
 }

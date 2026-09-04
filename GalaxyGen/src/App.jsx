@@ -12,6 +12,7 @@ import { generateSystems, placeSystemAt, redistributeSystems, regeneratePlanets 
 import { generateHyperlanes, buildEdge } from "./lib/hyperlaneGen.js";
 import { resolveFactions } from "./lib/factionGen.js";
 import { generateBackgroundActors } from "./lib/actorGen.js";
+import { generateShipModels, generateCompanies } from "./lib/shipGen.js";
 import { applyEvent } from "./lib/effectEngine.js";
 import { buildGalaxyIndexEnvelope } from "./lib/aiIndex.js";
 import { queryGalaxyFull, resolveEntity } from "./lib/aiQuery.js";
@@ -44,6 +45,7 @@ const TABS = [
   { key: "factions", label: "Factions" },
   { key: "actors", label: "Actors" },
   { key: "organizations", label: "Organizations" },
+  { key: "companies", label: "Companies" },
   { key: "events", label: "Events" },
   { key: "ai", label: "AI" },
   { key: "project", label: "Project" },
@@ -119,6 +121,7 @@ export default function App() {
   const [selectedFactionId, setSelectedFactionId] = useState(null);
   const [selectedActorId, setSelectedActorId] = useState(null);
   const [selectedOrgId, setSelectedOrgId] = useState(null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [pendingPoints, setPendingPoints] = useState(null);
   const [pendingClosed, setPendingClosed] = useState(false);
   const [pendingFactionSeed, setPendingFactionSeed] = useState(null);
@@ -213,6 +216,7 @@ export default function App() {
   const selectedFaction = project.factions.find((f) => f.id === selectedFactionId) || null;
   const selectedActor = project.actors.find((a) => a.id === selectedActorId) || null;
   const selectedOrg = project.organizations.find((o) => o.id === selectedOrgId) || null;
+  const selectedCompany = project.companies.find((c) => c.id === selectedCompanyId) || null;
 
   const handlePaint = useCallback(
     (wx, wy, erase) => {
@@ -647,6 +651,85 @@ export default function App() {
     [selectedOrgId],
   );
 
+  // §8-adjacent ship/fleet economy — regenerates the galaxy-wide ship-model
+  // catalog (manufacturer + hull combinations, not placed per-system).
+  // Companies reference a model by slug, so regenerating models after
+  // companies already exist leaves their `fleet`/`notableShips` pointing at
+  // stale slugs — same "you did that, not us" contract as any other
+  // slug-stable-across-rename entity in this app; re-run generate companies
+  // afterward if that happens.
+  const handleGenerateShipModels = useCallback(() => {
+    if (
+      project.shipModels.length > 0 &&
+      !window.confirm("Regenerate the ship-model catalog? Existing companies' fleets will still reference the old model slugs until you also regenerate companies.")
+    ) {
+      return;
+    }
+    setProject((p) => ({ ...p, shipModels: generateShipModels(p) }));
+  }, [project.shipModels.length]);
+
+  // Seeds ship-operating companies per sector (cargo lines, tourism
+  // operators, diplomatic couriers, private charters, military
+  // contractors) — needs the ship-model catalog to already exist. Only
+  // `origin: "generated"` companies are replaced; hand-authored ones (once
+  // added) would survive, same convention as factions/actors.
+  const handleGenerateCompanies = useCallback(() => {
+    if (project.shipModels.length === 0) {
+      window.alert("Generate the ship-model catalog first (Generate tab).");
+      return;
+    }
+    if (project.systems.length === 0) return;
+    const hasGenerated = project.companies.some((c) => c.origin === "generated");
+    if (hasGenerated && !window.confirm("Regenerate companies? This rerolls every auto-seeded company's fleet and roster from scratch.")) {
+      return;
+    }
+    setProject((p) => {
+      const authored = p.companies.filter((c) => c.origin === "authored");
+      const generated = generateCompanies({ ...p, companies: authored }, p.shipModels);
+      return { ...p, companies: [...authored, ...generated] };
+    });
+  }, [project.shipModels.length, project.systems.length, project.companies]);
+
+  // Hand-authored companies start with an empty fleet/notableShips — the
+  // GM builds them up via update_company (or the future fleet editor);
+  // `origin: "authored"` is what keeps them exempt from
+  // handleGenerateCompanies's full-reroll pass, same convention as
+  // authored factions/actors.
+  const handleCreateCompany = useCallback((fields) => {
+    setProject((p) => {
+      const slug = uniqueSlug(slugify(fields.name), p.companies);
+      const company = {
+        id: crypto.randomUUID(),
+        slug,
+        name: fields.name,
+        kind: fields.kind,
+        role: fields.role,
+        scale: fields.scale,
+        parentFaction: fields.parentFaction || null,
+        homeSystem: fields.homeSystem || null,
+        homeSector: fields.homeSector || null,
+        fleet: [],
+        notableShips: [],
+        extraTags: [],
+        origin: "authored",
+      };
+      setSelectedCompanyId(company.id);
+      return { ...p, companies: [...p.companies, company] };
+    });
+  }, []);
+
+  const handleUpdateCompany = useCallback((id, patch) => {
+    setProject((p) => ({ ...p, companies: p.companies.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
+  }, []);
+
+  const handleDeleteCompany = useCallback(
+    (id) => {
+      setProject((p) => ({ ...p, companies: p.companies.filter((c) => c.id !== id) }));
+      if (selectedCompanyId === id) setSelectedCompanyId(null);
+    },
+    [selectedCompanyId],
+  );
+
   // §9 pipeline step 4 — computes an event's effect diff without
   // committing anything, so the Events tab can show a review gate for
   // moderate+ events before the GM confirms (minor events skip straight to
@@ -854,6 +937,10 @@ export default function App() {
               onGenerateFactions={handleGenerateFactions}
               backgroundActorCount={project.actors.filter((a) => a.origin === "generated").length}
               onGenerateBackgroundActors={handleGenerateBackgroundActors}
+              shipModelCount={project.shipModels.length}
+              onGenerateShipModels={handleGenerateShipModels}
+              companyCount={project.companies.filter((c) => c.origin === "generated").length}
+              onGenerateCompanies={handleGenerateCompanies}
               hasSectors={project.sectors.length > 0}
             />
           )}
@@ -961,6 +1048,15 @@ export default function App() {
           onCreateOrganization={handleCreateOrganization}
           onUpdateOrganization={handleUpdateOrganization}
           onDeleteOrganization={handleDeleteOrganization}
+          companies={project.companies}
+          shipModels={project.shipModels}
+          selectedCompanyId={selectedCompanyId}
+          selectedCompany={selectedCompany}
+          onSelectCompany={setSelectedCompanyId}
+          onDeselectCompany={() => setSelectedCompanyId(null)}
+          onCreateCompany={handleCreateCompany}
+          onUpdateCompany={handleUpdateCompany}
+          onDeleteCompany={handleDeleteCompany}
           events={project.events}
           onPreviewEvent={handlePreviewEvent}
           onCommitEvent={handleCommitEvent}

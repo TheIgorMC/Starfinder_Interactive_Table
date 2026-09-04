@@ -653,6 +653,32 @@ Still explicitly deferred, called out so the model above doesn't box it out:
   galaxy pass and the future surface pass, rather than duplicating the
   Poisson-disc + Delaunay + density-sampling logic twice.
 
+### 8b. Ships & fleet economy (delivered out of order — not originally numbered in this doc)
+
+A layer on top of the above modeling galaxy *traffic*, not just territory:
+cargo, tourism, diplomacy, private, and military ships, owned by
+**companies** — a new entity type distinct from factions (a courier line
+doesn't contest system ownership the way a warlord domain does), which can
+be independent, a subsidiary of a faction, or hand-authored. `HULL_CLASSES`
+(`src/lib/shipTypes.js`) draws on SF1e's real frame vocabulary (size
+category Tiny–Colossal, maneuverability class, crew/cargo/speed ranges) but
+deliberately stays a *lightweight* abstraction — no arc-mounted weapons,
+AC/TL, or damage dice, just enough to answer "how many ships, what kind,
+whose" across a galaxy with hundreds of systems; a GM statting a named ship
+for actual combat still does that by hand. `generateShipModels` builds a
+fixed-size galaxy-wide catalog (manufacturer + hull, not per-system, same
+"catalog a generator picks from" shape as `STAR_TYPES`); `generateCompanies`
+seeds companies per sector, kind biased by the sector's own focus (mirrors
+§5's `FOCUS_TRADE`), each with an aggregate `fleet` (model slug + count —
+not one entity per hull, to stay sane at galaxy scale) plus a few
+individually-named `notableShips`. A hauler being "private, affiliated, or
+employed" is just the actor `affiliation` field gaining a third typed-ref
+kind, `company:<slug>`, alongside `faction:`/`party:`. Full detail and the
+scoping tradeoffs behind each design choice: `GalaxyGen/README.md`'s "Ships
+& fleet economy" section. Not yet wired: §9's event/effect engine has no
+company-targeting ops, and background-actor generation doesn't yet
+auto-seed hauler crew for a company.
+
 ## 9. AI-agent event interface
 
 Goal: let a GM (or an AI agent doing worldbuilding on the GM's behalf) talk

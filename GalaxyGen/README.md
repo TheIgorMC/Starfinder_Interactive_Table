@@ -578,6 +578,101 @@ galaxy, confirmed a gas giant landed at 0.033 AU in one system and 16.185
 AU in another, and the orrery rendered the wider spread correctly with no
 console errors.
 
+## Ships & fleet economy (new layer, §8-adjacent — not yet in the design doc's numbered sections)
+
+A GM asked for the galaxy to model traffic, not just territory: cargo,
+tourism, diplomacy, private, and military ships, owned by companies (not
+factions — a courier line doesn't contest system ownership the way a
+warlord domain does), with real ship manufacturers/models scoped to SF1e's
+own vocabulary. Scoped explicitly before building (three forking decisions,
+each with a recommendation and a clear tradeoff):
+
+- **Lightweight stats, not full SF1e stat blocks.** A ship model carries
+  role/size-category/maneuverability/crew/cargo tons/speed (hexes)/an
+  abstract 0-100 combat rating — real SF1e frame vocabulary and rough
+  numbers, but no arc-mounted weapons, AC/TL, shield points, or damage
+  dice. A GM who needs an actual combat stat block for a named ship still
+  builds it by hand at the table; this layer's job is "how many ships,
+  what kind, whose," not starship combat.
+- **Fleet aggregates + named notables, not one entity per hull.** A
+  company's `fleet` is `[{modelSlug, count}]`, not one full entity per
+  ship — at 375-system-galaxy scale that's the difference between a sane
+  project file/AI index and one bloated with thousands of near-identical
+  entries. A handful of individually-named `notableShips` per company (a
+  flagship, a PC-relevant hauler) cover the GM-relevant cases.
+- **Companies are their own entity type, not a faction subtype.** Mirrors
+  how organizations already sit apart from factions — a company can be
+  independent, a subsidiary of a faction (`parentFaction`), or (once an
+  AI/GM sets it) state-owned, but it never contests system ownership the
+  way `resolveFactions` models territorial control.
+
+**Data model** (`src/lib/shipTypes.js`, `src/lib/shipGen.js`):
+- `HULL_CLASSES` — ~22 hull archetypes across the five roles (cargo/
+  tourism/diplomacy/private/military), each with SF1e size category (Tiny
+  through Colossal) and maneuverability class plus crew/cargo/speed/combat-
+  rating ranges. A hull's role plus its size category together cover "private
+  and capital, as well as war spaceships" — a Huge+ hull in *any* role reads
+  as capital-scale (a grand cruise liner is as much a capital ship as a
+  dreadnought) rather than needing a separate "is it capital" flag.
+- `SHIP_MANUFACTURERS` — a dozen fictional shipwrights (not SF1e's real
+  Pact-Worlds manufacturer list — same "plausible, setting-appropriate, not
+  a copy" approach as star types/station classes), each with a specialty
+  role bias and an economy/standard/premium quality tier that nudges a
+  model's stats up or down from its hull's baseline.
+- `generateShipModels(project)` — a fixed-size, galaxy-wide reference
+  catalog (16-40 entries, scaled gently by sector count), *not* placed
+  per-system, mirroring how `STAR_TYPES`/`STATION_CLASSES` are catalogs a
+  generator picks from rather than per-location rolls.
+- `generateCompanies(project, shipModels)` — seeds companies per sector
+  (~1 per 15 systems, min 1 max 4), kind biased by the sector's own focus
+  (mining/industry/logistics → cargo-heavy, residential/cultural → tourism,
+  administrative → diplomacy, frontier/research → private, military →
+  military contractor — mirrors `systemGen.js`'s existing `FOCUS_TRADE`
+  table), home system weighted toward the sector's more important systems,
+  and a ~60% chance of becoming a subsidiary of that system's controlling
+  faction (if any) rather than independent. Only `origin: "generated"`
+  companies are replaced on a re-run; hand-authored ones (new "+ New
+  Company" form, **Companies** tab) survive, same convention as
+  authored factions/actors.
+- Haulers being "private, affiliated, or employed" (the GM's own framing)
+  maps onto the existing actor `affiliation` field gaining a third typed-ref
+  kind alongside `faction:`/`party:` — `company:<slug>` — selectable from
+  the same dropdown every actor-editing form already shares
+  (`affiliationOptions` in `SectorList.jsx`); an unaffiliated actor reads as
+  fully private/independent.
+
+**UI**: a new top-level **Companies** tab (`App.jsx`/`Toolbar.jsx`/
+`SectorList.jsx`) — a company card (name, kind/scale, parent faction, home
+system/sector, fleet list, notable-ships list) alongside a persistent
+selection card like every other entity type, plus a "Fleets" section on the
+Generate tab with "Generate ship models" and "Generate companies" buttons
+(the latter disabled/no-ops with a clear message until models exist).
+
+**Export/AI surface**: `persistence.js` gained `shipModelToEntry`/
+`companyToEntry` (SDF `ship_models/<slug>/entry.json` and
+`companies/<slug>/entry.json`, wired into both the File-System-Access and
+combined-download export paths) and `aiIndex.js` gained matching compact-
+index rows, so both are visible to the same SDF export and AI-index
+pipeline every other entity type already uses. Not yet wired: the event/
+effect engine (§9) has no ship/company-targeting ops yet (a company can't
+be the target of `adjust_influence` the way an actor/org can), and
+background-actor generation (`actorGen.js`) doesn't yet auto-seed hauler
+crew — both are natural follow-ups, not built because nothing in this pass
+needed them.
+
+Verified: a standalone sweep across sector-count/systems-per-sector
+combinations (13×29, 3×5, 1×1, 20×50) found deterministic, bounded model
+catalogs (16-40 entries), zero dangling fleet/notable-ship model
+references, zero duplicate slugs, and zero invalid stat values across
+thousands of generated fleet entries. Live in the app: drew a sector,
+generated systems, generated ship models (16) and companies (4 — "Hollis
+Hauling Guild," "Elowen Militia Fleet," "Corvain Logistics," "Obsidia
+Freight Co.," all mining/cargo-flavored matching the sector's focus),
+inspected a company's card (8-hull fleet, a named notable ship), and
+created an actor affiliated to one via the extended affiliation dropdown —
+confirmed it persisted as `"affiliation": "company:hollis-hauling-guild"`.
+No console errors across the whole flow.
+
 ### Known simplifications so far
 
 - Sector vertices can't be dragged/edited after creation — delete and

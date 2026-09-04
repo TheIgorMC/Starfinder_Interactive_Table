@@ -142,6 +142,68 @@ function rollLastName(rng) {
   return last;
 }
 
+// Individual vessel naming (shipGen.js's notable ships) — reuses
+// `rollName`'s "Root('s) PlaceWord" shape (ships-named-after-places is a
+// common sci-fi convention) but tracked in its own `usedNames` set, kept
+// separate from generateSystemName so a ship name never collides with (or
+// gets confused for) an actual system in the same galaxy.
+export function generateVesselName(rng, usedNames) {
+  for (let i = 0; i < 6; i++) {
+    const name = rollName(rng);
+    if (!usedNames.has(name)) return name;
+  }
+  let name = rollName(rng);
+  let n = 2;
+  while (usedNames.has(`${name} ${n}`)) n++;
+  return `${name} ${n}`;
+}
+
+const SHIP_MODEL_SUFFIXES = [
+  "wing", "runner", "strider", "tide", "comet", "drifter", "wake", "spear",
+  "lance", "current", "star", "wind", "flare", "shard", "voyager", "warden",
+  "sentinel", "courier", "prowler", "gale",
+];
+
+// Ship-model naming (§8-adjacent ship/fleet economy, shipGen.js) — a root
+// (reusing the same place-name root pool everything else in this galaxy
+// draws from, so a ship model reads as belonging to the same setting) fused
+// with a nautical/aerospace-flavored suffix, e.g. "Kreelrunner"-class or
+// "Vorwing"-class. Distinct pool from system/faction naming so a model name
+// never collides with (or gets mistaken for) a place or a faction.
+export function generateShipModelName(rng, usedNames) {
+  for (let i = 0; i < 6; i++) {
+    const name = `${pick(rng, ROOTS)}${pick(rng, SHIP_MODEL_SUFFIXES)}`;
+    if (!usedNames.has(name)) return name;
+  }
+  let name = `${pick(rng, ROOTS)}${pick(rng, SHIP_MODEL_SUFFIXES)}`;
+  let n = 2;
+  while (usedNames.has(`${name} ${n}`)) n++;
+  return `${name} ${n}`;
+}
+
+// Ship-company naming (shipGen.js), role-flavored suffix pools so a cargo
+// line and a diplomatic courier service don't read as the same kind of
+// business even when they share a root word.
+const COMPANY_SUFFIXES = {
+  cargo: ["Freight Co.", "Shipping", "Bulk Lines", "Logistics", "Hauling Guild", "Cargo Concern"],
+  tourism: ["Voyages", "Excursions", "Cruise Line", "Getaways", "Charter Tours"],
+  diplomacy: ["Envoy Service", "Diplomatic Transit", "Courier Guild", "Legation Lines"],
+  private: ["Charter Services", "Air & Void", "Private Fleet", "Custom Yachts"],
+  military: ["Security Contractors", "Defense Works", "Armaments & Escort", "Militia Fleet"],
+};
+
+export function generateCompanyName(rng, role, usedNames) {
+  const suffixes = COMPANY_SUFFIXES[role] || COMPANY_SUFFIXES.cargo;
+  for (let i = 0; i < 6; i++) {
+    const name = `${pick(rng, ROOTS)} ${pick(rng, suffixes)}`;
+    if (!usedNames.has(name)) return name;
+  }
+  let name = `${pick(rng, ROOTS)} ${pick(rng, suffixes)}`;
+  let n = 2;
+  while (usedNames.has(`${name} ${n}`)) n++;
+  return `${name} ${n}`;
+}
+
 // Docs/10-galaxy-mapgen.md §6.1 — cheap procedural person-name for
 // background (`origin: "generated"`) actors; curated actors get a
 // GM-chosen name instead and never call this.

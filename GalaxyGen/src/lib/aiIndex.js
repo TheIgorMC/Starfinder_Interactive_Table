@@ -101,6 +101,39 @@ function organizationRow(org, actors) {
   };
 }
 
+function shipModelRow(model) {
+  return {
+    ref: `ship_model:${model.slug}`,
+    name: model.name,
+    tags: [model.role, model.hullClass, model.costTier],
+    summary: `${model.sizeCategory} ${model.hullClass} (${model.role}), by ${model.manufacturer}.`,
+    stats: {
+      role: model.role,
+      size_category: model.sizeCategory,
+      combat_rating: model.combatRating,
+      cargo_tons: model.cargoTons,
+    },
+  };
+}
+
+function companyRow(company) {
+  const fleetTotal = company.fleet.reduce((n, f) => n + f.count, 0);
+  return {
+    ref: `company:${company.slug}`,
+    name: company.name,
+    tags: [company.kind, company.role, company.scale, ...(company.extraTags || [])],
+    summary: `${company.kind} (${company.scale}).`,
+    stats: {
+      role: company.role,
+      scale: company.scale,
+      parent_faction: company.parentFaction,
+      home_system: company.homeSystem,
+      fleet_total: fleetTotal,
+      notable_ship_count: company.notableShips.length,
+    },
+  };
+}
+
 // `scope` mirrors `query_galaxy`'s request shape (Docs/11-AI-integration.md
 // §6.2): omit for the full-galaxy index (the only mode the design doc
 // allows `scope: "all"` for — pass 2's `full` mode must shortlist first),
@@ -126,6 +159,12 @@ export function buildGalaxyIndex(project, scope = null) {
   }
   for (const o of project.organizations) {
     if (has(`party:${o.slug}`)) rows.push(organizationRow(o, project.actors));
+  }
+  for (const m of project.shipModels || []) {
+    if (has(`ship_model:${m.slug}`)) rows.push(shipModelRow(m));
+  }
+  for (const c of project.companies || []) {
+    if (has(`company:${c.slug}`)) rows.push(companyRow(c));
   }
   return rows;
 }

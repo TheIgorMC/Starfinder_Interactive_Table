@@ -42,6 +42,8 @@ export function createDefaultProject(seed = randomSeed(), width = 1000, height =
     actors: [],
     organizations: [],
     events: [],
+    companies: [],
+    shipModels: [],
     fields: Object.fromEntries(FIELD_DEFS.map((f) => [f.key, createGrid(GRID_SIZE)])),
   };
 }
@@ -56,12 +58,17 @@ export function createDefaultProject(seed = randomSeed(), width = 1000, height =
 // so backfill sane defaults here rather than special-casing "missing"
 // everywhere those are read.
 export function normalizeProject(project) {
-  const p = { systems: [], hyperlanes: [], factions: [], actors: [], organizations: [], events: [], ...project };
+  const p = {
+    systems: [], hyperlanes: [], factions: [], actors: [], organizations: [], events: [],
+    companies: [], shipModels: [],
+    ...project,
+  };
   return {
     ...p,
     systems: p.systems.map((s) => ({ status: "active", extraTags: [], ...s })),
     factions: p.factions.map((f) => ({ extraTags: [], ...f })),
     actors: p.actors.map((a) => ({ extraTags: [], ...a })),
     organizations: p.organizations.map((o) => ({ extraTags: [], ...o })),
+    companies: p.companies.map((c) => ({ extraTags: [], ...c })),
   };
 }
