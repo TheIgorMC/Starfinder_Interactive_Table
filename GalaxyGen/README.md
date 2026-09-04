@@ -438,6 +438,47 @@ system, switched to the AI tab, confirmed its card (including the Bodies
 orrery) was still rendered underneath the chat panel; no console errors
 across the whole tab set.
 
+**Orrery tab + body editor, and less uniform system spacing**: a follow-up
+GM request. The read-only orrery embedded in the system card moved to its
+own top-level **Orrery** tab (`OrreryView.jsx`) with a system picker
+(shared selection state — pick one there or on the map, either way it's
+the same "selected system"), and it's now a real editor, not just a
+visualization:
+- **Drag a body** to reposition it — for a planet/belt, drag distance from
+  the star to change `orbitAU` and drag angle to change `orbitAngleDeg`
+  (a belt's inner/outer edges shift together, preserving its width); for a
+  moon/station, drag angle around its parent. Implemented via
+  `getScreenCTM()`-based screen-to-SVG-space conversion, not a drag-and-
+  drop library. Verified live: dragged a planet from 0.169 AU to 2.066 AU
+  at a new angle, confirmed the new position persisted after the
+  autosave's debounce.
+- **Click a body** for a full edit form below the map: rename, change
+  kind, habitable toggle, colonization status (population band appears
+  only when "colonized," mirroring `planetGen.js`'s own generation rule),
+  a resources tag editor (add/remove, same pattern as a faction's
+  tolerated-crimes list), re-host a moon/station onto a different parent
+  body, and delete (cascades to any moons/stations attached to it).
+- **Add** a new planet, belt, moon, or station by hand — a moon/station
+  picks its host from a dropdown of the system's current primaries.
+  Verified live: added a station to a renamed, newly-colonized body and
+  confirmed it attached with the correct `parent` slug.
+- The system inspector card (still shown persistently across every tab)
+  now just shows a body count + the Reroll button, pointing at the Orrery
+  tab for the actual map/editor, rather than duplicating a second copy of
+  the SVG.
+- **System spacing had too little variance, confirmed live**: pure
+  Poisson-disc ("blue noise") sampling deliberately avoids both clumping
+  and large gaps, which is exactly why a galaxy generated over a flat/
+  lightly-painted population field looked almost perfectly evenly spaced —
+  a GM reported systems reading as "equal distanced." `systemGen.js`'s
+  `radiusAt` now applies a bounded ±20% jitter to each candidate's own
+  effective spacing, clamped to never drop below `minSpacing` (the same
+  absolute floor the unjittered field math already guaranteed at full
+  population density), so `poisson.js`'s overlap check is exactly as safe
+  as before. Verified: regenerated a 44-system galaxy and measured every
+  system's nearest-neighbor distance — min 63.7, max 106.9, mean 80.3,
+  stdDev 10.5 (previously a near-uniform distribution over a flat field).
+
 ### Known simplifications so far
 
 - Sector vertices can't be dragged/edited after creation — delete and

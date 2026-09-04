@@ -3,6 +3,7 @@ import GalaxyCanvas from "./components/GalaxyCanvas.jsx";
 import { DrawPanel, GeneratePanel, ProjectPanel } from "./components/Toolbar.jsx";
 import SectorList from "./components/SectorList.jsx";
 import AIPanel from "./components/AIPanel.jsx";
+import OrreryView from "./components/OrreryView.jsx";
 import { createDefaultProject, normalizeProject, FIELD_DEFS } from "./lib/project.js";
 import { GRID_SIZE, paintGrid } from "./lib/grid.js";
 import { pointInPolygon } from "./lib/geometry.js";
@@ -38,6 +39,7 @@ const PANEL_MAX_WIDTH = 560;
 const TABS = [
   { key: "draw", label: "Draw" },
   { key: "generate", label: "Generate" },
+  { key: "orrery", label: "Orrery" },
   { key: "sectors", label: "Sectors" },
   { key: "factions", label: "Factions" },
   { key: "actors", label: "Actors" },
@@ -828,6 +830,43 @@ export default function App() {
               onGenerateBackgroundActors={handleGenerateBackgroundActors}
               hasSectors={project.sectors.length > 0}
             />
+          )}
+          {activeTab === "orrery" && (
+            <>
+              <h3>Orrery</h3>
+              {project.systems.length === 0 ? (
+                <p className="muted small">No systems yet — generate some first (Generate tab).</p>
+              ) : (
+                <>
+                  <label className="small muted">System</label>
+                  <select
+                    value={selectedSystemId || ""}
+                    onChange={(e) => {
+                      const id = e.target.value || null;
+                      setSelectedSystemId(id);
+                      setSelectedSectorId(null);
+                      setSelectedFactionId(null);
+                      setSelectedActorId(null);
+                      setSelectedOrgId(null);
+                    }}
+                  >
+                    <option value="">— pick a system —</option>
+                    {project.systems.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  {selectedSystem ? (
+                    <OrreryView
+                      key={selectedSystem.id}
+                      system={selectedSystem}
+                      onUpdateBodies={(bodies) => handleUpdateSystem(selectedSystem.id, { bodies, locked: true })}
+                    />
+                  ) : (
+                    <p className="muted small">Pick a system above, or click one on the map (Select tool).</p>
+                  )}
+                </>
+              )}
+            </>
           )}
           {activeTab === "ai" && (
             <AIPanel

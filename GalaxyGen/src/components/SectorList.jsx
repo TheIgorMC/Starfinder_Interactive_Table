@@ -2,7 +2,6 @@ import { useState } from "react";
 import { SECTOR_FOCI } from "../lib/project.js";
 import { generateBodies } from "../lib/planetGen.js";
 import { createRng } from "../lib/rng.js";
-import OrreryView from "./OrreryView.jsx";
 
 // Docs/10-galaxy-mapgen.md §9 — the closed effect-op vocabulary the event
 // form can build, one entry per op naming which typed-ref fields it needs
@@ -424,6 +423,10 @@ function SystemCard({ system, actors, onClose, onUpdate }) {
 // system's own entry) so it's edited as a lump list, not a separate
 // selectable entity the way sectors/systems/factions are — the orrery
 // view below is how a body actually gets inspected.
+// The full orrery view/editor lives in its own top-level tab (App.jsx,
+// OrreryView.jsx) now, so this stays a compact summary + reroll action —
+// no point duplicating a whole draggable SVG editor inside every card that
+// happens to reference a system.
 function BodiesSection({ system, onUpdate }) {
   const bodies = system.bodies || [];
   const primaryCount = bodies.filter((b) => !b.parent).length;
@@ -440,7 +443,7 @@ function BodiesSection({ system, onUpdate }) {
           Reroll bodies
         </button>
       </div>
-      {bodies.length === 0 ? <p className="small muted">No bodies rolled yet.</p> : <OrreryView system={system} />}
+      <p className="small muted">See the Orrery tab for the full body map and editor.</p>
     </div>
   );
 }

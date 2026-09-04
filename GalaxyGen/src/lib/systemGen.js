@@ -105,9 +105,22 @@ export function generateSystems(project, options = {}) {
   const importGrid = project.fields.import;
   const securityGrid = project.fields.security;
 
+  // Pure Poisson-disc sampling is "blue noise" by design — it deliberately
+  // avoids both clumping and large gaps, which is exactly why a galaxy
+  // generated over a flat/lightly-painted population field looks almost
+  // perfectly evenly spaced (confirmed live: a GM reported systems reading
+  // as "equal distanced"). Real distributions aren't that tidy even within
+  // one density level, so each candidate's own effective spacing gets a
+  // bounded ±20% jitter — enough to break the uniform look (some pairs
+  // pack closer, some sit farther apart) without risking overlap: the
+  // clamp never lets the jittered value drop below `minSpacing`, which is
+  // already the absolute floor the unjittered field math guarantees at
+  // full population density, so poisson.js's collision check is exactly
+  // as safe as before.
   const radiusAt = (x, y) => {
     const d = sampleBilinear(populationGrid, GRID_SIZE, x, y, project.bounds);
-    return maxSpacing - (maxSpacing - minSpacing) * d;
+    const base = maxSpacing - (maxSpacing - minSpacing) * d;
+    return Math.max(minSpacing, base * (0.8 + rng() * 0.4));
   };
 
   // Locked systems (renamed, hand-tuned importance, or explicitly locked
