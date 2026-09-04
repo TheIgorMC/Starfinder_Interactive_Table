@@ -1,6 +1,21 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
+import { askOllamaJson } from "../../scripts/lib/ollama-client.js";
+
+// Same local Ollama setup already used by scripts/audit-normalized.js
+// (Docs/04-data-pipeline-aon.md) — a GM-facing "AI drafts a wiki entry from
+// a freeform description" assistant, not a fixed-content pipeline, so this
+// deliberately reuses that exact client/conventions (loose JSON parsing,
+// think:false, one retry) rather than building a second one.
+// "fisso" is the LAN hostname of the desktop/GPU box that runs Ollama (the
+// split-host topology in Docs/11-AI-integration.md) — a Pi container can't
+// reach the GM's desktop via localhost, and this hostname resolves from
+// both there and local dev on the same network. Override via OLLAMA_URL if
+// yours is named differently — see docker-compose.yml / .env.example.
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://fisso:11434/v1";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen3:8b";
+const ENTRY_TYPES = ["event", "location", "npc", "faction", "object"];
 
 // GM-authored campaign content: events, locations, NPCs, factions, objects
 // — plus relationships between them ("member of", "located in", "owned
@@ -92,6 +107,67 @@ r.post("/:id/links", requireGM, async (req, res) => {
 r.delete("/links/:linkId", requireGM, async (req, res) => {
   await pool.query("DELETE FROM campaign_links WHERE id=$1", [req.params.linkId]);
   res.status(204).end();
+});
+
+// Turns a GM's freeform note ("a grizzled Vesk mercenary captain found
+// drinking alone at the Rust & Ration bar, used to run with the Vex
+// Cartel...") into a draft entry: type/name/summary/body, plus links to any
+// EXISTING entries the description clearly references. Drafts only —
+// nothing is written to campaign_entries or campaign_links here; the GM
+// reviews/edits the draft client-side and hits the normal Save, same as a
+// hand-typed entry (matches this app's "AI never trusted blindly, GM
+// decides" stance elsewhere — see scripts/audit-normalized.js's own header,
+// and Docs/04-data-pipeline-aon.md for why).
+r.post("/ai-draft", requireGM, async (req, res) => {
+  const { description, hint_type } = req.body ?? {};
+  if (!description || !description.trim()) return res.status(400).json({ error: "description required" });
+
+  const { rows: existing } = await pool.query("SELECT id, type, name, summary FROM campaign_entries ORDER BY name");
+  // A compact index the model can cite by id — single-pass, not GalaxyGen's
+  // two-pass shortlist-then-detail approach (Docs/11-AI-integration.md §3):
+  // a home campaign's wiki tops out at a few hundred entries, comfortably
+  // small enough to send in full every time without a filtering pass.
+  const index = existing.map((e) => `${e.id} | ${e.type} | ${e.name} | ${e.summary || ""}`).join("\n");
+
+  const system = `You are a Starfinder tabletop RPG campaign wiki assistant. The GM gives you a short freeform note; turn it into one structured wiki entry.
+
+Given the GM's note and a list of existing wiki entries (id | type | name | summary), respond with a single JSON object:
+{
+  "type": one of "event", "location", "npc", "faction", "object" — whichever best fits the note,
+  "name": a short proper name, taken from the note if it gives one, otherwise a fitting invented one,
+  "summary": one punchy sentence,
+  "body": 1-3 short paragraphs expanding the note into wiki-entry prose — elaborate on tone and detail, but do not invent major new facts (names, factions, plot twists) the note didn't imply,
+  "event_date": a freeform in-game date, only if type is "event" and the note mentions one, otherwise "",
+  "links": an array of { "entry_id": <id copied exactly from the list above>, "relation": "short phrase, e.g. 'works for', 'located in', 'member of'" } for EXISTING entries the note clearly and specifically references. Never invent an entry_id that is not in the list. Leave "links" empty if nothing in the note clearly references an existing entry.
+}`;
+  const user = `Existing entries:\n${index || "(none yet)"}\n\nGM's note:\n${description.trim()}${
+    ENTRY_TYPES.includes(hint_type) ? `\n\n(The GM was on the "${hint_type}" tab when writing this, but use your own judgment on type.)` : ""
+  }`;
+
+  let draft;
+  try {
+    draft = await askOllamaJson({ baseUrl: OLLAMA_URL, model: OLLAMA_MODEL, system, user, maxTokens: 1200 });
+  } catch (err) {
+    return res.status(502).json({ error: `AI draft failed: ${err.message}` });
+  }
+
+  const type = ENTRY_TYPES.includes(draft.type) ? draft.type : (ENTRY_TYPES.includes(hint_type) ? hint_type : "npc");
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  const links = Array.isArray(draft.links)
+    ? draft.links
+        .map((l) => ({ entry_id: Number(l.entry_id), relation: String(l.relation || "").slice(0, 80) }))
+        .filter((l) => byId.has(l.entry_id))
+        .map((l) => ({ ...l, name: byId.get(l.entry_id).name, type: byId.get(l.entry_id).type }))
+    : [];
+
+  res.json({
+    type,
+    name: String(draft.name || "").slice(0, 200),
+    summary: String(draft.summary || "").slice(0, 500),
+    body: String(draft.body || ""),
+    event_date: type === "event" ? String(draft.event_date || "") : "",
+    links,
+  });
 });
 
 export default r;

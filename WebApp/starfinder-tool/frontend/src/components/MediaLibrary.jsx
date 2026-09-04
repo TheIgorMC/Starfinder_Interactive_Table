@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
 
 const CATEGORIES = [
   { key: "map", label: "Maps" },
@@ -28,6 +29,7 @@ export default function MediaLibrary() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(null);
+  const { active, setFilterEnabled } = useActiveSession();
 
   const load = () => api(`/media?category=${category}`).then(setItems).catch(() => setItems([]));
   useEffect(() => { load(); }, [category]);
@@ -66,6 +68,8 @@ export default function MediaLibrary() {
     setCharacters((cur) => cur.map((c) => (c.id === Number(characterId) ? { ...c, portrait_url: url } : c)));
   };
 
+  const visibleItems = filterToSession(items, active, "mediaIds");
+
   return (
     <div className="media-library">
       <div className="tab-row">
@@ -75,6 +79,13 @@ export default function MediaLibrary() {
           </button>
         ))}
       </div>
+
+      {active?.status === "active" && (
+        <label className="checkbox-inline" style={{ marginBottom: 12 }} title={`Session: ${active.name}`}>
+          <input type="checkbox" checked={active.filter_enabled} onChange={(e) => setFilterEnabled(e.target.checked)} />
+          Filter to "{active.name}" ({visibleItems.length}/{items.length} shown)
+        </label>
+      )}
 
       <div className="media-upload row">
         <input placeholder="Label (optional)" value={label} onChange={(e) => setLabel(e.target.value)} style={{ maxWidth: 220 }} />
@@ -86,8 +97,8 @@ export default function MediaLibrary() {
       </div>
 
       <div className="media-grid">
-        {items.length === 0 && <p className="muted">No {category} images yet.</p>}
-        {items.map((m) => (
+        {visibleItems.length === 0 && <p className="muted">No {category} images {active?.filter_enabled ? "linked to this session" : "yet"}.</p>}
+        {visibleItems.map((m) => (
           <div key={m.id} className="media-item">
             <img src={m.url} alt={m.label || m.original_name} />
             <div className="media-item-label">{m.label || m.original_name}</div>

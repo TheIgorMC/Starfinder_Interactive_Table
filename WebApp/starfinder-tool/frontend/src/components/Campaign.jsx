@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import CharacterSheet from "./CharacterSheet.jsx";
+import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
 
 const TYPES = [
   { key: "event", label: "Events" },
@@ -80,6 +81,17 @@ export default function Campaign() {
   const [relation, setRelation] = useState("");
   const [characters, setCharacters] = useState([]);
   const [viewingChar, setViewingChar] = useState(null);
+  const { active, setFilterEnabled } = useActiveSession();
+
+  // AI draft (Ollama, see backend/src/routes/campaign.js POST /ai-draft) —
+  // fills the blank-entry form from a freeform note; suggested links are
+  // held here (not yet written) and only applied once the entry itself is
+  // saved, since a link needs a real entry id on both ends.
+  const [aiDescription, setAiDescription] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiLinks, setAiLinks] = useState([]);
+  const resetAiDraft = () => { setAiDescription(""); setAiBusy(false); setAiError(""); setAiLinks([]); };
 
   const load = () => api(`/campaign?type=${type}`).then(setEntries);
   useEffect(() => { load(); }, [type]);
@@ -98,19 +110,46 @@ export default function Campaign() {
   const openEntry = async (entry) => {
     const full = entry.id ? await api(`/campaign/${entry.id}`) : entry;
     setEditing(full);
+    resetAiDraft();
   };
 
   const reloadEditing = async () => {
     if (editing?.id) setEditing(await api(`/campaign/${editing.id}`));
   };
 
+  const generateAiDraft = async () => {
+    if (!aiDescription.trim()) return;
+    setAiBusy(true);
+    setAiError("");
+    try {
+      const draft = await api("/campaign/ai-draft", { method: "POST", body: { description: aiDescription, hint_type: editing.type } });
+      setEditing((cur) => ({
+        ...cur, type: draft.type, name: draft.name, summary: draft.summary, body: draft.body,
+        event_date: draft.type === "event" ? draft.event_date : cur.event_date,
+      }));
+      setAiLinks(draft.links.map((l) => ({ ...l, accepted: true })));
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   const save = async () => {
     if (!editing.name) return;
     const body = { ...editing };
     delete body.links;
-    if (editing.id) await api(`/campaign/${editing.id}`, { method: "PATCH", body });
-    else await api("/campaign", { method: "POST", body });
+    let saved;
+    if (editing.id) saved = await api(`/campaign/${editing.id}`, { method: "PATCH", body });
+    else saved = await api("/campaign", { method: "POST", body });
+    const acceptedLinks = aiLinks.filter((l) => l.accepted);
+    if (!editing.id && acceptedLinks.length) {
+      await Promise.all(acceptedLinks.map((l) =>
+        api(`/campaign/${saved.id}/links`, { method: "POST", body: { to_id: l.entry_id, relation: l.relation } })
+      ));
+    }
     setEditing(null);
+    resetAiDraft();
     load();
     api("/campaign").then(setAllEntries);
   };
@@ -118,6 +157,7 @@ export default function Campaign() {
   const remove = async () => {
     await api(`/campaign/${editing.id}`, { method: "DELETE" });
     setEditing(null);
+    resetAiDraft();
     load();
   };
 
@@ -133,6 +173,8 @@ export default function Campaign() {
     reloadEditing();
   };
 
+  const visibleEntries = filterToSession(entries, active, "entryIds");
+
   return (
     <div className="campaign">
       <div className="tab-row">
@@ -142,6 +184,13 @@ export default function Campaign() {
           </button>
         ))}
       </div>
+
+      {active?.status === "active" && (
+        <label className="checkbox-inline" style={{ marginBottom: 12 }} title={`Session: ${active.name}`}>
+          <input type="checkbox" checked={active.filter_enabled} onChange={(e) => setFilterEnabled(e.target.checked)} />
+          Filter to "{active.name}" ({visibleEntries.length}/{entries.length} shown)
+        </label>
+      )}
 
       {type === "npc" && (
         <div className="campaign-pcs">
@@ -172,21 +221,35 @@ export default function Campaign() {
 
       <div className="campaign-body">
         <div className="campaign-list">
-          <button onClick={() => setEditing(blank(type))}>+ New {TYPES.find((t) => t.key === type).label.replace(/s$/, "")}</button>
+          <button onClick={() => { setEditing(blank(type)); resetAiDraft(); }}>+ New {TYPES.find((t) => t.key === type).label.replace(/s$/, "")}</button>
           <ul>
-            {entries.map((e) => (
+            {visibleEntries.map((e) => (
               <li key={e.id}>
                 <button className="link" onClick={() => openEntry(e)}>
                   {e.name} {e.visible_to_players && <span className="pill ok">visible</span>}
                 </button>
               </li>
             ))}
-            {entries.length === 0 && <li className="muted">Nothing here yet.</li>}
+            {visibleEntries.length === 0 && <li className="muted">{active?.filter_enabled && entries.length > 0 ? "None linked to this session." : "Nothing here yet."}</li>}
           </ul>
         </div>
 
         {editing && (
           <div className="campaign-editor">
+            {!editing.id && (
+              <div className="ai-draft">
+                <label>✨ Describe it — let AI draft the entry</label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. A grizzled Vesk mercenary captain found drinking alone at the Rust & Ration bar on Absalom Station. Used to run with the Vex Cartel before a falling out."
+                  value={aiDescription} onChange={(e) => setAiDescription(e.target.value)}
+                />
+                <div className="row">
+                  <button onClick={generateAiDraft} disabled={!aiDescription.trim() || aiBusy}>{aiBusy ? "Drafting…" : "Generate draft"}</button>
+                  {aiError && <span className="pill bad">{aiError}</span>}
+                </div>
+              </div>
+            )}
             <input placeholder="Name" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             {editing.type === "event" && (
               <input placeholder="Date (in-game, freeform)" value={editing.event_date} onChange={(e) => setEditing({ ...editing, event_date: e.target.value })} />
@@ -201,6 +264,26 @@ export default function Campaign() {
               <input type="checkbox" checked={editing.visible_to_players} onChange={(e) => setEditing({ ...editing, visible_to_players: e.target.checked })} />
               Visible to players
             </label>
+
+            {!editing.id && aiLinks.length > 0 && (
+              <div className="campaign-links">
+                <h4>AI-suggested links</h4>
+                <ul>
+                  {aiLinks.map((l, i) => (
+                    <li key={l.entry_id}>
+                      <label className="checkbox-inline" style={{ flex: 1 }}>
+                        <input
+                          type="checkbox" checked={l.accepted}
+                          onChange={() => setAiLinks((cur) => cur.map((x, j) => (j === i ? { ...x, accepted: !x.accepted } : x)))}
+                        />
+                        {l.relation || "related to"} <span className="pill">{l.type}</span> {l.name}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <p className="muted">Applied automatically once you Save.</p>
+              </div>
+            )}
 
             {editing.id && (
               <div className="campaign-links">
@@ -230,7 +313,7 @@ export default function Campaign() {
 
             <div className="row">
               <button onClick={save} disabled={!editing.name}>Save</button>
-              <button className="link" onClick={() => setEditing(null)}>Cancel</button>
+              <button className="link" onClick={() => { setEditing(null); resetAiDraft(); }}>Cancel</button>
               {editing.id && <button className="link" onClick={remove}>Delete</button>}
             </div>
           </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, useWs } from "../api.js";
+import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
 
 const MOOD_PRESETS = [
   { name: "Neutral", color: "#202040", brightness: 128, effect: "static" },
@@ -7,16 +8,33 @@ const MOOD_PRESETS = [
   { name: "Derelict", color: "#153a2a", brightness: 60, effect: "flicker" },
   { name: "Storm", color: "#2a2a80", brightness: 160, effect: "storm" },
 ];
+const MEDIA_CATEGORIES = [
+  { key: "mood", label: "Mood screens" },
+  { key: "map", label: "Maps" },
+  { key: "portrait", label: "Portraits" },
+  { key: "token", label: "Tokens" },
+];
 
 export default function ScenePanel({ session, characters }) {
   const [scene, setScene] = useState(null);
+  const [mediaCategory, setMediaCategory] = useState("mood");
+  const [mediaItems, setMediaItems] = useState([]);
   const [mediaUrl, setMediaUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const { active } = useActiveSession();
 
   useEffect(() => { api("/scene/state").then(setScene); }, []);
   useWs((msg) => {
     if (msg.type === "scene:channel" || msg.type === "scene:mood") api("/scene/state").then(setScene);
   });
+  // Pick media by name, not by pasting a URL — the media library already
+  // has both, this just picks from it instead of asking the GM to copy one
+  // over manually (see MediaLibrary.jsx's "Copy URL" button, which this
+  // used to require).
+  useEffect(() => {
+    api(`/media?category=${mediaCategory}`).then(setMediaItems).catch(() => setMediaItems([]));
+  }, [mediaCategory]);
+  const pickableMedia = filterToSession(mediaItems, active, "mediaIds");
 
   if (!scene) return null;
 
@@ -42,10 +60,21 @@ export default function ScenePanel({ session, characters }) {
           onClick={() => setChannel("projector", { mode: "scenic", mediaUrl, caption })}
         >Scenic</button>
       </div>
-      <input placeholder="Media URL" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} />
+      <div className="row">
+        <select value={mediaCategory} onChange={(e) => { setMediaCategory(e.target.value); setMediaUrl(""); }}>
+          {MEDIA_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+        </select>
+        <select value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)}>
+          <option value="">Pick an image…</option>
+          {pickableMedia.map((m) => <option key={m.id} value={m.url}>{m.label || m.original_name}</option>)}
+        </select>
+      </div>
+      {active?.status === "active" && active.filter_enabled && pickableMedia.length < mediaItems.length && (
+        <p className="muted">Filtered to "{active.name}" — {mediaItems.length - pickableMedia.length} more {mediaCategory} image(s) hidden.</p>
+      )}
       <input placeholder="Caption" value={caption} onChange={(e) => setCaption(e.target.value)} />
-      <button onClick={() => setChannel("projector", { mediaUrl, caption })}>Push to projector</button>
-      <button onClick={() => setChannel("tablet", { mode: "media", mediaUrl, caption })}>Push to tablet</button>
+      <button onClick={() => setChannel("projector", { mediaUrl, caption })} disabled={!mediaUrl}>Push to projector</button>
+      <button onClick={() => setChannel("tablet", { mode: "media", mediaUrl, caption })} disabled={!mediaUrl}>Push to tablet</button>
 
       <h3>Tablet — featured characters</h3>
       <div className="chips">

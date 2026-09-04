@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+import { useAuth } from "../auth.jsx";
 import {
   ABILITIES, ABILITY_LABELS, QUICK_ARRAYS, POINT_BUY_POOL, SCORE_CAP,
   abilityMod, fmtMod, applyAbilityModifiers, hasAnyAbilityChoice,
-  keyAbilityOptions, SKILLS, classSkillSet, deriveStats,
+  keyAbilityOptions, SKILLS, classSkillSet, deriveStats, abilityBoostsCount,
 } from "../lib/sfCalc.js";
 
 // Guided 9-step character creation wizard, following AoN's Character
@@ -30,6 +31,81 @@ const STEPS = [
 
 const EQUIPMENT_CATEGORIES = ["weapon", "armor", "shield", "gear", "augmentation", "technological", "consumable", "goods"];
 
+// Small "ⓘ" toggle shown on every race/theme/class/feat pick card — expands
+// inline (no modal) to that AoN entry's own description/effect text, which
+// the list query already fetched in full (see backend/src/routes/aon.js),
+// so this needs no extra request.
+function EntryInfo({ row }) {
+  const [open, setOpen] = useState(false);
+  const text = row.data?.description || row.data?.effect || "";
+  return (
+    <span className="entry-info">
+      <button
+        type="button" className="info-btn" title={`About ${row.name}`} aria-label={`About ${row.name}`}
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+      >ⓘ</button>
+      {open && (
+        <div className="wizard-info-popover" onClick={(e) => e.stopPropagation()}>
+          {text ? <p>{text}</p> : <p className="muted">No description available for this entry.</p>}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// GM-curated glossary notes for the six ability scores and the skill list —
+// unlike race/theme/class/feats these aren't individual AoN entries (ability
+// scores in particular have no scraped source text at all, see
+// Docs/04-data-pipeline-aon.md), so they're stored as a plain settings key
+// the same way `owned_sources`/`new_pc_wealth_limit` already are.
+function useReferenceNotes() {
+  const [notes, setNotes] = useState({ abilities: {}, skills: {} });
+  useEffect(() => {
+    api("/settings/reference_notes").then((s) => setNotes(s.value || { abilities: {}, skills: {} }));
+  }, []);
+  const save = async (section, key, text) => {
+    const next = { ...notes, [section]: { ...notes[section], [key]: text } };
+    setNotes(next);
+    await api("/settings/reference_notes", { method: "PUT", body: { value: next } });
+  };
+  return { notes, save };
+}
+
+function NoteInfo({ label, text, canEdit, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(text || "");
+
+  useEffect(() => { setDraft(text || ""); }, [text]);
+
+  return (
+    <span className="entry-info">
+      <button
+        type="button" className="info-btn" title={`About ${label}`} aria-label={`About ${label}`}
+        onClick={() => setOpen((o) => !o)}
+      >ⓘ</button>
+      {open && (
+        <div className="wizard-info-popover">
+          {editing ? (
+            <>
+              <textarea rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={`Describe ${label}…`} />
+              <div className="row">
+                <button onClick={() => { onSave(draft); setEditing(false); }}>Save</button>
+                <button className="link" onClick={() => { setDraft(text || ""); setEditing(false); }}>Cancel</button>
+              </div>
+            </>
+          ) : (
+            <>
+              {text ? <p>{text}</p> : <p className="muted">No description yet.</p>}
+              {canEdit && <button className="link" onClick={() => setEditing(true)}>{text ? "Edit" : "Add description"}</button>}
+            </>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function AoNPicker({ category, sources, selected, onSelect, placeholder }) {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState([]);
@@ -50,7 +126,10 @@ function AoNPicker({ category, sources, selected, onSelect, placeholder }) {
       <ul className="sheet-list wizard-picker-list">
         {rows.map((r) => (
           <li key={r.id} className={`sheet-card wizard-pick-card${selected?.id === r.id ? " active" : ""}`} onClick={() => onSelect(r)}>
-            <strong>{r.name}</strong> <span className="muted">{r.source}</span>
+            <div className="wizard-pick-row">
+              <span><strong>{r.name}</strong> <span className="muted">{r.source}</span></span>
+              <EntryInfo row={r} />
+            </div>
           </li>
         ))}
         {!loading && rows.length === 0 && <li className="muted">No entries found — check owned sources or try a different search.</li>}
@@ -81,8 +160,13 @@ function AoNMultiPicker({ category, sources, chosen, onAdd, onRemove, placeholde
         {rows.map((r) => (
           <li key={r.id} className={`sheet-card wizard-pick-card${chosenIds.has(r.id) ? " active" : ""}`}
             onClick={() => (chosenIds.has(r.id) ? onRemove(r) : onAdd(r))}>
-            <strong>{r.name}</strong> <span className="muted">{r.source}</span>
-            {chosenIds.has(r.id) && <span className="pill ok" style={{ marginLeft: 8 }}>added</span>}
+            <div className="wizard-pick-row">
+              <span>
+                <strong>{r.name}</strong> <span className="muted">{r.source}</span>
+                {chosenIds.has(r.id) && <span className="pill ok" style={{ marginLeft: 8 }}>added</span>}
+              </span>
+              <EntryInfo row={r} />
+            </div>
           </li>
         ))}
         {!loading && rows.length === 0 && <li className="muted">No entries found — check owned sources or try a different search.</li>}
@@ -92,6 +176,8 @@ function AoNMultiPicker({ category, sources, chosen, onAdd, onRemove, placeholde
 }
 
 export default function CharacterCreationWizard({ onCreated, onCancel }) {
+  const { user } = useAuth();
+  const { notes, save: saveNote } = useReferenceNotes();
   const [stepIdx, setStepIdx] = useState(0);
   const [ownedSources, setOwnedSources] = useState([]);
   const [wealthLimit, setWealthLimit] = useState({ mode: "manual", credits: 1000 });
@@ -118,6 +204,10 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
   // the value itself — arrays like Split (16,16,...) have duplicate values,
   // so tracking by index is what makes "each slot used once" enforceable.
   const [arraySlots, setArraySlots] = useState({ str: null, dex: null, con: null, int: null, wis: null, cha: null });
+  // One entry per 5-level ability-boost threshold crossed by `level` (see
+  // abilityBoostsCount) — each entry is the up-to-4 ability keys chosen for
+  // that threshold's +1s.
+  const [abilityBoosts, setAbilityBoosts] = useState([]);
 
   const [skillRanks, setSkillRanks] = useState({});
   const [feats, setFeats] = useState([]);
@@ -166,9 +256,35 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
     ? Object.fromEntries(ABILITIES.map((a) => [a, arraySlots[a] != null ? QUICK_ARRAYS[arrayKey].values[arraySlots[a]] : 10]))
     : pointBuyScores;
 
+  // SF1e ability score increases (4 different abilities +1 each at 5th
+  // level and every 5 levels after) — a character created directly at a
+  // higher level has already banked these on top of the one-time point-
+  // buy/quick-array pool above, so the wizard has to ask which abilities
+  // they went to rather than silently leaving a level-7 character with
+  // only their 1st-level scores.
+  const numBoosts = abilityBoostsCount(level);
+  useEffect(() => {
+    setAbilityBoosts((cur) => {
+      if (cur.length === numBoosts) return cur;
+      if (cur.length > numBoosts) return cur.slice(0, numBoosts);
+      return [...cur, ...Array.from({ length: numBoosts - cur.length }, () => [])];
+    });
+  }, [numBoosts]);
+  const toggleBoost = (i, ability) => setAbilityBoosts((cur) => cur.map((b, idx) => {
+    if (idx !== i) return b;
+    if (b.includes(ability)) return b.filter((a) => a !== ability);
+    return b.length < 4 ? [...b, ability] : b;
+  }));
+  const boostsComplete = abilityBoosts.every((b) => b.length === 4);
+  const boostedScores = useMemo(() => {
+    const out = { ...finalScores };
+    for (const boost of abilityBoosts) for (const a of boost) out[a] = (out[a] || 10) + 1;
+    return out;
+  }, [finalScores, abilityBoosts]);
+
   const stats = useMemo(() => deriveStats({
-    level, scores: finalScores, raceHitPoints: race?.data?.hitPoints || 0, klass: klass?.data, keyAbility,
-  }), [level, finalScores, race, klass, keyAbility]);
+    level, scores: boostedScores, raceHitPoints: race?.data?.hitPoints || 0, klass: klass?.data, keyAbility,
+  }), [level, boostedScores, race, klass, keyAbility]);
 
   const classSkills = classSkillSet(klass?.data?.classSkills);
   const totalRanksSpent = Object.values(skillRanks).reduce((s, r) => s + (r || 0), 0);
@@ -186,7 +302,7 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
     race: !!race,
     theme: !!theme,
     class: !!klass,
-    abilities: method === "pointbuy" ? pointsLeft === 0 : ABILITIES.every((a) => arraySlots[a] != null),
+    abilities: (method === "pointbuy" ? pointsLeft === 0 : ABILITIES.every((a) => arraySlots[a] != null)) && boostsComplete,
     derived: true,
     skills: ranksLeft >= 0 && feats.length <= featSlots,
     equipment: creditsLeft >= 0,
@@ -196,8 +312,8 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
   const create = async () => {
     const body = {
       name, race: race?.name || "", theme: theme?.name || "", class: klass?.name || "", level,
-      str: finalScores.str, dex: finalScores.dex, con: finalScores.con,
-      int: finalScores.int, wis: finalScores.wis, cha: finalScores.cha,
+      str: boostedScores.str, dex: boostedScores.dex, con: boostedScores.con,
+      int: boostedScores.int, wis: boostedScores.wis, cha: boostedScores.cha,
       hp_max: stats.hp_max, hp_cur: stats.hp_cur,
       sp_max: stats.sp_max, sp_cur: stats.sp_cur,
       rp_max: stats.rp_max, rp_cur: stats.rp_cur,
@@ -345,7 +461,7 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
                   <tbody>
                     {ABILITIES.map((a) => (
                       <tr key={a}>
-                        <td>{ABILITY_LABELS[a]}</td>
+                        <td>{ABILITY_LABELS[a]} <NoteInfo label={ABILITY_LABELS[a]} text={notes.abilities?.[a]} canEdit={user?.role === "gm"} onSave={(t) => saveNote("abilities", a, t)} /></td>
                         <td className="muted">{baselineScores[a]}</td>
                         <td>
                           <div className="row">
@@ -379,7 +495,7 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
                       const takenElsewhere = new Set(ABILITIES.filter((o) => o !== a && arraySlots[o] != null).map((o) => arraySlots[o]));
                       return (
                         <tr key={a}>
-                          <td>{ABILITY_LABELS[a]}</td>
+                          <td>{ABILITY_LABELS[a]} <NoteInfo label={ABILITY_LABELS[a]} text={notes.abilities?.[a]} canEdit={user?.role === "gm"} onSave={(t) => saveNote("abilities", a, t)} /></td>
                           <td>
                             <select
                               value={arraySlots[a] ?? ""}
@@ -399,6 +515,43 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
                 </table>
               </>
             )}
+
+            {numBoosts > 0 && (
+              <>
+                <h3>Ability score increases</h3>
+                <p className="muted">
+                  At 5th level and every 5 levels after, four different ability scores each increase by 1.
+                  A level {level} character has already earned {numBoosts} increase{numBoosts === 1 ? "" : "s"} —
+                  pick which abilities they went to for each.
+                </p>
+                {abilityBoosts.map((boost, i) => (
+                  <div key={i} className="wizard-any-ability" style={{ alignItems: "flex-start" }}>
+                    <label style={{ minWidth: 130, marginTop: 6 }}>Level {(i + 1) * 5} ({boost.length}/4):</label>
+                    <div className="chips">
+                      {ABILITIES.map((a) => (
+                        <button
+                          key={a} type="button"
+                          className={boost.includes(a) ? "chip active" : "chip"}
+                          onClick={() => toggleBoost(i, a)}
+                          disabled={!boost.includes(a) && boost.length >= 4}
+                        >{ABILITY_LABELS[a]}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            <h3>Final scores{numBoosts > 0 ? " (with increases)" : ""}</h3>
+            <section className="grid-6">
+              {ABILITIES.map((a) => (
+                <div key={a} className="stat">
+                  <label>{a.toUpperCase()}</label>
+                  <strong>{boostedScores[a]}</strong>
+                  <span>{fmtMod(abilityMod(boostedScores[a]))}</span>
+                </div>
+              ))}
+            </section>
           </div>
         )}
 
@@ -441,7 +594,7 @@ export default function CharacterCreationWizard({ onCreated, onCancel }) {
                   return (
                     <tr key={sname} className={isClass ? "class-skill" : ""}>
                       <td>{isClass ? "★" : ""}</td>
-                      <td>{sname}</td>
+                      <td>{sname} <NoteInfo label={sname} text={notes.skills?.[sname]} canEdit={user?.role === "gm"} onSave={(t) => saveNote("skills", sname, t)} /></td>
                       <td className="muted">{ability}</td>
                       <td>
                         <div className="row">

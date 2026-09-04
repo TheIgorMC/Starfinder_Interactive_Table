@@ -50,6 +50,16 @@ export function hasAnyAbilityChoice(modifiers) {
   return (modifiers || []).some((m) => m.ability === "any");
 }
 
+// SF1e ability score increases: at 5th level and every 5 levels thereafter
+// (10th, 15th, 20th), four different ability scores each increase by 1 —
+// distinct from the one-time point-buy/quick-array pool used to set a
+// character's starting scores (Core Rulebook, Character Advancement). A
+// character created directly at, say, 7th level has already banked one of
+// these on top of that starting pool.
+export function abilityBoostsCount(level) {
+  return Math.floor((level || 0) / 5);
+}
+
 // BAB progression labels as stored in aon class data.baseAttackBonus.
 export function babForLevel(progression, level) {
   const p = (progression || "").toLowerCase();

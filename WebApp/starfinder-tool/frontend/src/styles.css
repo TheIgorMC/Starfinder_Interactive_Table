@@ -207,15 +207,18 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .map-scroll { overflow: auto; max-height: calc(100vh - 140px); }
 
 /* GM tab nav / sheet tabs / compendium tabs / wizard steps / media sub-tabs —
-   one shared pill-tab visual language throughout the app. */
+   one shared tab visual language throughout the app. Wraps onto multiple
+   rows instead of scrolling horizontally: a scrollable bar with no visible
+   scrollbar (and no fade/arrow affordance) left later tabs entirely
+   invisible whenever the row had more entries than the container was wide
+   — confirmed live on the Compendium's 12 section tabs and the wizard's 9
+   step tabs. Wrapping guarantees every tab is always on screen regardless
+   of viewport width. */
 .gm-tabs, .sheet-tabs, .compendium-tabs, .wizard-steps, .tab-row {
-  display: flex; gap: 4px; flex-wrap: nowrap; overflow-x: auto;
+  display: flex; gap: 4px; flex-wrap: wrap;
   padding: 5px; margin: 0 0 16px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-pill);
-  scrollbar-width: none;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-md);
 }
-.gm-tabs::-webkit-scrollbar, .sheet-tabs::-webkit-scrollbar, .compendium-tabs::-webkit-scrollbar,
-.wizard-steps::-webkit-scrollbar, .tab-row::-webkit-scrollbar { display: none; }
 .gm-tabs { margin: 0; border-radius: 0; background: rgba(255, 255, 255, 0.015); border: none; border-bottom: 1px solid var(--border); padding: 8px 16px; }
 .gm-tabs button, .sheet-tabs button, .compendium-tabs button, .wizard-steps button, .tab-row button {
   flex: none; background: none; border: none; border-radius: var(--radius-pill);
@@ -269,6 +272,17 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-links ul { list-style: none; padding: 0; margin: 0 0 8px; }
 .campaign-links li { padding: 4px 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .campaign-links li button { margin-left: auto; }
+
+.ai-draft {
+  display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; padding: 12px;
+  background: linear-gradient(140deg, rgba(196, 107, 255, 0.08), var(--accent-fill));
+  border: 1px solid var(--accent-border); border-radius: var(--radius-sm);
+}
+.ai-draft label { font: 600 10px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-text); }
+
+/* Session planning (Sessions.jsx) reuses the campaign-* layout above */
+.session-section { margin-top: 10px; border-top: 1px solid var(--border-soft); padding-top: 10px; }
+.session-section h4 { margin: 0 0 8px; font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
 
 .campaign-pcs { margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
 .campaign-pcs h3 { font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin: 16px 0 10px; }
@@ -400,6 +414,26 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 
 .wizard-equipment select { width: auto; }
 .wizard-equipment .row input { flex: 1; }
+
+/* Info popovers — race/theme/class/feat pick cards during character
+   creation, plus ability-score/skill reference notes. */
+.wizard-pick-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.entry-info { position: relative; display: inline-block; }
+.info-btn {
+  min-height: auto; width: 20px; height: 20px; padding: 0; flex: none;
+  border-radius: 50%; background: var(--panel-raised); border: 1px solid var(--border);
+  color: var(--text-muted); font-size: 12px; line-height: 1; cursor: pointer;
+}
+.info-btn:hover { color: var(--accent-text); border-color: var(--accent-border); }
+.wizard-info-popover {
+  position: relative; margin-top: 8px; padding: 10px 12px;
+  background: var(--panel-raised); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; line-height: 1.5; color: var(--text-secondary);
+  white-space: pre-line; max-height: 220px; overflow-y: auto;
+}
+.wizard-info-popover p { margin: 0 0 8px; }
+.wizard-info-popover p:last-child { margin-bottom: 0; }
+.wizard-info-popover textarea { margin-bottom: 8px; }
 
 /* Sticky Back/Next bar — the wizard is meant to be used on a phone/tablet at
    the table, so the nav has to stay reachable without scrolling back up. */
