@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getSystemZones } from "../lib/planetGen.js";
+import { getSystemZones, STATION_CLASSES } from "../lib/planetGen.js";
 import { POPULATION_BANDS } from "../lib/populationBands.js";
 import { slugify } from "../lib/slug.js";
 
@@ -39,6 +39,11 @@ const KIND_RADIUS = {
 };
 const BODY_KINDS = ["rocky planet", "terrestrial world", "ice world", "gas giant", "asteroid belt", "moon", "orbital station"];
 const STATUSES = ["untouched", "extraction", "colonized"];
+const DOCK_CLASS_OPTIONS = [
+  "shuttle & light-freighter berths",
+  "freighter-capable berths",
+  "capital-ship dry dock",
+];
 const COLONIZABLE_BANDS = POPULATION_BANDS.filter((b) => !b.stationOnly).map((b) => b.value);
 
 function auToR(au, maxAU) {
@@ -66,6 +71,7 @@ function uniqueBodySlug(base, bodies) {
 function blankBody(system, bodies, kind, parentSlug, defaultOrbitAU) {
   const label = kind === "orbital station" ? "New Station" : kind === "moon" ? "New Moon" : "New Body";
   const slug = uniqueBodySlug(slugify(`${system.slug}-${label}`), bodies);
+  const isStation = kind === "orbital station";
   return {
     slug,
     name: label,
@@ -75,13 +81,21 @@ function blankBody(system, bodies, kind, parentSlug, defaultOrbitAU) {
     orbitAUOuter: null,
     orbitAngleDeg: Math.round(Math.random() * 360),
     orbitPeriodDays: null,
-    sizeClass: null,
+    // A hand-added station starts as a mid-tier waystation rather than
+    // null — it's meaningfully editable right away instead of needing a
+    // size class picked before anything else makes sense.
+    sizeClass: isStation ? "waystation" : null,
     radiusKm: null,
     habitable: false,
     resources: [],
-    status: "untouched",
-    population: null,
-    tags: [],
+    status: isStation ? "colonized" : "untouched",
+    population: isStation ? 150 : null,
+    lengthM: isStation ? 250 : null,
+    docks: isStation ? 3 : null,
+    dockClass: isStation ? "shuttle & light-freighter berths" : null,
+    services: isStation ? ["refueling"] : [],
+    goodsHandled: [],
+    tags: isStation ? ["orbital-infrastructure"] : [],
   };
 }
 
@@ -313,9 +327,48 @@ export default function OrreryView({ system, onUpdateBodies }) {
   );
 }
 
+// Shared by Resources/Services/Goods handled below — a labeled row of
+// removable tag chips plus an add-input, same interaction pattern already
+// used elsewhere in the app for tag-shaped list fields.
+function TagEditor({ label, placeholder, values, onChange }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <>
+      <label className="small muted" style={{ marginTop: 8 }}>{label}</label>
+      <div className="gg-tag-row">
+        {values.map((v) => (
+          <span key={v} className="gg-tag">
+            {v}
+            <button onClick={() => onChange(values.filter((x) => x !== v))} title="Remove">×</button>
+          </span>
+        ))}
+        {values.length === 0 && <span className="muted small">None.</span>}
+      </div>
+      <div className="gg-tool-row">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={placeholder}
+          style={{ flex: "1 1 auto" }}
+        />
+        <button
+          disabled={!draft.trim() || values.includes(draft.trim())}
+          onClick={() => {
+            onChange([...values, draft.trim()]);
+            setDraft("");
+          }}
+        >
+          Add
+        </button>
+      </div>
+    </>
+  );
+}
+
 function BodyEditor({ body, bodies, onChange, onDelete }) {
   const [newResource, setNewResource] = useState("");
   const isSatellite = !!body.parent;
+  const isStation = body.kind === "orbital station";
   const hostOptions = bodies.filter((b) => !b.parent && b.slug !== body.slug);
   const resources = body.resources || [];
 
@@ -373,62 +426,124 @@ function BodyEditor({ body, bodies, onChange, onDelete }) {
         </>
       )}
 
-      <label className="gg-checkbox">
-        <input type="checkbox" checked={!!body.habitable} onChange={(e) => onChange({ habitable: e.target.checked })} />
-        Habitable
-      </label>
-
-      <label className="small muted">Status</label>
-      <select
-        value={body.status}
-        onChange={(e) => {
-          const status = e.target.value;
-          onChange({ status, population: status === "colonized" ? (body.population || COLONIZABLE_BANDS[0]) : null });
-        }}
-      >
-        {STATUSES.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
-
-      {body.status === "colonized" && (
+      {isStation ? (
         <>
-          <label className="small muted">Population</label>
-          <select value={body.population || COLONIZABLE_BANDS[0]} onChange={(e) => onChange({ population: e.target.value })}>
-            {COLONIZABLE_BANDS.map((p) => (
-              <option key={p} value={p}>{p}</option>
+          <label className="small muted">Class</label>
+          <select value={body.sizeClass || "waystation"} onChange={(e) => onChange({ sizeClass: e.target.value })}>
+            {STATION_CLASSES.map((c) => (
+              <option key={c.value} value={c.value}>{c.value}</option>
             ))}
           </select>
+
+          <label className="small muted">Population ({body.population ?? 0} inhabitants)</label>
+          <input
+            type="number"
+            min="0"
+            value={body.population ?? 0}
+            onChange={(e) => onChange({ population: Math.max(0, Number(e.target.value)) })}
+          />
+
+          <label className="small muted">Length ({body.lengthM ?? 0} m)</label>
+          <input
+            type="number"
+            min="0"
+            value={body.lengthM ?? 0}
+            onChange={(e) => onChange({ lengthM: Math.max(0, Number(e.target.value)) })}
+          />
+
+          <label className="small muted">Docks</label>
+          <div className="gg-tool-row">
+            <input
+              type="number"
+              min="0"
+              value={body.docks ?? 0}
+              style={{ flex: "0 0 80px" }}
+              onChange={(e) => onChange({ docks: Math.max(0, Number(e.target.value)) })}
+            />
+            <select
+              value={body.dockClass || "shuttle & light-freighter berths"}
+              style={{ flex: "1 1 auto" }}
+              onChange={(e) => onChange({ dockClass: e.target.value })}
+            >
+              {DOCK_CLASS_OPTIONS.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          <TagEditor
+            label="Services"
+            placeholder="e.g. medical bay"
+            values={body.services || []}
+            onChange={(services) => onChange({ services })}
+          />
+          <TagEditor
+            label="Goods handled"
+            placeholder="e.g. refined metals"
+            values={body.goodsHandled || []}
+            onChange={(goodsHandled) => onChange({ goodsHandled })}
+          />
+        </>
+      ) : (
+        <>
+          <label className="gg-checkbox">
+            <input type="checkbox" checked={!!body.habitable} onChange={(e) => onChange({ habitable: e.target.checked })} />
+            Habitable
+          </label>
+
+          <label className="small muted">Status</label>
+          <select
+            value={body.status}
+            onChange={(e) => {
+              const status = e.target.value;
+              onChange({ status, population: status === "colonized" ? (body.population || COLONIZABLE_BANDS[0]) : null });
+            }}
+          >
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          {body.status === "colonized" && (
+            <>
+              <label className="small muted">Population</label>
+              <select value={body.population || COLONIZABLE_BANDS[0]} onChange={(e) => onChange({ population: e.target.value })}>
+                {COLONIZABLE_BANDS.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </>
+          )}
+
+          <label className="small muted" style={{ marginTop: 8 }}>Resources</label>
+          <div className="gg-tag-row">
+            {resources.map((r) => (
+              <span key={r} className="gg-tag">
+                {r}
+                <button onClick={() => onChange({ resources: resources.filter((x) => x !== r) })} title="Remove">×</button>
+              </span>
+            ))}
+            {resources.length === 0 && <span className="muted small">None.</span>}
+          </div>
+          <div className="gg-tool-row">
+            <input
+              value={newResource}
+              onChange={(e) => setNewResource(e.target.value)}
+              placeholder="e.g. rare minerals"
+              style={{ flex: "1 1 auto" }}
+            />
+            <button
+              disabled={!newResource.trim() || resources.includes(newResource.trim())}
+              onClick={() => {
+                onChange({ resources: [...resources, newResource.trim()] });
+                setNewResource("");
+              }}
+            >
+              Add
+            </button>
+          </div>
         </>
       )}
-
-      <label className="small muted" style={{ marginTop: 8 }}>Resources</label>
-      <div className="gg-tag-row">
-        {resources.map((r) => (
-          <span key={r} className="gg-tag">
-            {r}
-            <button onClick={() => onChange({ resources: resources.filter((x) => x !== r) })} title="Remove">×</button>
-          </span>
-        ))}
-        {resources.length === 0 && <span className="muted small">None.</span>}
-      </div>
-      <div className="gg-tool-row">
-        <input
-          value={newResource}
-          onChange={(e) => setNewResource(e.target.value)}
-          placeholder="e.g. rare minerals"
-          style={{ flex: "1 1 auto" }}
-        />
-        <button
-          disabled={!newResource.trim() || resources.includes(newResource.trim())}
-          onClick={() => {
-            onChange({ resources: [...resources, newResource.trim()] });
-            setNewResource("");
-          }}
-        >
-          Add
-        </button>
-      </div>
     </div>
   );
 }

@@ -494,6 +494,57 @@ name/star-type/population/body-count changes, 38 systems actually moved,
 0 locked systems moved, minimum distance between any two systems 47.85
 (no overlap), 93/94 hyperlane lengths recomputed.
 
+**Stations now read like an actual "city in orbit," sized to the local
+economy**: a GM asked for population, docks, size, etc. that are
+"reasonable to the economy and sector of the galaxy they are in — heavy
+extraction industry? massive stations with lots of cargo docks. smaller
+outpost? simple refuelling." `planetGen.js`'s `rollStation` was rebuilt on
+a `STATION_CLASSES` table (role + rough size bundled, same spirit as the
+per-kind `SIZE_CLASSES` planets already use) — `refueling outpost` /
+`waystation` / `mining platform` / `research outpost` / `trade station` /
+`cargo terminal` / `orbital shipyard` / `orbital fortress` / `megastation`,
+each with `[min, max]` ranges for population, docks, and physical length
+(meters):
+- **Class selection is economy-driven, not flat-random.** A body a system
+  is actively working for resources (`status: "extraction"`) rolls against
+  a mining/cargo-terminal/refueling-outpost weighting regardless of the
+  sector's overall focus (that's about *that body's* local economy). A
+  fully colonized body instead rolls against a per-sector-focus weighting
+  table mirroring `systemGen.js`'s existing `FOCUS_TRADE` (mining →
+  mining-platform-heavy, industry → shipyard/cargo-terminal-heavy,
+  military → fortress-heavy, frontier → refueling-outpost-heavy, etc.), and
+  `megastation` is filtered out entirely unless the system's own population
+  band is major-colony-or-better — no lucky roll plants one over a
+  backwater.
+- **Size scales with the system's population band**, not just its class —
+  population/docks/length are all lerped toward the top of their class's
+  range as the system's own population band index rises, so a "trade
+  station" over a core world reads bigger than one over a small colony.
+- Also rolls a **dock class** (shuttle/light-freighter berths → freighter-
+  capable → capital-ship dry dock, by size tier), a handful of **services**
+  (refueling, repairs, medical bay, cargo brokerage, shipyard services,
+  diplomatic offices, ... — pool widens with tier) and the **goods it
+  handles** (sampled from the parent system's own `export`/`import` lists,
+  so a station's cargo actually matches what its system trades). Station
+  names now reflect their role (`"<host> Mining Platform"`,
+  `"<host> Fuel Depot"`, etc.) instead of a generic `"<host> Station"`.
+  `persistence.js`'s `systemToEntry` exports the new fields (`length_m`,
+  `docks`, `dock_class`, `services`, `goods_handled`) alongside the
+  existing body fields. `OrreryView.jsx`'s body editor grew a
+  station-specific form (class dropdown, population/length/dock number
+  inputs, dock-class dropdown, services and goods-handled tag editors) in
+  place of the planet-only habitable/colonization-status fields, and a
+  hand-added station now starts pre-filled as a mid-tier waystation instead
+  of a blank shell. Verified: a standalone sweep across every sector focus
+  × every population band × 20 trials (281 stations) found zero bad
+  population/docks/length values, zero missing classes, zero premature
+  megastations, and zero stations without a valid parent; live in the app,
+  regenerated a mining-focus sector's systems and confirmed the resulting
+  stations skewed small (17-385 population, 1-3 docks) and mining/
+  refueling-flavored, matching a low-population mining sector's economy,
+  then edited a station's population/services/goods through the new editor
+  and confirmed the change persisted through the autosave.
+
 ### Known simplifications so far
 
 - Sector vertices can't be dragged/edited after creation — delete and

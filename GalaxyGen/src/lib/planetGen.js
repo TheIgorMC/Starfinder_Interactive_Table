@@ -107,7 +107,119 @@ function rollSize(rng, kind) {
 // the "uninhabited / automated only" band, which would contradict
 // "colonized".
 const COLONIZED_BANDS = POPULATION_BANDS.filter((b) => !b.stationOnly);
-const STATION_CREW = ["skeleton crew", "small crew complement", "full station complement"];
+
+// A station's *class* is really "role + rough size" bundled together, same
+// spirit as SIZE_CLASSES above but for built infrastructure instead of
+// planetary bodies — Docs/10-galaxy-mapgen.md §8's "a station should read
+// like a small city, sized to the economy it serves." `population`/`docks`/
+// `lengthM` are [min, max] ranges scaled by the *system's* population band
+// (a mining platform in a core-world system is a very different place than
+// one in a frontier outpost system) via scaleInRange below. `tier` gates
+// which classes even become candidates at low population bands (a
+// megastation has no business existing off a small colony's economy).
+export const STATION_CLASSES = [
+  { value: "refueling outpost", tier: 0, population: [4, 60], docks: [1, 2], lengthM: [60, 180] },
+  { value: "waystation", tier: 1, population: [60, 500], docks: [2, 4], lengthM: [180, 400] },
+  { value: "mining platform", tier: 1, population: [80, 800], docks: [2, 5], lengthM: [220, 500] },
+  { value: "research outpost", tier: 1, population: [30, 300], docks: [1, 3], lengthM: [150, 350] },
+  { value: "trade station", tier: 2, population: [500, 8000], docks: [4, 10], lengthM: [400, 900] },
+  { value: "cargo terminal", tier: 2, population: [300, 4000], docks: [6, 16], lengthM: [500, 1100] },
+  { value: "orbital shipyard", tier: 2, population: [400, 5000], docks: [3, 9], lengthM: [500, 1300] },
+  { value: "orbital fortress", tier: 2, population: [600, 6000], docks: [3, 8], lengthM: [400, 1000] },
+  { value: "megastation", tier: 3, population: [8000, 250000], docks: [14, 50], lengthM: [1300, 4500] },
+];
+const STATION_NAME_SUFFIX = {
+  "refueling outpost": "Fuel Depot",
+  waystation: "Waystation",
+  "mining platform": "Mining Platform",
+  "research outpost": "Research Outpost",
+  "trade station": "Trade Station",
+  "cargo terminal": "Cargo Terminal",
+  "orbital shipyard": "Shipyard",
+  "orbital fortress": "Fortress",
+  megastation: "Megastation",
+};
+const DOCK_CLASS_BY_TIER = {
+  0: "shuttle & light-freighter berths",
+  1: "shuttle & light-freighter berths",
+  2: "freighter-capable berths",
+  3: "capital-ship dry dock",
+};
+// Which station classes a sector's economic focus tends to build — mirrors
+// systemGen.js's FOCUS_TRADE table (same sector.focus values) but for
+// "what infrastructure does this economy need in orbit" rather than "what
+// goods move through it." A body actively being worked for resources
+// (`status: "extraction"`) overrides this with EXTRACTION_STATION_WEIGHTS
+// below, since that's about *that body's* economy, not the system's
+// general one (a research-focus system can still have a mining platform
+// parked over the one asteroid belt it's actually extracting from).
+const FOCUS_STATION_WEIGHTS = {
+  mining: [["mining platform", 45], ["cargo terminal", 30], ["refueling outpost", 15], ["waystation", 10]],
+  agriculture: [["trade station", 35], ["waystation", 35], ["cargo terminal", 20], ["refueling outpost", 10]],
+  industry: [["orbital shipyard", 35], ["cargo terminal", 35], ["trade station", 20], ["mining platform", 10]],
+  research: [["research outpost", 55], ["waystation", 30], ["trade station", 15]],
+  "trade hub": [["trade station", 40], ["cargo terminal", 35], ["megastation", 10], ["waystation", 15]],
+  frontier: [["refueling outpost", 55], ["waystation", 30], ["mining platform", 15]],
+  administrative: [["waystation", 45], ["orbital fortress", 30], ["trade station", 25]],
+  military: [["orbital fortress", 55], ["orbital shipyard", 30], ["waystation", 15]],
+  residential: [["waystation", 45], ["trade station", 35], ["research outpost", 20]],
+  logistics: [["cargo terminal", 50], ["trade station", 30], ["waystation", 20]],
+  medical: [["research outpost", 45], ["waystation", 40], ["trade station", 15]],
+  cultural: [["waystation", 45], ["trade station", 40], ["research outpost", 15]],
+};
+const DEFAULT_STATION_WEIGHTS = [["waystation", 45], ["trade station", 30], ["refueling outpost", 25]];
+const EXTRACTION_STATION_WEIGHTS = [["mining platform", 45], ["cargo terminal", 25], ["refueling outpost", 30]];
+
+const SERVICE_POOL = {
+  0: ["refueling", "basic repairs", "black-market goods"],
+  1: ["refueling", "repairs", "general store", "cantina", "medical bay"],
+  2: ["refueling", "full repairs", "cargo brokerage", "medical bay", "cantina", "black-market goods", "shipyard services"],
+  3: [
+    "refueling",
+    "full repairs",
+    "cargo brokerage",
+    "medical center",
+    "entertainment district",
+    "shipyard services",
+    "customs & security",
+    "diplomatic offices",
+  ],
+};
+
+function sampleN(rng, list, n) {
+  const arr = list.slice();
+  const out = [];
+  const count = Math.min(n, arr.length);
+  for (let i = 0; i < count; i++) {
+    const idx = Math.floor(rng() * arr.length);
+    out.push(arr.splice(idx, 1)[0]);
+  }
+  return out;
+}
+
+// Lerps within [lo, hi] biased upward by the system's population band (a
+// station in a core-world system trends toward the top of its class's
+// range) plus randomness, so two "trade station"s don't come out
+// identical just because they picked the same class.
+function scaleInRange(rng, [lo, hi], bandIndex) {
+  const t = Math.min(1, Math.max(0, 0.1 + (bandIndex / 5) * 0.55 + rng() * 0.35));
+  return lo + t * (hi - lo);
+}
+
+function pickStationClass(rng, system, host) {
+  const bandIndex = Math.max(0, POPULATION_BANDS.findIndex((b) => b.value === system.population));
+  const focus = system.tags?.[0];
+  const table = host.status === "extraction" ? EXTRACTION_STATION_WEIGHTS : FOCUS_STATION_WEIGHTS[focus] || DEFAULT_STATION_WEIGHTS;
+  // A megastation needs a major-colony-or-better economy behind it —
+  // filter it out rather than let a lucky roll plant one over a backwater.
+  const candidates = table.filter(([value]) => {
+    const cls = STATION_CLASSES.find((c) => c.value === value);
+    return !(cls.tier === 3 && bandIndex < 4);
+  });
+  const pool = candidates.length > 0 ? candidates : table;
+  const value = weightedPick(rng, pool.map(([v, weight]) => ({ value: v, weight })));
+  return STATION_CLASSES.find((c) => c.value === value);
+}
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
 const MOON_LETTERS = "abcdefgh";
@@ -288,22 +400,42 @@ function rollMoons(rng, primary, zones, remnant) {
   return moons;
 }
 
+// Realistic-feeling station: a role+size class driven by the sector's
+// economy (or, for a body actively worked for resources, that body's own
+// extraction economy), with population/docks/physical length all scaled
+// together to the same size tier — no more "small crew complement" hand-
+// wave, an actual headcount and berth count reflecting how big a "city in
+// orbit" the local economy can support.
 function rollStation(rng, host, system, siblingCount) {
+  const bandIndex = Math.max(0, POPULATION_BANDS.findIndex((b) => b.value === system.population));
+  const cls = pickStationClass(rng, system, host);
+  const population = Math.round(scaleInRange(rng, cls.population, bandIndex));
+  const docks = Math.round(scaleInRange(rng, cls.docks, bandIndex));
+  const lengthM = Math.round(scaleInRange(rng, cls.lengthM, bandIndex));
+  const services = sampleN(rng, SERVICE_POOL[cls.tier] || SERVICE_POOL[1], 2 + cls.tier + Math.floor(rng() * 2));
+  const tradePool = [...(system.export || []), ...(system.import || [])];
+  const goodsHandled = tradePool.length > 0 ? sampleN(rng, tradePool, Math.min(tradePool.length, 1 + cls.tier)) : [];
+
   return {
     slug: `${host.slug}-station-${siblingCount + 1}`,
-    name: `${host.name} Station`,
+    name: `${host.name} ${STATION_NAME_SUFFIX[cls.value] || "Station"}`,
     kind: "orbital station",
     parent: host.slug,
     orbitAU: null,
     orbitAUOuter: null,
     orbitAngleDeg: Number((rng() * 360).toFixed(1)),
     orbitPeriodDays: null,
-    sizeClass: pick(rng, ["outpost platform", "trade station", "orbital shipyard"]),
+    sizeClass: cls.value,
+    lengthM,
     radiusKm: null,
     habitable: false,
     resources: [],
     status: "colonized",
-    population: pick(rng, STATION_CREW),
+    population,
+    docks,
+    dockClass: DOCK_CLASS_BY_TIER[cls.tier] || DOCK_CLASS_BY_TIER[1],
+    services,
+    goodsHandled,
     tags: ["orbital-infrastructure"],
   };
 }

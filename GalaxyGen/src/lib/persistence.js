@@ -131,6 +131,14 @@ export function systemToEntry(system) {
         resources: b.resources,
         status: b.status,
         population: b.population,
+        // Orbital-station-only fields (Docs/10-galaxy-mapgen.md §8) —
+        // undefined on every planetary/moon body, so `?? null` keeps the
+        // entry shape uniform rather than omitting the keys entirely.
+        length_m: b.lengthM ?? null,
+        docks: b.docks ?? null,
+        dock_class: b.dockClass ?? null,
+        services: b.services ?? null,
+        goods_handled: b.goodsHandled ?? null,
         tags: b.tags,
       })),
       ...(system.note ? { note: system.note } : {}),

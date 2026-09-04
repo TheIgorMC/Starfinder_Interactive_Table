@@ -586,7 +586,24 @@ independent-roll model couldn't honor, so it was rebuilt bottom-up:
 - **Stations only spawn attached to a body that's actually colonized or
   being worked for resources** (`parent: <primary slug>`), not floating at
   a random, purposeless orbit — infrastructure exists because there's
-  something there to serve.
+  something there to serve. A station reads like a small "city in orbit"
+  rather than a hand-wave: it rolls a role+size **class** (refueling
+  outpost, waystation, mining platform, research outpost, trade station,
+  cargo terminal, orbital shipyard, orbital fortress, megastation) chosen
+  from a weighting keyed to the *local economy* — a body being actively
+  worked for resources (`status: "extraction"`) weights toward mining/
+  cargo-terminal/refueling-outpost roles regardless of the sector's overall
+  focus, while a fully colonized body weights per the sector's focus
+  (mirroring §5's `FOCUS_TRADE`, e.g. mining → mining-platform-heavy,
+  military → fortress-heavy), with `megastation` filtered out entirely
+  below a major-colony-or-better population band. Population, dock count,
+  and physical length (meters) all scale together with the class's size
+  tier *and* the system's own population band, alongside a dock class
+  (shuttle/light-freighter → freighter-capable → capital-ship dry dock), a
+  handful of services (refueling, repairs, medical bay, cargo brokerage,
+  shipyard services, diplomatic offices, ...), and the goods it handles
+  (sampled from its system's own export/import lists, so a station's cargo
+  matches what its system actually trades).
 - Sizes are drawn from **per-kind size classes** with realistic-order-of-
   magnitude radii (e.g. a "Jupiter-class gas giant" rolls 50,000-75,000 km,
   a "small rocky world" rolls 3,200-5,800 km), and **orbital period comes
