@@ -8,7 +8,7 @@ import { createDefaultProject, normalizeProject, FIELD_DEFS } from "./lib/projec
 import { GRID_SIZE, paintGrid } from "./lib/grid.js";
 import { pointInPolygon } from "./lib/geometry.js";
 import { slugify } from "./lib/slug.js";
-import { generateSystems, placeSystemAt } from "./lib/systemGen.js";
+import { generateSystems, placeSystemAt, redistributeSystems } from "./lib/systemGen.js";
 import { generateHyperlanes, buildEdge } from "./lib/hyperlaneGen.js";
 import { resolveFactions } from "./lib/factionGen.js";
 import { generateBackgroundActors } from "./lib/actorGen.js";
@@ -352,6 +352,18 @@ export default function App() {
     });
     setSelectedSystemId(null);
   }, [project.systems, spacing]);
+
+  // Position-only reshuffle — every unlocked system keeps its name, slug,
+  // star type, population, trade goods, bodies, control, and security;
+  // only where it sits on the map changes. No id/slug ever changes here,
+  // so unlike a full regen this never needs to clean up faction anchors,
+  // actor locations, or drop hyperlane edges — it only refreshes each
+  // edge's cached length/risk/capacity to match the new positions.
+  const handleRedistributeSystems = useCallback(() => {
+    if (project.systems.length === 0) return;
+    const { systems, hyperlanes } = redistributeSystems(project, spacing);
+    setProject((p) => ({ ...p, systems, hyperlanes }));
+  }, [project, spacing]);
 
   const handleGenerateHyperlanes = useCallback(() => {
     if (project.systems.length < 2) return;
@@ -822,6 +834,7 @@ export default function App() {
               setSpacing={setSpacing}
               systemCount={project.systems.length}
               onGenerateSystems={handleGenerateSystems}
+              onRedistributeSystems={handleRedistributeSystems}
               hyperlaneCount={project.hyperlanes.length}
               onGenerateHyperlanes={handleGenerateHyperlanes}
               factionCount={project.factions.length}

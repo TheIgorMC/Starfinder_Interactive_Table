@@ -281,3 +281,121 @@ export function placeSystemAt(project, x, y) {
   system.bodies = generateBodies(rng, system);
   return system;
 }
+
+function shuffle(rng, list) {
+  const arr = list.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Rejection-samples a point inside `polygon`'s own bounding box (clamped to
+// the galaxy bounds), retrying until one actually lands inside the polygon
+// or attempts run out. Same fallback shape as poissonDiscInPolygon's own
+// seed-point search.
+function randomPointInPolygon(rng, polygon, bounds, maxAttempts = 60) {
+  const xs = polygon.map((p) => p[0]);
+  const ys = polygon.map((p) => p[1]);
+  const minX = Math.max(0, Math.min(...xs));
+  const maxX = Math.min(bounds.width, Math.max(...xs));
+  const minY = Math.max(0, Math.min(...ys));
+  const maxY = Math.min(bounds.height, Math.max(...ys));
+  if (maxX <= minX || maxY <= minY) return null;
+  for (let i = 0; i < maxAttempts; i++) {
+    const x = minX + rng() * (maxX - minX);
+    const y = minY + rng() * (maxY - minY);
+    if (pointInPolygon(x, y, polygon)) return [x, y];
+  }
+  return null;
+}
+
+// GM-facing "shuffle positions, keep everything else" action — re-scatters
+// every *unlocked* system's position within its own sector (same spacing/
+// jitter rules as fresh generation, §3 stage 4) without touching name,
+// slug, star type, population, trade goods, bodies, control, security, or
+// any other rolled data. Locked systems never move (same contract as
+// "Generate systems") and still count as obstacles the new positions must
+// respect. Doesn't use poissonDiscInPolygon directly — that fills a
+// polygon with *however many* points fit at the given spacing, which won't
+// generally match the *existing* system count; this instead keeps the
+// count fixed and rejection-samples one new position per system, so
+// "redistribute" can never add or remove a system, only move it.
+export function redistributeSystems(project, options = {}) {
+  const { minSpacing = 20, maxSpacing = 70, maxAttempts = 40 } = options;
+  const rng = createRng(`${project.seed}:redistribute:${Date.now()}`);
+  const populationGrid = project.fields.population;
+
+  const radiusAt = (x, y) => {
+    const d = sampleBilinear(populationGrid, GRID_SIZE, x, y, project.bounds);
+    const base = maxSpacing - (maxSpacing - minSpacing) * d;
+    return Math.max(minSpacing, base * (0.8 + rng() * 0.4));
+  };
+
+  const bySector = new Map();
+  for (const s of project.systems) {
+    if (!bySector.has(s.sector)) bySector.set(s.sector, []);
+    bySector.get(s.sector).push(s);
+  }
+
+  const positions = new Map(); // system id -> new {x, y}
+  for (const sector of project.sectors) {
+    const systemsInSector = bySector.get(sector.slug) || [];
+    const locked = systemsInSector.filter((s) => s.locked);
+    const unlocked = systemsInSector.filter((s) => !s.locked);
+    if (unlocked.length === 0) continue;
+
+    // Obstacles the new positions must clear, seeded with locked systems
+    // (which never move) and grown as each unlocked one gets placed.
+    const placed = locked.map((s) => ({ x: s.position.x, y: s.position.y, r: radiusAt(s.position.x, s.position.y) }));
+
+    // Shuffled order so it's not always the same system that "loses" a
+    // tight spot and falls back to its old position.
+    for (const sys of shuffle(rng, unlocked)) {
+      let accepted = null;
+      for (let attempt = 0; attempt < maxAttempts && !accepted; attempt++) {
+        const point = randomPointInPolygon(rng, sector.points, project.bounds);
+        if (!point) break; // degenerate polygon — nothing to do here
+        const [x, y] = point;
+        const r = radiusAt(x, y);
+        if (placed.every((p) => Math.hypot(p.x - x, p.y - y) >= Math.max(r, p.r))) {
+          accepted = { x, y, r };
+        }
+      }
+      // No valid spot found (a genuinely crowded sector) — leave it where
+      // it was rather than forcing an overlap.
+      const final = accepted || { x: sys.position.x, y: sys.position.y, r: radiusAt(sys.position.x, sys.position.y) };
+      positions.set(sys.id, { x: final.x, y: final.y });
+      placed.push(final);
+    }
+  }
+
+  const systems = project.systems.map((s) => (positions.has(s.id) ? { ...s, position: positions.get(s.id) } : s));
+
+  // Hyperlane edges cache each endpoint's straight-line length at the time
+  // they were generated (hyperlaneGen.js) — moving an endpoint without
+  // refreshing it would leave that number silently wrong even though the
+  // line itself renders correctly (GalaxyCanvas looks up each system's
+  // *current* position live, by id, rather than trusting stored
+  // coordinates). Risk/capacity are cheap to recompute too, so just redo
+  // all three rather than tracking which edges actually moved.
+  const byId = new Map(systems.map((s) => [s.id, s]));
+  const densityGrid = project.fields.hyperlane;
+  const hyperlanes = project.hyperlanes.map((e) => {
+    const a = byId.get(e.a);
+    const b = byId.get(e.b);
+    if (!a || !b) return e;
+    const length = Math.round(Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y));
+    const secA = a.security?.dominion ?? 0.5;
+    const secB = b.security?.dominion ?? 0.5;
+    const risk = Number(Math.max(0, Math.min(1, 1 - (secA + secB) / 2)).toFixed(2));
+    const midX = (a.position.x + b.position.x) / 2;
+    const midY = (a.position.y + b.position.y) / 2;
+    const density = sampleBilinear(densityGrid, GRID_SIZE, midX, midY, project.bounds);
+    const capacity = density >= 0.66 ? "major trade route" : density <= 0.25 ? "backwater spur" : null;
+    return { ...e, length, risk, capacity };
+  });
+
+  return { systems, hyperlanes };
+}

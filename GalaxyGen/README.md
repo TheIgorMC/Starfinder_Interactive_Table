@@ -479,6 +479,21 @@ visualization:
   system's nearest-neighbor distance — min 63.7, max 106.9, mean 80.3,
   stdDev 10.5 (previously a near-uniform distribution over a flat field).
 
+**Redistribute positions**: a new button (Generate tab) that re-scatters
+every *unlocked* system's position within its own sector — same spacing/
+jitter as fresh generation — without touching name, slug, star type,
+population, trade goods, bodies, control, or security (`redistributeSystems`
+in `systemGen.js`). Unlike "Generate systems," it keeps the system count
+exactly fixed (rejection-samples one new position per existing system
+rather than filling the polygon with however many points fit), so nothing
+ever gets added, removed, or re-rolled — locked systems still never move.
+Existing hyperlane edges keep their endpoints (ids never change) and have
+their cached length/risk/capacity recomputed against the new positions, so
+nothing goes stale. Verified live on a 44-system/94-hyperlane galaxy: 0
+name/star-type/population/body-count changes, 38 systems actually moved,
+0 locked systems moved, minimum distance between any two systems 47.85
+(no overlap), 93/94 hyperlane lengths recomputed.
+
 ### Known simplifications so far
 
 - Sector vertices can't be dragged/edited after creation — delete and

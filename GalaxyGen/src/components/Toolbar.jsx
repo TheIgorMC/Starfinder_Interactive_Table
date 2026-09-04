@@ -140,6 +140,7 @@ export function GeneratePanel({
   onGenerateFactions,
   backgroundActorCount,
   onGenerateBackgroundActors,
+  onRedistributeSystems,
   hasSectors,
 }) {
   return (
@@ -170,6 +171,13 @@ export function GeneratePanel({
           Generate systems
         </button>
         <p className="small muted">{systemCount} system{systemCount === 1 ? "" : "s"} placed.</p>
+        <button
+          disabled={systemCount === 0}
+          onClick={onRedistributeSystems}
+          title="Re-scatters every unlocked system's position using the spacing above — name, star type, population, trade goods, bodies, control, and security are all untouched. Locked systems never move."
+        >
+          Redistribute positions
+        </button>
       </section>
 
       <section>
