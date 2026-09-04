@@ -11,49 +11,29 @@ const TOOLS = [
   { key: "pan", label: "Pan" },
 ];
 
-export default function Toolbar({
-  project,
+// Split out of one long-scrolling sidebar (Tool/Field/Brush/Generate/
+// Hyperlanes/Factions/Background actors/Layers/Status/Project/AI index all
+// stacked at once) into panels behind the app's top-level tab bar — each
+// one shows only what's relevant to what the GM is doing right now.
+export function DrawPanel({
   tool,
   setTool,
   activeField,
   setActiveField,
   brush,
   setBrush,
-  showSectors,
-  setShowSectors,
-  showFactions,
-  setShowFactions,
   showFieldOverlay,
   setShowFieldOverlay,
   constrainToSector,
   setConstrainToSector,
   selectedSectorId,
-  hoverInfo,
-  spacing,
-  setSpacing,
-  systemCount,
-  onGenerateSystems,
-  hyperlaneCount,
-  onGenerateHyperlanes,
-  factionCount,
-  onGenerateFactions,
-  backgroundActorCount,
-  onGenerateBackgroundActors,
-  onNewProject,
-  onDownloadProject,
-  onImportProject,
-  onExportSDF,
-  exportStatus,
-  onDownloadIndex,
+  showSectors,
+  setShowSectors,
+  showFactions,
+  setShowFactions,
 }) {
-  const fileInputRef = useRef(null);
-  const [newSeed, setNewSeed] = useState(project.seed);
-  const [newWidth, setNewWidth] = useState(project.bounds.width);
-  const [newHeight, setNewHeight] = useState(project.bounds.height);
-  const [showNewForm, setShowNewForm] = useState(false);
-
   return (
-    <aside className="gg-toolbar">
+    <>
       <section>
         <h3>Tool</h3>
         <div className="gg-tool-row">
@@ -70,11 +50,11 @@ export default function Toolbar({
         <p className="muted small">
           {tool === "brush" && "Left-drag to paint, Shift+drag to erase."}
           {tool === "sector" &&
-            "Click to place vertices (3+). Amber ring = snaps onto a neighboring sector's vertex. Click the green-ringed first point (or Enter, or \"Close boundary\" in the Sectors panel) to finish the shape — then name it and confirm its focus. Escape cancels."}
+            "Click to place vertices (3+). Amber ring = snaps onto a neighboring sector's vertex. Click the green-ringed first point (or Enter, or \"Close boundary\" in the Sectors tab) to finish the shape — then name it and confirm its focus. Escape cancels."}
           {tool === "system" &&
             "Click inside a drawn sector to hand-place a single new system there, rolled from the painted fields at that point and locked immediately (won't be touched by \"Generate systems\"). Clicking outside every sector does nothing."}
           {tool === "faction" &&
-            "Click to drop a faction's control seed — click again to reposition before naming it in the Factions panel. Click near an existing system (violet ring) to anchor the faction there instead: an anchored faction holds that one system outright, no contest."}
+            "Click to drop a faction's control seed — click again to reposition before naming it in the Factions tab. Click near an existing system (violet ring) to anchor the faction there instead: an anchored faction holds that one system outright, no contest."}
           {tool === "hyperlane" &&
             "Click a system (cyan ring), then click a second one to toggle a direct hyperlane between them — click the same system twice, or click empty space, to cancel. Escape also cancels."}
           {tool === "select" && "Click a system, faction seed, or a sector to select it (systems, then factions, take priority when close together)."}
@@ -135,7 +115,37 @@ export default function Toolbar({
       )}
 
       <section>
-        <h3>Generate</h3>
+        <h3>Layers</h3>
+        <label className="gg-checkbox">
+          <input type="checkbox" checked={showSectors} onChange={(e) => setShowSectors(e.target.checked)} />
+          Show sector boundaries
+        </label>
+        <label className="gg-checkbox">
+          <input type="checkbox" checked={showFactions} onChange={(e) => setShowFactions(e.target.checked)} />
+          Show faction territory
+        </label>
+      </section>
+    </>
+  );
+}
+
+export function GeneratePanel({
+  spacing,
+  setSpacing,
+  systemCount,
+  onGenerateSystems,
+  hyperlaneCount,
+  onGenerateHyperlanes,
+  factionCount,
+  onGenerateFactions,
+  backgroundActorCount,
+  onGenerateBackgroundActors,
+  hasSectors,
+}) {
+  return (
+    <>
+      <section>
+        <h3>Systems</h3>
         <label className="small muted">Min spacing ({spacing.min} units)</label>
         <input
           type="range"
@@ -156,7 +166,7 @@ export default function Toolbar({
           Spacing between systems, densest (population 1.0) to sparsest
           (population 0). Placement only happens inside drawn sectors.
         </p>
-        <button disabled={project.sectors.length === 0} onClick={onGenerateSystems}>
+        <button disabled={!hasSectors} onClick={onGenerateSystems}>
           Generate systems
         </button>
         <p className="small muted">{systemCount} system{systemCount === 1 ? "" : "s"} placed.</p>
@@ -178,9 +188,10 @@ export default function Toolbar({
       <section>
         <h3>Factions</h3>
         <p className="small muted">
-          Place major faction seeds with the Faction tool, then generate to
-          auto-seed small border factions in any low-coverage gaps and
-          recompute every system's control, security, and war-chance.
+          Place major faction seeds with the Faction tool (Draw tab), then
+          generate to auto-seed small border factions in any low-coverage
+          gaps and recompute every system's control, security, and
+          war-chance.
         </p>
         <button disabled={systemCount === 0} onClick={onGenerateFactions}>
           Generate factions
@@ -203,19 +214,29 @@ export default function Toolbar({
           {backgroundActorCount} background actor{backgroundActorCount === 1 ? "" : "s"}.
         </p>
       </section>
+    </>
+  );
+}
 
-      <section>
-        <h3>Layers</h3>
-        <label className="gg-checkbox">
-          <input type="checkbox" checked={showSectors} onChange={(e) => setShowSectors(e.target.checked)} />
-          Show sector boundaries
-        </label>
-        <label className="gg-checkbox">
-          <input type="checkbox" checked={showFactions} onChange={(e) => setShowFactions(e.target.checked)} />
-          Show faction territory
-        </label>
-      </section>
+export function ProjectPanel({
+  project,
+  hoverInfo,
+  activeField,
+  onNewProject,
+  onDownloadProject,
+  onImportProject,
+  onExportSDF,
+  exportStatus,
+  onDownloadIndex,
+}) {
+  const fileInputRef = useRef(null);
+  const [newSeed, setNewSeed] = useState(project.seed);
+  const [newWidth, setNewWidth] = useState(project.bounds.width);
+  const [newHeight, setNewHeight] = useState(project.bounds.height);
+  const [showNewForm, setShowNewForm] = useState(false);
 
+  return (
+    <>
       <section className="gg-status">
         <h3>Status</h3>
         <p className="small muted">Seed: {project.seed}</p>
@@ -282,6 +303,6 @@ export default function Toolbar({
         </p>
         <button onClick={onDownloadIndex}>Download AI index</button>
       </section>
-    </aside>
+    </>
   );
 }

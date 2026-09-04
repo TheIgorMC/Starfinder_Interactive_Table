@@ -1,18 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SECTOR_FOCI } from "../lib/project.js";
 import { generateBodies } from "../lib/planetGen.js";
 import { createRng } from "../lib/rng.js";
-import AIPanel from "./AIPanel.jsx";
 import OrreryView from "./OrreryView.jsx";
-
-const TABS = [
-  { key: "sectors", label: "Sectors" },
-  { key: "factions", label: "Factions" },
-  { key: "actors", label: "Actors" },
-  { key: "organizations", label: "Organizations" },
-  { key: "events", label: "Events" },
-  { key: "ai", label: "AI" },
-];
 
 // Docs/10-galaxy-mapgen.md §9 — the closed effect-op vocabulary the event
 // form can build, one entry per op naming which typed-ref fields it needs
@@ -108,15 +98,8 @@ export default function SectorList({
   onPreviewEvent,
   onCommitEvent,
   onDeleteEvent,
-  aiSettings,
-  onAISettingsChange,
-  onRunAIPass1,
-  onRunAIPass2,
-  onPreviewAIProposal,
-  onConfirmAIProposal,
-  onResolveAIRefName,
+  activeTab,
 }) {
-  const [activeTab, setActiveTab] = useState("sectors");
   const [showBackgroundActors, setShowBackgroundActors] = useState(false);
   // Curated (`authored`) actors are the GM's hand-placed content and always
   // shown; background (`generated`) ones are bulk/cheap per §6.1 and stay
@@ -124,35 +107,40 @@ export default function SectorList({
   const curatedActors = actors.filter((a) => a.origin !== "generated");
   const backgroundActors = actors.filter((a) => a.origin === "generated");
 
-  // A selection or in-progress placement made on the canvas should jump the
-  // sidebar to the tab that can actually show it, regardless of which tab
-  // happened to be open.
-  useEffect(() => {
-    if (selectedSectorId || (pendingPoints && pendingPoints.length > 0)) setActiveTab("sectors");
-  }, [selectedSectorId, pendingPoints]);
-  useEffect(() => {
-    if (selectedFactionId || pendingFactionSeed) setActiveTab("factions");
-  }, [selectedFactionId, pendingFactionSeed]);
-  useEffect(() => {
-    if (selectedActorId) setActiveTab("actors");
-  }, [selectedActorId]);
-  useEffect(() => {
-    if (selectedOrgId) setActiveTab("organizations");
-  }, [selectedOrgId]);
-
   return (
-    <aside className="gg-sectors">
+    <>
+      {/* A selection card here is rendered unconditionally — regardless of
+          which top-level tab is active — so picking a system/faction/actor/
+          org, then switching to a completely different tab (Draw, AI,
+          whatever) never loses it. This is the one part of the panel that
+          isn't tab-gated on purpose. */}
       {selectedSystem && (
         <SystemCard system={selectedSystem} actors={actors} onClose={onDeselectSystem} onUpdate={onUpdateSystem} />
       )}
-
-      <div className="gg-tab-row">
-        {TABS.map((t) => (
-          <button key={t.key} className={activeTab === t.key ? "active" : ""} onClick={() => setActiveTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {selectedFaction && (
+        <FactionCard faction={selectedFaction} factions={factions} onUpdate={onUpdateFaction} onClose={onDeselectFaction} />
+      )}
+      {selectedActor && (
+        <ActorCard
+          actor={selectedActor}
+          factions={factions}
+          organizations={organizations}
+          systems={systems}
+          onUpdate={onUpdateActor}
+          onClose={onDeselectActor}
+        />
+      )}
+      {selectedOrg && (
+        <OrgCard
+          org={selectedOrg}
+          actors={actors}
+          factions={factions}
+          systems={systems}
+          sectors={sectors}
+          onUpdate={onUpdateOrganization}
+          onClose={onDeselectOrg}
+        />
+      )}
 
       {activeTab === "sectors" && (
         <>
@@ -238,15 +226,6 @@ export default function SectorList({
               </li>
             ))}
           </ul>
-
-          {selectedFaction && (
-            <FactionCard
-              faction={selectedFaction}
-              factions={factions}
-              onUpdate={onUpdateFaction}
-              onClose={onDeselectFaction}
-            />
-          )}
         </>
       )}
 
@@ -300,17 +279,6 @@ export default function SectorList({
               )}
             </>
           )}
-
-          {selectedActor && (
-            <ActorCard
-              actor={selectedActor}
-              factions={factions}
-              organizations={organizations}
-              systems={systems}
-              onUpdate={onUpdateActor}
-              onClose={onDeselectActor}
-            />
-          )}
         </>
       )}
 
@@ -339,18 +307,6 @@ export default function SectorList({
               </li>
             ))}
           </ul>
-
-          {selectedOrg && (
-            <OrgCard
-              org={selectedOrg}
-              actors={actors}
-              factions={factions}
-              systems={systems}
-              sectors={sectors}
-              onUpdate={onUpdateOrganization}
-              onClose={onDeselectOrg}
-            />
-          )}
         </>
       )}
 
@@ -377,22 +333,7 @@ export default function SectorList({
           </ul>
         </>
       )}
-
-      {activeTab === "ai" && (
-        <>
-          <h3>AI</h3>
-          <AIPanel
-            settings={aiSettings}
-            onSettingsChange={onAISettingsChange}
-            onRunPass1={onRunAIPass1}
-            onRunPass2={onRunAIPass2}
-            onPreviewProposal={onPreviewAIProposal}
-            onConfirmProposal={onConfirmAIProposal}
-            resolveRefName={onResolveAIRefName}
-          />
-        </>
-      )}
-    </aside>
+    </>
   );
 }
 

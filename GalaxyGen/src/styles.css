@@ -57,7 +57,7 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
   min-height: 0;
 }
 
-.gg-toolbar, .gg-sectors {
+.gg-panel {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 12px;
@@ -81,8 +81,8 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
   right: -4px;
 }
 
-.gg-toolbar section, .gg-sectors > h3 { margin-bottom: 18px; }
-.gg-toolbar h3, .gg-sectors h3 {
+.gg-panel section, .gg-panel > h3 { margin-bottom: 18px; }
+.gg-panel h3 {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -149,18 +149,25 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
 }
 .gg-link:hover { color: #a9b4be; background: none; }
 
-.gg-tab-row {
+/* The app's single top-level mode switcher — Draw/Generate/entity tabs/AI/
+   Project all live here now, replacing what used to be one long-scrolling
+   left sidebar (every section stacked at once) plus a second, separate tab
+   row buried inside the right sidebar. Selection state (system/faction/
+   actor/org) is independent of this and persists across every tab — see
+   SectorList.jsx's unconditional selection cards. */
+.gg-tabbar {
   display: flex;
   gap: 4px;
-  margin-bottom: 12px;
+  padding: 8px 16px;
   border-bottom: 1px solid #1d2833;
-  padding-bottom: 8px;
-  flex-wrap: wrap;
+  overflow-x: auto;
+  flex: 0 0 auto;
 }
-.gg-tab-row button {
-  flex: 1 1 auto;
+.gg-tabbar button {
   font-size: 12px;
-  padding: 6px 4px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .gg-tag-row {

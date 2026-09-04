@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GalaxyCanvas from "./components/GalaxyCanvas.jsx";
-import Toolbar from "./components/Toolbar.jsx";
+import { DrawPanel, GeneratePanel, ProjectPanel } from "./components/Toolbar.jsx";
 import SectorList from "./components/SectorList.jsx";
+import AIPanel from "./components/AIPanel.jsx";
 import { createDefaultProject, normalizeProject, FIELD_DEFS } from "./lib/project.js";
 import { GRID_SIZE, paintGrid } from "./lib/grid.js";
 import { pointInPolygon } from "./lib/geometry.js";
@@ -28,6 +29,23 @@ import {
 const PANEL_WIDTHS_KEY = "galaxygen.panelWidths.v1";
 const PANEL_MIN_WIDTH = 180;
 const PANEL_MAX_WIDTH = 560;
+
+// The app's single top-level mode switcher (replaces the old dual layout:
+// one long-scrolling left toolbar with every section stacked at once, plus
+// a second tab row buried inside the right sidebar). Selection state is
+// independent of this — see the activeTab-driven auto-jump effect below
+// and SectorList.jsx's always-rendered selection cards.
+const TABS = [
+  { key: "draw", label: "Draw" },
+  { key: "generate", label: "Generate" },
+  { key: "sectors", label: "Sectors" },
+  { key: "factions", label: "Factions" },
+  { key: "actors", label: "Actors" },
+  { key: "organizations", label: "Organizations" },
+  { key: "events", label: "Events" },
+  { key: "ai", label: "AI" },
+  { key: "project", label: "Project" },
+];
 
 function uniqueSlug(base, sectors) {
   const existing = new Set(sectors.map((s) => s.slug));
@@ -88,6 +106,7 @@ function eventProposalToDraft(args) {
 
 export default function App() {
   const [project, setProject] = useState(() => normalizeProject(loadFromStorage() || createDefaultProject()));
+  const [activeTab, setActiveTab] = useState("draw");
   const [tool, setTool] = useState("brush");
   const [activeField, setActiveField] = useState(FIELD_DEFS[0].key);
   const [brush, setBrush] = useState({ radius: 80, strength: 0.6 });
@@ -110,41 +129,33 @@ export default function App() {
   const [showFieldOverlay, setShowFieldOverlay] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAISettings());
 
-  // Resizable side panels — purely a UI layout preference (not galaxy or
-  // AI data), so it gets its own small localStorage key rather than living
-  // in `project` or `aiSettings`.
-  const [leftWidth, setLeftWidth] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(PANEL_WIDTHS_KEY))?.left ?? 240;
-    } catch {
-      return 240;
-    }
-  });
+  // Resizable side panel — purely a UI layout preference (not galaxy or AI
+  // data), so it gets its own small localStorage key rather than living in
+  // `project` or `aiSettings`. Only one panel now (the tab bar replaced the
+  // old dual left+right layout), so there's just one width to track.
   const [rightWidth, setRightWidth] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem(PANEL_WIDTHS_KEY))?.right ?? 240;
+      return JSON.parse(localStorage.getItem(PANEL_WIDTHS_KEY))?.right ?? 280;
     } catch {
-      return 240;
+      return 280;
     }
   });
-  const dragRef = useRef(null); // { side: "left" | "right", startX, startWidth }
+  const dragRef = useRef(null); // { startX, startWidth }
 
   useEffect(() => {
     try {
-      localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify({ left: leftWidth, right: rightWidth }));
+      localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify({ right: rightWidth }));
     } catch {
-      // Not critical — panel widths just reset to default next load.
+      // Not critical — panel width just resets to default next load.
     }
-  }, [leftWidth, rightWidth]);
+  }, [rightWidth]);
 
   const handlePanelResizeMove = useCallback((e) => {
     const drag = dragRef.current;
     if (!drag) return;
     const delta = e.clientX - drag.startX;
-    const next = drag.side === "left" ? drag.startWidth + delta : drag.startWidth - delta;
-    const clamped = Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, next));
-    if (drag.side === "left") setLeftWidth(clamped);
-    else setRightWidth(clamped);
+    const next = drag.startWidth - delta;
+    setRightWidth(Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, next)));
   }, []);
 
   const handlePanelResizeEnd = useCallback(() => {
@@ -155,14 +166,14 @@ export default function App() {
   }, [handlePanelResizeMove]);
 
   const handlePanelResizeStart = useCallback(
-    (side) => (e) => {
+    (e) => {
       e.preventDefault();
-      dragRef.current = { side, startX: e.clientX, startWidth: side === "left" ? leftWidth : rightWidth };
+      dragRef.current = { startX: e.clientX, startWidth: rightWidth };
       document.body.style.cursor = "col-resize";
       window.addEventListener("mousemove", handlePanelResizeMove);
       window.addEventListener("mouseup", handlePanelResizeEnd);
     },
-    [leftWidth, rightWidth, handlePanelResizeMove, handlePanelResizeEnd],
+    [rightWidth, handlePanelResizeMove, handlePanelResizeEnd],
   );
 
   // Autosave (debounced) so a reload never loses work.
@@ -176,6 +187,24 @@ export default function App() {
   useEffect(() => {
     saveAISettings(aiSettings);
   }, [aiSettings]);
+
+  // A canvas action that's mid-flow (drawing a new sector, dropping a new
+  // faction seed) or selects a sector jumps to the tab that can actually
+  // show it — sectors have no persistent selection card the way system/
+  // faction/actor/org do (SectorList.jsx), so without this, selecting one
+  // via the Select tool would look like nothing happened. Existing-entity
+  // selections for system/faction/actor/org deliberately do NOT jump tabs
+  // any more — their cards are always visible regardless of which tab is
+  // active, so there's nothing to jump to.
+  useEffect(() => {
+    if (pendingPoints && pendingPoints.length > 0) setActiveTab("sectors");
+  }, [pendingPoints]);
+  useEffect(() => {
+    if (pendingFactionSeed) setActiveTab("factions");
+  }, [pendingFactionSeed]);
+  useEffect(() => {
+    if (selectedSectorId) setActiveTab("sectors");
+  }, [selectedSectorId]);
 
   const selectedSector = project.sectors.find((s) => s.id === selectedSectorId) || null;
   const selectedSystem = project.systems.find((s) => s.id === selectedSystemId) || null;
@@ -729,43 +758,14 @@ export default function App() {
         <h1>Galaxy MapGen</h1>
         <span className="muted small">Phase 6 — AI integration</span>
       </header>
-      <div className="gg-body" style={{ gridTemplateColumns: `${leftWidth}px 6px 1fr 6px ${rightWidth}px` }}>
-        <Toolbar
-          project={project}
-          tool={tool}
-          setTool={setTool}
-          activeField={activeField}
-          setActiveField={setActiveField}
-          brush={brush}
-          setBrush={setBrush}
-          showSectors={showSectors}
-          setShowSectors={setShowSectors}
-          showFactions={showFactions}
-          setShowFactions={setShowFactions}
-          showFieldOverlay={showFieldOverlay}
-          setShowFieldOverlay={setShowFieldOverlay}
-          constrainToSector={constrainToSector}
-          setConstrainToSector={setConstrainToSector}
-          selectedSectorId={selectedSectorId}
-          hoverInfo={hoverInfo}
-          spacing={spacing}
-          setSpacing={setSpacing}
-          systemCount={project.systems.length}
-          onGenerateSystems={handleGenerateSystems}
-          hyperlaneCount={project.hyperlanes.length}
-          onGenerateHyperlanes={handleGenerateHyperlanes}
-          factionCount={project.factions.length}
-          onGenerateFactions={handleGenerateFactions}
-          backgroundActorCount={project.actors.filter((a) => a.origin === "generated").length}
-          onGenerateBackgroundActors={handleGenerateBackgroundActors}
-          onNewProject={handleNewProject}
-          onDownloadProject={() => downloadProjectJSON(project)}
-          onDownloadIndex={() => downloadGalaxyIndex(project)}
-          onImportProject={handleImportProject}
-          onExportSDF={handleExportSDF}
-          exportStatus={exportStatus}
-        />
-        <div className="gg-resize-handle" onMouseDown={handlePanelResizeStart("left")} />
+      <nav className="gg-tabbar">
+        {TABS.map((t) => (
+          <button key={t.key} className={activeTab === t.key ? "active" : ""} onClick={() => setActiveTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      <div className="gg-body" style={{ gridTemplateColumns: `1fr 6px ${rightWidth}px` }}>
         <GalaxyCanvas
           project={project}
           tool={tool}
@@ -793,8 +793,68 @@ export default function App() {
           onSelectFaction={(id) => { setSelectedFactionId(id); setSelectedSectorId(null); setSelectedSystemId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
           onHover={(wx, wy, value) => setHoverInfo(wx == null ? null : { wx, wy, value })}
         />
-        <div className="gg-resize-handle" onMouseDown={handlePanelResizeStart("right")} />
-        <SectorList
+        <div className="gg-resize-handle" onMouseDown={handlePanelResizeStart} />
+        <aside className="gg-panel">
+          {activeTab === "draw" && (
+            <DrawPanel
+              tool={tool}
+              setTool={setTool}
+              activeField={activeField}
+              setActiveField={setActiveField}
+              brush={brush}
+              setBrush={setBrush}
+              showFieldOverlay={showFieldOverlay}
+              setShowFieldOverlay={setShowFieldOverlay}
+              constrainToSector={constrainToSector}
+              setConstrainToSector={setConstrainToSector}
+              selectedSectorId={selectedSectorId}
+              showSectors={showSectors}
+              setShowSectors={setShowSectors}
+              showFactions={showFactions}
+              setShowFactions={setShowFactions}
+            />
+          )}
+          {activeTab === "generate" && (
+            <GeneratePanel
+              spacing={spacing}
+              setSpacing={setSpacing}
+              systemCount={project.systems.length}
+              onGenerateSystems={handleGenerateSystems}
+              hyperlaneCount={project.hyperlanes.length}
+              onGenerateHyperlanes={handleGenerateHyperlanes}
+              factionCount={project.factions.length}
+              onGenerateFactions={handleGenerateFactions}
+              backgroundActorCount={project.actors.filter((a) => a.origin === "generated").length}
+              onGenerateBackgroundActors={handleGenerateBackgroundActors}
+              hasSectors={project.sectors.length > 0}
+            />
+          )}
+          {activeTab === "ai" && (
+            <AIPanel
+              settings={aiSettings}
+              onSettingsChange={setAiSettings}
+              onRunPass1={handleRunAIPass1}
+              onRunPass2={handleRunAIPass2}
+              onPreviewProposal={handlePreviewAIProposal}
+              onConfirmProposal={handleConfirmAIProposal}
+              resolveRefName={resolveRefName}
+            />
+          )}
+          {activeTab === "project" && (
+            <ProjectPanel
+              project={project}
+              hoverInfo={hoverInfo}
+              activeField={activeField}
+              onNewProject={handleNewProject}
+              onDownloadProject={() => downloadProjectJSON(project)}
+              onDownloadIndex={() => downloadGalaxyIndex(project)}
+              onImportProject={handleImportProject}
+              onExportSDF={handleExportSDF}
+              exportStatus={exportStatus}
+            />
+          )}
+          <SectorList
+          activeTab={activeTab}
           sectors={project.sectors}
           selectedSectorId={selectedSectorId}
           onSelect={setSelectedSectorId}
@@ -840,14 +900,8 @@ export default function App() {
           onPreviewEvent={handlePreviewEvent}
           onCommitEvent={handleCommitEvent}
           onDeleteEvent={handleDeleteEvent}
-          aiSettings={aiSettings}
-          onAISettingsChange={setAiSettings}
-          onRunAIPass1={handleRunAIPass1}
-          onRunAIPass2={handleRunAIPass2}
-          onPreviewAIProposal={handlePreviewAIProposal}
-          onConfirmAIProposal={handleConfirmAIProposal}
-          onResolveAIRefName={resolveRefName}
-        />
+          />
+        </aside>
       </div>
     </div>
   );

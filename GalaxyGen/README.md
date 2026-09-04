@@ -414,6 +414,30 @@ Not yet built: `project_timestep` (the projection-mode tool — decomposing
 a duration into several linked events), broadcasts, surface maps for
 colonized bodies — see §13 for the full phase breakdown.
 
+**UI reorganization (top tab bar, persistent selection)**: a GM asked for
+"a more refined and less cluttered UI" — the app had grown two permanent
+side panels by this point (a left toolbar with ten sections stacked in one
+long scroll: Tool, Field, Brush, Generate, Hyperlanes, Factions,
+Background actors, Layers, Status, Project, AI index; a right sidebar with
+its own separate tab row for Sectors/Factions/Actors/Organizations/Events/
+AI). Replaced with a single top-level tab bar (`App.jsx`) — Draw, Generate,
+Sectors, Factions, Actors, Organizations, Events, AI, Project — and one
+side panel whose content is entirely driven by the active tab, freeing up
+real map space (`Toolbar.jsx` split into `DrawPanel`/`GeneratePanel`/
+`ProjectPanel`, `SectorList.jsx` lost its own internal tab row). The other
+half of the request — "if I click a system it'll keep it as selected for
+other tools, even in other tabs" — was already halfway true (the system
+inspector card rendered regardless of the old right-sidebar's active tab)
+but not for faction/actor/org, whose cards only showed while their own tab
+was open; all four are now rendered unconditionally, so picking any one of
+them and then switching to a completely unrelated tab (Draw, AI, whatever)
+never loses it. Sectors are the one exception — no standalone inspector
+card exists for one (its list row *is* its editor), so selecting a sector
+still jumps to the Sectors tab, same as before. Verified live: selected a
+system, switched to the AI tab, confirmed its card (including the Bodies
+orrery) was still rendered underneath the chat panel; no console errors
+across the whole tab set.
+
 ### Known simplifications so far
 
 - Sector vertices can't be dragged/edited after creation — delete and
@@ -582,19 +606,32 @@ Opens on `http://localhost:5174` (see `vite.config.js`).
 
 ## How to use it
 
-Both side panels are resizable — drag the thin divider between a panel and
-the map (cursor turns to a col-resize arrow) to give either one more room;
-widths persist across reloads (clamped 180–560px each), stored in
-`localStorage` separately from the project itself.
+The whole app is one map (left) plus one side panel (right), switched
+between with the **tab bar along the top** — Draw, Generate, Sectors,
+Factions, Actors, Organizations, Events, AI, Project. This replaced an
+earlier layout with two permanent side panels (a long-scrolling toolbar on
+the left, a second tab row buried inside the right sidebar) that got
+cluttered fast — now only the controls for whatever you're actually doing
+are on screen, and the map gets the rest of the space. Selecting a system,
+faction, actor, or organization shows its inspector card at the top of the
+side panel **regardless of which tab is active** — pick a system, switch
+to the AI tab to ask something about the galaxy, and the system's card is
+still right there. (Sectors are the one exception: since a sector has no
+standalone inspector card — its list row *is* its editor — selecting one
+still jumps you to the Sectors tab, same as starting to draw a new one
+does.) The panel is resizable — drag the thin divider between it and the
+map (cursor turns to a col-resize arrow); its width persists across
+reloads (clamped 180–560px), stored in `localStorage` separately from the
+project itself.
 
-**Tool bar (left panel)**
+**Draw tab**
 
 | Tool | What it does |
 |---|---|
 | Brush | Left-drag to paint the selected Field onto the map; Shift+drag erases. Pick the field (Population, Export, Import, Hyperlane density, Dominion security), radius, and strength above it. |
 | Sector | Click to place boundary vertices (need 3+). See "Drawing a sector" below. |
 | System | Click inside a drawn sector to hand-place a single new system there, rolled from whatever's painted at that exact point and locked immediately. Clicking outside every sector does nothing. |
-| Faction | Click to drop a faction's control seed (a diamond marker) — click again to reposition before naming it in the Factions panel. Click near an existing system instead to anchor the faction to it (violet ring) — that system is then held outright by that faction. |
+| Faction | Click to drop a faction's control seed (a diamond marker) — click again to reposition before naming it in the Factions tab. Click near an existing system instead to anchor the faction to it (violet ring) — that system is then held outright by that faction. |
 | Hyperlane | Click a system (cyan ring), then click a second one to toggle a direct hyperlane between them — click the same system twice, or empty space, to cancel. |
 | Select | Click a system, faction seed, or a sector to select it (systems, then factions, take priority when they're close together) — needed to inspect a system/faction, enable "constrain to selected sector" for the brush, or before deleting/editing a sector. |
 | Pan | Left-drag to move the view. (Middle-mouse-drag pans in any tool; scroll wheel always zooms.) |
@@ -624,8 +661,7 @@ can lay out the shape first and only decide the name/focus once it's done:
 **Generating systems**
 1. Draw at least one sector first — placement only happens inside sector
    polygons, so an empty galaxy generates nothing.
-2. In the toolbar's **Generate** section, set min/max spacing (world
-   units) — this is the distance between systems at the sparsest
+2. In the **Generate** tab, set min/max spacing (world units) — this is the distance between systems at the sparsest
    (unpainted, population 0) vs. densest (fully painted, population 1)
    points. Painting the Population field (Brush tool) before generating is
    what actually shapes where systems cluster.
