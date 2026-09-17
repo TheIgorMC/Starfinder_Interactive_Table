@@ -61,6 +61,23 @@ r.get("/", requireAuth, async (req, res) => {
   res.json(rows);
 });
 
+// Every link across the whole campaign in one shot — used by the frontend
+// to build the per-type tree view (Campaign.jsx groups entries under their
+// parent using the specific relation labels tgn-import.js writes for tree
+// nesting; see HIERARCHY_RELATION_BY_TYPE there). Scoped to entries a
+// player is allowed to see, same as the entry list above.
+r.get("/links", requireAuth, async (req, res) => {
+  const entryVisibility = req.user.role === "gm" ? "" : "AND ea.visible_to_players = true AND eb.visible_to_players = true";
+  const { rows } = await pool.query(
+    `SELECT l.id, l.from_id, l.to_id, l.relation
+     FROM campaign_links l
+     JOIN campaign_entries ea ON ea.id = l.from_id
+     JOIN campaign_entries eb ON eb.id = l.to_id
+     WHERE true ${entryVisibility}`
+  );
+  res.json(rows);
+});
+
 // Imports a Tangent (.tgn) campaign export — see src/tgn-import.js for the
 // parsing/mapping rules. Insert-only against already-imported entries
 // (tracked by external_id), so re-uploading the same or an updated export

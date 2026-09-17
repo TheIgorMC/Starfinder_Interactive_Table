@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import CharacterSheet from "./CharacterSheet.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
@@ -11,6 +11,34 @@ const TYPES = [
   { key: "quest", label: "Quests" },
   { key: "object", label: "Objects" },
 ];
+
+// The relation labels tgn-import.js writes for tree-nesting edges (see
+// backend/src/tgn-import.js's HIERARCHY_RELATION_BY_TYPE) — a link using
+// one of these, between two entries of the same type, is treated as
+// "child -> parent" for the tree view below rather than an ordinary
+// cross-reference. A link a GM adds by hand with one of these exact labels
+// gets the same tree treatment; anything else stays a flat "related entry".
+const HIERARCHY_RELATIONS = new Set(["si trova in", "parte di", "sotto-quest di", "sotto-capitolo di"]);
+
+// Groups a flat list of same-type entries into a tree using `links`
+// (id/from_id/to_id/relation, as returned by GET /api/campaign/links).
+// Entries whose parent isn't in this type (or isn't present at all, e.g.
+// filtered out by the session/visibility filter) become roots.
+function buildTree(entries, links) {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const childrenOf = new Map();
+  const hasParent = new Set();
+  for (const l of links) {
+    if (!HIERARCHY_RELATIONS.has(l.relation)) continue;
+    if (!byId.has(l.from_id) || !byId.has(l.to_id)) continue;
+    if (!childrenOf.has(l.to_id)) childrenOf.set(l.to_id, []);
+    childrenOf.get(l.to_id).push(byId.get(l.from_id));
+    hasParent.add(l.from_id);
+  }
+  for (const kids of childrenOf.values()) kids.sort((a, b) => a.name.localeCompare(b.name));
+  const roots = entries.filter((e) => !hasParent.has(e.id)).sort((a, b) => a.name.localeCompare(b.name));
+  return { roots, childrenOf };
+}
 
 const blank = (type) => ({ type, name: "", summary: "", body: "", image_id: null, event_date: "", visible_to_players: false });
 
@@ -122,17 +150,52 @@ function TgnImport({ onImported }) {
   );
 }
 
+function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEntry, activeId }) {
+  const kids = childrenOf.get(entry.id) || [];
+  const isCollapsed = collapsed.has(entry.id);
+  return (
+    <li>
+      <div className="campaign-tree-row" style={{ paddingLeft: depth * 16 }}>
+        {kids.length > 0 ? (
+          <button className="campaign-tree-caret" onClick={() => toggleCollapsed(entry.id)}>{isCollapsed ? "▸" : "▾"}</button>
+        ) : (
+          <span className="campaign-tree-caret" />
+        )}
+        <button className={"link" + (entry.id === activeId ? " active" : "")} onClick={() => openEntry(entry)}>
+          {entry.name} {entry.visible_to_players && <span className="pill ok">visible</span>}
+        </button>
+      </div>
+      {kids.length > 0 && !isCollapsed && (
+        <ul>
+          {kids.map((k) => (
+            <TreeNode key={k.id} entry={k} depth={depth + 1} childrenOf={childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={activeId} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 export default function Campaign() {
   const [type, setType] = useState("event");
   const [entries, setEntries] = useState([]);
   const [editing, setEditing] = useState(null);
   const [images, setImages] = useState([]);
   const [allEntries, setAllEntries] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [q, setQ] = useState("");
   const [linkTargetId, setLinkTargetId] = useState("");
   const [relation, setRelation] = useState("");
   const [characters, setCharacters] = useState([]);
   const [viewingChar, setViewingChar] = useState(null);
   const { active, setFilterEnabled } = useActiveSession();
+
+  const toggleCollapsed = (id) => setCollapsed((cur) => {
+    const next = new Set(cur);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   // AI draft (Ollama, see backend/src/routes/campaign.js POST /ai-draft) —
   // fills the blank-entry form from a freeform note; suggested links are
@@ -145,10 +208,12 @@ export default function Campaign() {
   const resetAiDraft = () => { setAiDescription(""); setAiBusy(false); setAiError(""); setAiLinks([]); };
 
   const load = () => api(`/campaign?type=${type}`).then(setEntries);
-  useEffect(() => { load(); }, [type]);
+  useEffect(() => { load(); setQ(""); }, [type]);
+  const loadLinks = () => api("/campaign/links").then(setLinks).catch(() => setLinks([]));
   useEffect(() => {
     api("/media?category=portrait").then(setImages).catch(() => setImages([]));
     api("/campaign").then(setAllEntries).catch(() => setAllEntries([]));
+    loadLinks();
   }, []);
 
   const loadCharacters = () => api("/characters").then(setCharacters);
@@ -203,6 +268,7 @@ export default function Campaign() {
     resetAiDraft();
     load();
     api("/campaign").then(setAllEntries);
+    loadLinks();
   };
 
   const remove = async () => {
@@ -210,6 +276,7 @@ export default function Campaign() {
     setEditing(null);
     resetAiDraft();
     load();
+    loadLinks();
   };
 
   const addLink = async () => {
@@ -217,14 +284,20 @@ export default function Campaign() {
     await api(`/campaign/${editing.id}/links`, { method: "POST", body: { to_id: Number(linkTargetId), relation } });
     setLinkTargetId(""); setRelation("");
     reloadEditing();
+    loadLinks();
   };
 
   const removeLink = async (linkId) => {
     await api(`/campaign/links/${linkId}`, { method: "DELETE" });
     reloadEditing();
+    loadLinks();
   };
 
   const visibleEntries = filterToSession(entries, active, "entryIds");
+  const searchedEntries = q.trim()
+    ? visibleEntries.filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase()))
+    : visibleEntries;
+  const tree = useMemo(() => buildTree(searchedEntries, links), [searchedEntries, links]);
 
   return (
     <div className="campaign">
@@ -236,7 +309,7 @@ export default function Campaign() {
         ))}
       </div>
 
-      <TgnImport onImported={() => { load(); api("/campaign").then(setAllEntries); }} />
+      <TgnImport onImported={() => { load(); api("/campaign").then(setAllEntries); loadLinks(); }} />
 
       {active?.status === "active" && (
         <label className="checkbox-inline" style={{ marginBottom: 12 }} title={`Session: ${active.name}`}>
@@ -275,15 +348,16 @@ export default function Campaign() {
       <div className="campaign-body">
         <div className="campaign-list">
           <button onClick={() => { setEditing(blank(type)); resetAiDraft(); }}>+ New {TYPES.find((t) => t.key === type).label.replace(/s$/, "")}</button>
-          <ul>
-            {visibleEntries.map((e) => (
-              <li key={e.id}>
-                <button className="link" onClick={() => openEntry(e)}>
-                  {e.name} {e.visible_to_players && <span className="pill ok">visible</span>}
-                </button>
-              </li>
+          <input className="campaign-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <ul className="campaign-tree">
+            {tree.roots.map((e) => (
+              <TreeNode key={e.id} entry={e} depth={0} childrenOf={tree.childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={editing?.id} />
             ))}
-            {visibleEntries.length === 0 && <li className="muted">{active?.filter_enabled && entries.length > 0 ? "None linked to this session." : "Nothing here yet."}</li>}
+            {tree.roots.length === 0 && (
+              <li className="muted">
+                {q.trim() ? "No matches." : active?.filter_enabled && entries.length > 0 ? "None linked to this session." : "Nothing here yet."}
+              </li>
+            )}
           </ul>
         </div>
 

@@ -23,6 +23,22 @@ const CATEGORY_TO_TYPE = {
   THING: "object",
 };
 
+// The relation label written for a tree-nesting edge (child -> its parent
+// in Tangent's `children` array), per entry type — "si trova in" reads
+// right for a moon under its planet, but a sub-quest isn't "located in"
+// its parent quest, and an NPC nested under a faction folder isn't either.
+// Exported so the frontend can recognize these specific labels as tree
+// edges (see frontend/src/components/Campaign.jsx's tree builder) without
+// hardcoding the map twice.
+export const HIERARCHY_RELATION_BY_TYPE = {
+  location: "si trova in",
+  faction: "parte di",
+  npc: "parte di",
+  quest: "sotto-quest di",
+  object: "parte di",
+  event: "sotto-capitolo di",
+};
+
 // Tangent's blurb markdown carries a few bits of its own syntax that don't
 // mean anything outside the app: `$[objectname]` is a live template
 // variable for the entry's own name, `![](url){hotspot,list}` appends
@@ -122,11 +138,12 @@ export function parseTgn(yamlText) {
 
   const links = [];
   for (const f of flat) {
-    // Tree nesting (e.g. a moon under its planet, an NPC's faction folder)
-    // becomes an explicit "si trova in" link, same shape as an ordinary
+    // Tree nesting (e.g. a moon under its planet, a sub-quest under its
+    // parent quest) becomes an explicit link, same shape as an ordinary
     // Tangent connection — the tree structure itself isn't stored anywhere
-    // else once flattened.
-    if (f.parentId) links.push({ from: f.id, to: f.parentId, relation: "si trova in" });
+    // else once flattened, so the frontend's tree view rebuilds it from
+    // exactly this label (HIERARCHY_RELATION_BY_TYPE).
+    if (f.parentId) links.push({ from: f.id, to: f.parentId, relation: HIERARCHY_RELATION_BY_TYPE[f.type] || "parte di" });
     for (const chapterId of f.chapters) links.push({ from: f.id, to: chapterId, relation: "appare in" });
   }
   for (const c of doc.connections || []) {

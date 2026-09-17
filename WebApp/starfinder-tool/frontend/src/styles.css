@@ -261,6 +261,13 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-list { flex: 1; max-width: 320px; }
 .campaign-list ul { list-style: none; padding: 0; margin: 8px 0 0; }
 .campaign-list li { padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.campaign-search { margin: 10px 0 0; width: 100%; box-sizing: border-box; }
+
+.campaign-tree, .campaign-tree ul { list-style: none; padding: 0; margin: 0; border: none; max-height: 65vh; overflow-y: auto; }
+.campaign-tree > li { border-bottom: none; padding: 0; }
+.campaign-tree li { padding: 0; border: none; }
+.campaign-tree-row { display: flex; align-items: center; gap: 4px; padding: 4px 0; }
+.campaign-tree-caret { width: 16px; flex: 0 0 16px; background: none; border: none; padding: 0; color: var(--text-muted); font-size: 11px; }
 .campaign-editor {
   flex: 1.4; max-width: 560px; display: flex; flex-direction: column; gap: 8px;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
