@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import { checkGmLogin } from "./backend-client.js";
 import { gmSessionCookie } from "./oauth-provider.js";
 
@@ -7,6 +8,22 @@ import { gmSessionCookie } from "./oauth-provider.js";
 // are checked against the real backend login endpoint — this process never
 // stores or compares a password itself (see backend-client.js#checkGmLogin).
 export const loginRouter = Router();
+
+// There's exactly one account (GM) and its password is the only thing
+// standing between "anyone with the URL" and full access — see the
+// registration/authorize endpoints, which are otherwise public by spec
+// (RFC 7591 DCR has no auth of its own). Rate-limit login *attempts*
+// specifically (separate from the generic OAuth-endpoint limiter the SDK
+// already applies to /authorize itself) so a brute-force guess run can't
+// hide behind that generic budget. Keyed by IP; per-account lockout isn't
+// needed here since there's only one account to lock out of anyway.
+const loginAttemptLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many login attempts — try again later.",
+});
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -46,15 +63,15 @@ loginRouter.get("/login", (req, res) => {
   res.type("html").send(renderForm({ returnTo, error: null }));
 });
 
-loginRouter.post("/login", async (req, res) => {
+loginRouter.post("/login", loginAttemptLimiter, async (req, res) => {
   const { username, password, return_to } = req.body || {};
   const returnTo = typeof return_to === "string" && return_to.startsWith("/") ? return_to : "/";
   if (!username || !password) {
-    return res.type("html").send(renderForm({ returnTo, error: "Username and password required." }));
+    return res.status(400).type("html").send(renderForm({ returnTo, error: "Username and password required." }));
   }
   const ok = await checkGmLogin(username, password).catch(() => false);
   if (!ok) {
-    return res.type("html").send(renderForm({ returnTo, error: "Invalid GM credentials." }));
+    return res.status(401).type("html").send(renderForm({ returnTo, error: "Invalid GM credentials." }));
   }
   res.setHeader("Set-Cookie", gmSessionCookie(username));
   res.redirect(returnTo);
