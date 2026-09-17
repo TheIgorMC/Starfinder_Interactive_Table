@@ -12,6 +12,7 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:?set SESSION_SECRET in .env}
       - OLLAMA_URL=${OLLAMA_URL:-http://fisso:11434/v1}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:8b}
+      - MCP_SERVICE_TOKEN=${MCP_SERVICE_TOKEN:-}
     volumes:
       - /mnt/data_ssd/nas_share/SIT/uploads:/app/uploads
       - /mnt/data_ssd/nas_share/SIT/aon-cache:/app/aon-cache
@@ -19,6 +20,31 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Remote MCP server (OAuth 2.1) — lets an AI client (e.g. claude.ai's
+  # custom connector) import/edit/manage campaign data, the compendium
+  # review workflow, characters and the mood tablet/projector, all through
+  # the same backend API the web UI uses. See mcp-server/README.md. Needs a
+  # reverse proxy in front of it terminating TLS at MCP_PUBLIC_URL — this
+  # container only speaks plain HTTP on its own port.
+  mcp:
+    build: ./mcp-server
+    container_name: sf-mcp
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://sf:${DB_PASSWORD:-sf}@db:5432/sf
+      - PORT=3100
+      - BACKEND_URL=http://backend:3000
+      - MCP_SERVICE_TOKEN=${MCP_SERVICE_TOKEN:?set MCP_SERVICE_TOKEN in .env, same value as the backend's}
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:?set MCP_PUBLIC_URL in .env, e.g. https://sit-mcp.example.com}
+      - MCP_SESSION_SECRET=${MCP_SESSION_SECRET:?set MCP_SESSION_SECRET in .env}
+    ports:
+      - "7601:3100"
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
 
   frontend:
     build: ./frontend
