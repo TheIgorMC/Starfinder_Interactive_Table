@@ -1,7 +1,9 @@
 import { Router } from "express";
+import multer from "multer";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 import { askOllamaJson } from "../../scripts/lib/ollama-client.js";
+import { parseTgn, importTgnIntoDb } from "../tgn-import.js";
 
 // Same local Ollama setup already used by scripts/audit-normalized.js
 // (Docs/04-data-pipeline-aon.md) — a GM-facing "AI drafts a wiki entry from
@@ -15,7 +17,10 @@ import { askOllamaJson } from "../../scripts/lib/ollama-client.js";
 // yours is named differently — see docker-compose.yml / .env.example.
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://fisso:11434/v1";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen3:8b";
-const ENTRY_TYPES = ["event", "location", "npc", "faction", "object"];
+const ENTRY_TYPES = ["event", "location", "npc", "faction", "object", "quest"];
+// In-memory (not disk) — a .tgn export is plain text, at most a few MB, and
+// never needs to persist as a file once parsed.
+const uploadTgn = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 // GM-authored campaign content: events, locations, NPCs, factions, objects
 // — plus relationships between them ("member of", "located in", "owned
@@ -54,6 +59,22 @@ r.get("/", requireAuth, async (req, res) => {
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const { rows } = await pool.query(`SELECT * FROM campaign_entries ${where} ORDER BY name`, params);
   res.json(rows);
+});
+
+// Imports a Tangent (.tgn) campaign export — see src/tgn-import.js for the
+// parsing/mapping rules. Insert-only against already-imported entries
+// (tracked by external_id), so re-uploading the same or an updated export
+// never clobbers a GM's hand-edits made through this UI afterward.
+r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "file required (field name: file)" });
+  let parsed;
+  try {
+    parsed = parseTgn(req.file.buffer.toString("utf8"));
+  } catch (err) {
+    return res.status(400).json({ error: `Could not parse .tgn file: ${err.message}` });
+  }
+  const result = await importTgnIntoDb(pool, parsed);
+  res.json(result);
 });
 
 r.get("/:id", requireAuth, async (req, res) => {

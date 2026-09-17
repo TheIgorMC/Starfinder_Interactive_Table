@@ -8,6 +8,7 @@ const TYPES = [
   { key: "location", label: "Locations" },
   { key: "npc", label: "Characters" },
   { key: "faction", label: "Factions" },
+  { key: "quest", label: "Quests" },
   { key: "object", label: "Objects" },
 ];
 
@@ -67,6 +68,56 @@ function HephaistosImport({ onImported }) {
       </div>
       {error && <p className="pill bad">{error}</p>}
       <textarea rows={4} placeholder="…or paste the exported Hephaistos JSON here" value={raw} onChange={(e) => setRaw(e.target.value)} />
+    </div>
+  );
+}
+
+// Raw fetch, not the api() helper — that one always JSON-encodes the body,
+// which doesn't work for multipart file uploads (same reason as
+// MediaLibrary.jsx's upload()).
+async function uploadTgn(file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/campaign/import-tgn", { method: "POST", body: form });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function TgnImport({ onImported }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+
+  const onFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true); setError(""); setResult(null);
+    try {
+      const r = await uploadTgn(file);
+      setResult(r);
+      onImported();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="tgn-import">
+      <label className="button-like">
+        {busy ? "Importing…" : "Import Tangent (.tgn) export…"}
+        <input type="file" accept=".tgn" onChange={onFile} disabled={busy} hidden />
+      </label>
+      {error && <span className="pill bad">{error}</span>}
+      {result && (
+        <span className="pill ok">
+          +{result.entriesInserted} new entries, +{result.linksInserted} new links
+          {" "}({result.entriesSeen - result.entriesInserted} already imported, left untouched)
+        </span>
+      )}
     </div>
   );
 }
@@ -184,6 +235,8 @@ export default function Campaign() {
           </button>
         ))}
       </div>
+
+      <TgnImport onImported={() => { load(); api("/campaign").then(setAllEntries); }} />
 
       {active?.status === "active" && (
         <label className="checkbox-inline" style={{ marginBottom: 12 }} title={`Session: ${active.name}`}>
