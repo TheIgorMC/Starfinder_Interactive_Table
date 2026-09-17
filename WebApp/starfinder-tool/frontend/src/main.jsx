@@ -6,6 +6,7 @@ import Player from "./views/Player.jsx";
 import Display from "./views/Display.jsx";
 import Tablet from "./views/Tablet.jsx";
 import Compendium from "./views/Compendium.jsx";
+import ReviewTool from "./views/ReviewTool.jsx";
 import Login from "./views/Login.jsx";
 import { AuthProvider, RequireAuth, useAuth } from "./auth.jsx";
 import "./styles.css";
@@ -29,6 +30,7 @@ function Home() {
         <Link to="/tablet">Mood Display (GM tablet)</Link>
         <Link to="/display">Battle Map Display (projector)</Link>
         <Link to="/compendium">Compendium (rules lookup)</Link>
+        {user?.role === "gm" && <Link to="/review">Data Review (GM)</Link>}
       </nav>
     </div>
   );
@@ -46,6 +48,8 @@ createRoot(document.getElementById("root")).render(
         <Route path="/player" element={<RequireAuth role="player"><Player /></RequireAuth>} />
         {/* Rules lookup: any logged-in user, GM or player */}
         <Route path="/compendium" element={<RequireAuth role="any"><Compendium /></RequireAuth>} />
+        {/* Data Review: GM-only hand-validation workbench over aon_entries */}
+        <Route path="/review" element={<RequireAuth role="gm"><ReviewTool /></RequireAuth>} />
         {/* Public, unauthenticated: shared physical displays, not per-person devices */}
         <Route path="/tablet" element={<Tablet />} />
         <Route path="/display" element={<Display />} />
