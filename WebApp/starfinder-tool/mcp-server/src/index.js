@@ -15,7 +15,12 @@ const PUBLIC_URL = process.env.MCP_PUBLIC_URL;
 if (!PUBLIC_URL) throw new Error("MCP_PUBLIC_URL is not set (e.g. https://sit-mcp.orion-project.it)");
 
 const issuerUrl = new URL(PUBLIC_URL);
-const mcpServerUrl = new URL("/mcp", PUBLIC_URL);
+// The MCP transport is served at the bare root, not "/mcp" — a custom
+// connector setup (e.g. claude.ai's) has the person paste in one URL and
+// then both discovers OAuth metadata *and* speaks the MCP protocol against
+// that exact URL, so the resource identifier and the actual route below
+// have to be the same address the person types in.
+const mcpServerUrl = issuerUrl;
 const provider = new PgOAuthProvider();
 
 function buildMcpServer() {
@@ -58,7 +63,7 @@ async function main() {
   // McpServer/tool-registration instance.
   const transports = new Map();
 
-  app.post("/mcp", requireAuth, async (req, res) => {
+  const mcpPostHandler = async (req, res) => {
     const sessionId = req.headers["mcp-session-id"];
     try {
       let transport = sessionId ? transports.get(sessionId) : undefined;
@@ -81,7 +86,7 @@ async function main() {
       console.error("MCP request error:", err);
       if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null });
     }
-  });
+  };
 
   const handleSessionRequest = async (req, res) => {
     const sessionId = req.headers["mcp-session-id"];
@@ -89,8 +94,15 @@ async function main() {
     if (!transport) return res.status(400).send("Invalid or missing session ID");
     await transport.handleRequest(req, res);
   };
-  app.get("/mcp", requireAuth, handleSessionRequest);
-  app.delete("/mcp", requireAuth, handleSessionRequest);
+
+  // Mounted at both the root ("/", the canonical MCP endpoint — see the
+  // mcpServerUrl comment above) and "/mcp" as a convenience alias, in case
+  // a client or a person adding this connector expects that path instead.
+  for (const path of ["/", "/mcp"]) {
+    app.post(path, requireAuth, mcpPostHandler);
+    app.get(path, requireAuth, handleSessionRequest);
+    app.delete(path, requireAuth, handleSessionRequest);
+  }
 
   app.listen(PORT, () => console.log(`MCP server listening on :${PORT}, public URL ${PUBLIC_URL}`));
 }
