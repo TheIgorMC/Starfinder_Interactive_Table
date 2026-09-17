@@ -17,7 +17,17 @@ import { requireGM } from "../auth.js";
 
 const state = {
   projector: { mode: "battlemap", sessionId: null, mediaUrl: "", caption: "" },
-  tablet: { mode: "idle", mediaUrl: "", caption: "", characterIds: [] },
+  // tablet.mode: "idle" (campaign/chapter homescreen) | "media" (image or
+  // looping video) | "npc_narrative" (portrait + name only if the GM has
+  // chosen to reveal it — for NPCs the party hasn't formally met) |
+  // "npc_boss" (HP shown as a bar, percentage only, never the raw numbers
+  // — no metagaming exact HP off the mood tablet).
+  tablet: {
+    mode: "idle",
+    chapterEntryId: null,
+    mediaUrl: "", caption: "", loop: false,
+    characterIds: [], revealNames: false,
+  },
   mood: {
     // mirrored to ESP32 light nodes
     color: "#202040",
@@ -38,18 +48,52 @@ r.get("/state", (_req, res) => res.json({ ...state, lightNodes: [...lightNodes.v
 
 // Public summary of only the characters the GM has chosen to feature on the
 // mood tablet — deliberately NOT the full /api/characters list (that's
-// GM-only) and deliberately only the handful of fields the tablet actually
-// shows, so an unauthenticated device on the same LAN can't be used to pull
-// every player's full sheet.
+// GM-only) and deliberately only the handful of fields each NPC mode
+// actually needs, so an unauthenticated device on the same LAN can't be
+// used to pull a real number off it:
+//  - npc_narrative: portrait + name, and only if the GM opted to reveal it
+//    (revealNames) — otherwise just the face, no name.
+//  - npc_boss: portrait + HP as a rounded percentage, never hp_cur/hp_max
+//    themselves — a tablet on the table is not the place to read a boss's
+//    exact remaining HP.
 r.get("/tablet/characters", async (_req, res) => {
   const ids = state.tablet.characterIds || [];
   if (!ids.length) return res.json([]);
   const { rows } = await pool.query(
-    `SELECT id, name, race, class, level, hp_cur, hp_max, sp_cur, sp_max, rp_cur, rp_max
-     FROM characters WHERE id = ANY($1::int[])`,
+    `SELECT id, name, portrait_url, hp_cur, hp_max FROM characters WHERE id = ANY($1::int[])`,
     [ids]
   );
-  res.json(rows);
+  if (state.tablet.mode === "npc_boss") {
+    return res.json(rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      portrait_url: r.portrait_url,
+      hp_pct: r.hp_max > 0 ? Math.max(0, Math.min(100, Math.round((r.hp_cur / r.hp_max) * 100))) : 0,
+    })));
+  }
+  if (state.tablet.mode === "npc_narrative") {
+    return res.json(rows.map((r) => ({
+      id: r.id,
+      name: state.tablet.revealNames ? r.name : "",
+      portrait_url: r.portrait_url,
+    })));
+  }
+  res.json([]);
+});
+
+// Public summary of the one campaign entry (usually the current chapter)
+// the GM has chosen as the tablet's idle homescreen — name/summary/first
+// image only, same "GM explicitly pushed this" trust model as the media
+// channel, not the entry's full body (which may hold GM-only notes/spoilers
+// mixed in with the flavor text).
+r.get("/tablet/chapter", async (_req, res) => {
+  const id = state.tablet.chapterEntryId;
+  if (!id) return res.json(null);
+  const { rows } = await pool.query("SELECT id, name, summary, body FROM campaign_entries WHERE id=$1", [id]);
+  const entry = rows[0];
+  if (!entry) return res.json(null);
+  const imageMatch = entry.body.match(/!\[[^\]]*\]\(([^)]+)\)/);
+  res.json({ id: entry.id, name: entry.name, summary: entry.summary, imageUrl: imageMatch?.[1] || "" });
 });
 
 // GM sets what a channel shows

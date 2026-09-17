@@ -16,8 +16,11 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB — plenty for a map/portrait image
-  fileFilter: (_req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+  // 80MB — small for a map/portrait/token image, but the "mood" category
+  // also doubles as looping scenic video for the tablet (Tablet.jsx),
+  // which needs real headroom.
+  limits: { fileSize: 80 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^(image|video)\//.test(file.mimetype)),
 });
 
 const r = Router();

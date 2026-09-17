@@ -21,12 +21,17 @@ export default function ScenePanel({ session, characters }) {
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaUrl, setMediaUrl] = useState("");
   const [caption, setCaption] = useState("");
+  const [tabletLoop, setTabletLoop] = useState(false);
+  const [chapters, setChapters] = useState([]);
   const { active } = useActiveSession();
 
   useEffect(() => { api("/scene/state").then(setScene); }, []);
   useWs((msg) => {
     if (msg.type === "scene:channel" || msg.type === "scene:mood") api("/scene/state").then(setScene);
   });
+  // The tablet's idle homescreen picks one campaign entry (usually the
+  // current chapter, but any entry works) — see /api/scene/tablet/chapter.
+  useEffect(() => { api("/campaign").then(setChapters).catch(() => setChapters([])); }, []);
   // Pick media by name, not by pasting a URL — the media library already
   // has both, this just picks from it instead of asking the GM to copy one
   // over manually (see MediaLibrary.jsx's "Copy URL" button, which this
@@ -41,10 +46,14 @@ export default function ScenePanel({ session, characters }) {
   const setChannel = (name, body) => api(`/scene/channel/${name}`, { method: "POST", body });
   const setMood = (body) => api("/scene/mood", { method: "POST", body });
 
-  const toggleFeatured = (id) => {
-    const cur = scene.tablet.characterIds || [];
+  // Toggling a character chip switches the tablet straight into that NPC
+  // mode with just that one selection — the GM picks who's featured by
+  // clicking faces, not by building a list first and pushing separately.
+  const toggleNpc = (mode, id) => {
+    const sameMode = scene.tablet.mode === mode;
+    const cur = sameMode ? scene.tablet.characterIds || [] : [];
     const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-    setChannel("tablet", { mode: "characters", characterIds: next });
+    setChannel("tablet", { mode, characterIds: next });
   };
 
   return (
@@ -74,15 +83,54 @@ export default function ScenePanel({ session, characters }) {
       )}
       <input placeholder="Caption" value={caption} onChange={(e) => setCaption(e.target.value)} />
       <button onClick={() => setChannel("projector", { mediaUrl, caption })} disabled={!mediaUrl}>Push to projector</button>
-      <button onClick={() => setChannel("tablet", { mode: "media", mediaUrl, caption })} disabled={!mediaUrl}>Push to tablet</button>
+      <label className="checkbox-inline" title="Loop the video (ignored for still images)">
+        <input type="checkbox" checked={tabletLoop} onChange={(e) => setTabletLoop(e.target.checked)} />
+        Loop on tablet
+      </label>
+      <button
+        onClick={() => setChannel("tablet", { mode: "media", mediaUrl, caption, loop: tabletLoop })}
+        disabled={!mediaUrl}
+      >Push to tablet</button>
 
-      <h3>Tablet — featured characters</h3>
+      <h3>Tablet — idle homescreen</h3>
+      <div className="row">
+        <select
+          value={scene.tablet.mode === "idle" ? scene.tablet.chapterEntryId ?? "" : ""}
+          onChange={(e) => setChannel("tablet", { mode: "idle", chapterEntryId: e.target.value ? Number(e.target.value) : null })}
+        >
+          <option value="">Just the mood name…</option>
+          {chapters.map((c) => <option key={c.id} value={c.id}>{c.type}: {c.name}</option>)}
+        </select>
+      </div>
+
+      <h3>Tablet — NPCs (narrative)</h3>
+      <p className="muted">Portrait shown always; name only if revealed — for NPCs the party hasn't been formally introduced to yet.</p>
+      <label className="checkbox-inline">
+        <input
+          type="checkbox"
+          checked={scene.tablet.mode === "npc_narrative" && !!scene.tablet.revealNames}
+          onChange={(e) => setChannel("tablet", { mode: "npc_narrative", revealNames: e.target.checked })}
+        />
+        Reveal name(s)
+      </label>
       <div className="chips">
         {characters.map((c) => (
           <button
             key={c.id}
-            className={scene.tablet.characterIds?.includes(c.id) ? "chip active" : "chip"}
-            onClick={() => toggleFeatured(c.id)}
+            className={scene.tablet.mode === "npc_narrative" && scene.tablet.characterIds?.includes(c.id) ? "chip active" : "chip"}
+            onClick={() => toggleNpc("npc_narrative", c.id)}
+          >{c.name}</button>
+        ))}
+      </div>
+
+      <h3>Tablet — NPCs (boss)</h3>
+      <p className="muted">Shows an HP bar as a percentage only — never the raw numbers.</p>
+      <div className="chips">
+        {characters.map((c) => (
+          <button
+            key={c.id}
+            className={scene.tablet.mode === "npc_boss" && scene.tablet.characterIds?.includes(c.id) ? "chip active" : "chip"}
+            onClick={() => toggleNpc("npc_boss", c.id)}
           >{c.name}</button>
         ))}
       </div>
