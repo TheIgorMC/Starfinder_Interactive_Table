@@ -21,6 +21,8 @@ async function upload(category, file, label) {
   return data;
 }
 
+const isVideo = (m) => /\.(mp4|webm|mov|m4v)$/i.test(m.filename || m.url || "");
+
 export default function MediaLibrary() {
   const [category, setCategory] = useState("map");
   const [items, setItems] = useState([]);
@@ -90,8 +92,8 @@ export default function MediaLibrary() {
       <div className="media-upload row">
         <input placeholder="Label (optional)" value={label} onChange={(e) => setLabel(e.target.value)} style={{ maxWidth: 220 }} />
         <label className="button-like">
-          {busy ? "Uploading…" : "Upload image"}
-          <input type="file" accept="image/*" onChange={onFile} disabled={busy} hidden />
+          {busy ? "Uploading…" : "Upload image or video"}
+          <input type="file" accept="image/*,video/*" onChange={onFile} disabled={busy} hidden />
         </label>
         {error && <span className="pill bad">{error}</span>}
       </div>
@@ -100,7 +102,11 @@ export default function MediaLibrary() {
         {visibleItems.length === 0 && <p className="muted">No {category} images {active?.filter_enabled ? "linked to this session" : "yet"}.</p>}
         {visibleItems.map((m) => (
           <div key={m.id} className="media-item">
-            <img src={m.url} alt={m.label || m.original_name} />
+            {isVideo(m) ? (
+              <video src={m.url} muted loop autoPlay playsInline />
+            ) : (
+              <img src={m.url} alt={m.label || m.original_name} />
+            )}
             <div className="media-item-label">{m.label || m.original_name}</div>
             <div className="media-item-actions">
               <button className="link" onClick={() => copyUrl(m.url)}>{copied === m.url ? "Copied!" : "Copy URL"}</button>
