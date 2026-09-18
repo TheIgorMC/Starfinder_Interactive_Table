@@ -37,4 +37,19 @@ r.get("/users", requireGM, async (_req, res) => {
   res.json(rows);
 });
 
+// Reassigns which character (if any) a player account points at — the same
+// PC/NPC switch as scripts/create-user.js's upsert, but scoped to just this
+// field so the Characters tab can offer it as "make this a PC" / "make this
+// an NPC" without touching username/password. character_id: null clears the
+// link, turning a character back into a plain (unowned) NPC.
+r.patch("/users/:username/character", requireGM, async (req, res) => {
+  const { character_id = null } = req.body ?? {};
+  const { rows } = await pool.query(
+    "UPDATE users SET character_id=$1 WHERE username=$2 AND role='player' RETURNING username, role, character_id",
+    [character_id, req.params.username]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "no such player account" });
+  res.json(rows[0]);
+});
+
 export default r;

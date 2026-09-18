@@ -2,6 +2,7 @@ import { Router } from "express";
 import { broadcast } from "../ws.js";
 import { pool } from "../db.js";
 import { requireGM } from "../auth.js";
+import { bodyExcerpt } from "../tgn-import.js";
 
 /*
  * Scene module — controls what non-GM displays are showing and ambient mood.
@@ -82,18 +83,19 @@ r.get("/tablet/characters", async (_req, res) => {
 });
 
 // Public summary of the one campaign entry (usually the current chapter)
-// the GM has chosen as the tablet's idle homescreen — name/summary/first
+// the GM has chosen as the tablet's idle homescreen — name/preview/first
 // image only, same "GM explicitly pushed this" trust model as the media
 // channel, not the entry's full body (which may hold GM-only notes/spoilers
-// mixed in with the flavor text).
+// mixed in with the flavor text). The preview is derived from body on the
+// spot (bodyExcerpt) rather than a separately stored summary column.
 r.get("/tablet/chapter", async (_req, res) => {
   const id = state.tablet.chapterEntryId;
   if (!id) return res.json(null);
-  const { rows } = await pool.query("SELECT id, name, summary, body FROM campaign_entries WHERE id=$1", [id]);
+  const { rows } = await pool.query("SELECT id, name, body FROM campaign_entries WHERE id=$1", [id]);
   const entry = rows[0];
   if (!entry) return res.json(null);
   const imageMatch = entry.body.match(/!\[[^\]]*\]\(([^)]+)\)/);
-  res.json({ id: entry.id, name: entry.name, summary: entry.summary, imageUrl: imageMatch?.[1] || "" });
+  res.json({ id: entry.id, name: entry.name, summary: bodyExcerpt(entry.body), imageUrl: imageMatch?.[1] || "" });
 });
 
 // GM sets what a channel shows

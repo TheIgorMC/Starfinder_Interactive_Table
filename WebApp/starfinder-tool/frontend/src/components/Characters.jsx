@@ -117,6 +117,54 @@ function LoreLinkPicker({ character, onLinked }) {
   );
 }
 
+// Lets the GM fix a character filed under the wrong section — a PC that
+// should be an NPC (a retired/dead PC, a one-off the GM statted for a
+// player who never claimed it) or an NPC that should be a PC (missed
+// during a Hephaistos import, or handed to a new player). Switching is just
+// moving which player account's users.character_id points here.
+function OwnerPicker({ character, owner, players, onChanged }) {
+  const [assignTo, setAssignTo] = useState("");
+
+  const assign = async () => {
+    if (!assignTo) return;
+    const target = players.find((p) => p.username === assignTo);
+    if (target?.character_id != null && target.character_id !== character.id) {
+      if (!confirm(`${assignTo} already has a character. Replace it with ${character.name}?`)) return;
+    }
+    await api(`/auth/users/${assignTo}/character`, { method: "PATCH", body: { character_id: character.id } });
+    setAssignTo("");
+    onChanged();
+  };
+
+  const unassign = async () => {
+    await api(`/auth/users/${owner.username}/character`, { method: "PATCH", body: { character_id: null } });
+    onChanged();
+  };
+
+  if (owner) {
+    return (
+      <p className="muted">
+        Player character — owned by <strong>{owner.username}</strong>{" "}
+        <button className="link" onClick={unassign}>make NPC</button>
+      </p>
+    );
+  }
+
+  return (
+    <div className="row" style={{ alignItems: "center" }}>
+      <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)}>
+        <option value="">Make PC — assign to player…</option>
+        {players.map((p) => (
+          <option key={p.username} value={p.username}>
+            {p.username}{p.character_id != null ? " (already has a character)" : ""}
+          </option>
+        ))}
+      </select>
+      <button onClick={assign} disabled={!assignTo}>Assign</button>
+    </div>
+  );
+}
+
 export default function Characters({ focusCharacterId, onFocusHandled }) {
   const [characters, setCharacters] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -124,10 +172,9 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
   const [showPcImport, setShowPcImport] = useState(false);
 
   const loadCharacters = () => api("/characters").then(setCharacters);
-  useEffect(() => {
-    loadCharacters();
-    api("/auth/users").then(setPlayers).catch(() => setPlayers([]));
-  }, []);
+  const loadPlayers = () => api("/auth/users").then(setPlayers).catch(() => setPlayers([]));
+  useEffect(() => { loadCharacters(); loadPlayers(); }, []);
+  const reload = () => { loadCharacters(); loadPlayers(); };
 
   const openCharacter = (c) => api(`/characters/${c.id}`).then(setViewingChar);
   const patchCharacter = (fields) =>
@@ -148,7 +195,7 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
   const linkedCharacterIds = new Set(players.filter((p) => p.character_id != null).map((p) => p.character_id));
   const pcs = characters.filter((c) => linkedCharacterIds.has(c.id));
   const npcs = characters.filter((c) => !linkedCharacterIds.has(c.id));
-  const ownerOf = (id) => players.find((p) => p.character_id === id)?.username;
+  const ownerOf = (id) => players.find((p) => p.character_id === id);
 
   return (
     <div className="campaign">
@@ -164,7 +211,7 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
           <li key={c.id}>
             <button className="link campaign-pc-row" onClick={() => openCharacter(c)}>
               {c.portrait_url && <img src={c.portrait_url} alt="" />}
-              <strong>{c.name}</strong> <span className="muted">{c.race} {c.class} {c.level} — {ownerOf(c.id)}</span>
+              <strong>{c.name}</strong> <span className="muted">{c.race} {c.class} {c.level} — {ownerOf(c.id)?.username}</span>
             </button>
           </li>
         ))}
@@ -190,8 +237,14 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
 
       {viewingChar && (
         <div className="campaign-character-sheet">
-          <div className="row" style={{ justifyContent: "space-between" }}>
+          <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <button className="link" onClick={() => setViewingChar(null)}>✕ Close sheet</button>
+            <OwnerPicker
+              character={viewingChar}
+              owner={ownerOf(viewingChar.id)}
+              players={players}
+              onChanged={() => { reload(); openCharacter(viewingChar); }}
+            />
             {!linkedCharacterIds.has(viewingChar.id) && (
               <LoreLinkPicker character={viewingChar} onLinked={() => openCharacter(viewingChar)} />
             )}

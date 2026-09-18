@@ -33,7 +33,27 @@ function buildTree(entries, links) {
   return { roots, childrenOf };
 }
 
-const blank = (type) => ({ type, name: "", summary: "", body: "", image_id: null, event_date: "", visible_to_players: false });
+const blank = (type) => ({ type, name: "", body: "", image_id: null, event_date: "", visible_to_players: false });
+
+// A short preview of an entry, derived from its body on the spot — this
+// used to be a separately hand-maintained "summary" field that routinely
+// went stale after an edit (or, for tgn-imported entries, got mangled by a
+// buggy auto-generator). Computing it fresh from `body` every render makes
+// staleness impossible: there's nothing stored to drift out of sync.
+function excerptOf(body) {
+  const withoutImages = (body || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  const paragraphs = withoutImages.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  for (const para of paragraphs) {
+    const plain = para
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/^[-*]\s+/, "")
+      .replace(/[*_`>]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (plain) return plain.length > 200 ? `${plain.slice(0, 197)}…` : plain;
+  }
+  return "";
+}
 
 // Raw fetch, not the api() helper — that one always JSON-encodes the body,
 // which doesn't work for multipart file uploads (same reason as
@@ -176,7 +196,7 @@ function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEn
         ) : (
           <span className="campaign-tree-caret" />
         )}
-        <button className="link" onClick={() => openEntry(entry)}>
+        <button className="link" onClick={() => openEntry(entry)} title={excerptOf(entry.body)}>
           {entry.name} {entry.visible_to_players && <span className="pill ok">visible</span>}
         </button>
       </div>
@@ -202,8 +222,6 @@ export default function Campaign({ onOpenCharacter }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [q, setQ] = useState("");
   const [chapterFilter, setChapterFilter] = useState("");
-  const [summaryRefreshMsg, setSummaryRefreshMsg] = useState("");
-  const [summaryRefreshBusy, setSummaryRefreshBusy] = useState(false);
   const [linkTargetId, setLinkTargetId] = useState("");
   const [relation, setRelation] = useState("");
   const { active, setFilterEnabled } = useActiveSession();
@@ -251,7 +269,7 @@ export default function Campaign({ onOpenCharacter }) {
     try {
       const draft = await api("/campaign/ai-draft", { method: "POST", body: { description: aiDescription, hint_type: editing.type } });
       setEditing((cur) => ({
-        ...cur, type: draft.type, name: draft.name, summary: draft.summary, body: draft.body,
+        ...cur, type: draft.type, name: draft.name, body: draft.body,
         event_date: draft.type === "event" ? draft.event_date : cur.event_date,
       }));
       setAiLinks(draft.links.map((l) => ({ ...l, accepted: true })));
@@ -306,18 +324,6 @@ export default function Campaign({ onOpenCharacter }) {
 
   const refreshAll = () => { load(); api("/campaign").then(setAllEntries); loadLinks(); };
 
-  const refreshSummaries = async () => {
-    setSummaryRefreshBusy(true); setSummaryRefreshMsg("");
-    try {
-      const r = await api("/campaign/refresh-summaries", { method: "POST" });
-      setSummaryRefreshMsg(`Updated ${r.updated} of ${r.checked} imported summaries.`);
-      refreshAll();
-      if (editing?.id) reloadEditing();
-    } finally {
-      setSummaryRefreshBusy(false);
-    }
-  };
-
   // Chapters an entry "appears in" — the same links tgn-import.js writes
   // from each Tangent object to the chapters (timeline entries, type
   // "event") it was tagged with there. Lets a GM narrow a long list down
@@ -361,12 +367,6 @@ export default function Campaign({ onOpenCharacter }) {
       <div className="row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
         <TgnImport onImported={refreshAll} />
         <DuplicatesTool onMerged={refreshAll} />
-        <div className="tgn-import">
-          <button className="link" onClick={refreshSummaries} disabled={summaryRefreshBusy}>
-            {summaryRefreshBusy ? "Refreshing…" : "Refresh imported summaries"}
-          </button>
-          {summaryRefreshMsg && <span className="pill ok">{summaryRefreshMsg}</span>}
-        </div>
       </div>
 
       {active?.status === "active" && (
@@ -418,7 +418,6 @@ export default function Campaign({ onOpenCharacter }) {
             {images.find((m) => m.id === editing.image_id) && (
               <img className="campaign-reader-image" src={images.find((m) => m.id === editing.image_id).url} alt="" />
             )}
-            {editing.summary && <p className="campaign-reader-summary">{editing.summary}</p>}
             <div className="campaign-markdown">
               <ReactMarkdown>{editing.body || "*Nothing written yet — click Edit to add some.*"}</ReactMarkdown>
             </div>
@@ -476,7 +475,6 @@ export default function Campaign({ onOpenCharacter }) {
             {editing.type === "event" && (
               <input placeholder="Date (in-game, freeform)" value={editing.event_date} onChange={(e) => setEditing({ ...editing, event_date: e.target.value })} />
             )}
-            <input placeholder="One-line summary" value={editing.summary} onChange={(e) => setEditing({ ...editing, summary: e.target.value })} />
             <select value={editing.image_id ?? ""} onChange={(e) => setEditing({ ...editing, image_id: e.target.value ? Number(e.target.value) : null })}>
               <option value="">No image</option>
               {images.map((m) => <option key={m.id} value={m.id}>{m.label || m.original_name}</option>)}

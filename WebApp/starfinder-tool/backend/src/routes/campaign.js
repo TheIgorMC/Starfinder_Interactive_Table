@@ -3,7 +3,7 @@ import multer from "multer";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 import { askOllamaJson } from "../../scripts/lib/ollama-client.js";
-import { parseTgn, importTgnIntoDb, summarize } from "../tgn-import.js";
+import { parseTgn, importTgnIntoDb, bodyExcerpt } from "../tgn-import.js";
 
 // Same local Ollama setup already used by scripts/audit-normalized.js
 // (Docs/04-data-pipeline-aon.md) — a GM-facing "AI drafts a wiki entry from
@@ -105,27 +105,6 @@ r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
   res.json(result);
 });
 
-// Recomputes `summary` (only) for every tgn-imported entry (external_id
-// IS NOT NULL) from its existing `body`, using the current summarize()
-// logic — for entries imported before a fix to that logic (e.g. it used
-// to flatten the whole body instead of stopping at the first paragraph),
-// re-importing the same .tgn is a no-op (insert-only) so it never repairs
-// them. This does, on purpose: body/links/everything else untouched, and
-// it never touches a hand-authored entry (external_id is null for those).
-r.post("/refresh-summaries", requireGM, async (req, res) => {
-  const { rows } = await pool.query("SELECT id, body FROM campaign_entries WHERE external_id IS NOT NULL");
-  let updated = 0;
-  for (const row of rows) {
-    const summary = summarize(row.body);
-    const { rowCount } = await pool.query(
-      "UPDATE campaign_entries SET summary=$1 WHERE id=$2 AND summary IS DISTINCT FROM $1",
-      [summary, row.id]
-    );
-    updated += rowCount;
-  }
-  res.json({ checked: rows.length, updated });
-});
-
 // Same (type, name) appearing more than once — typically because a GM
 // re-created (rather than edited) something in Tangent between exports,
 // which gives it a fresh internal id there and so imports as a brand new
@@ -221,19 +200,19 @@ r.get("/:id", requireAuth, async (req, res) => {
 });
 
 r.post("/", requireGM, async (req, res) => {
-  const { type, name, summary = "", body = "", image_id = null, event_date = "", visible_to_players = false } = req.body ?? {};
+  const { type, name, body = "", image_id = null, event_date = "", visible_to_players = false } = req.body ?? {};
   if (!type || !name) return res.status(400).json({ error: "type and name required" });
   const { rows } = await pool.query(
-    `INSERT INTO campaign_entries (type, name, summary, body, image_id, event_date, visible_to_players)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [type, name, summary, body, image_id, event_date, visible_to_players]
+    `INSERT INTO campaign_entries (type, name, body, image_id, event_date, visible_to_players)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [type, name, body, image_id, event_date, visible_to_players]
   );
   res.status(201).json(rows[0]);
 });
 
 r.patch("/:id", requireGM, async (req, res) => {
   const b = req.body ?? {};
-  const cols = ["type", "name", "summary", "body", "image_id", "event_date", "visible_to_players"].filter((f) => b[f] !== undefined);
+  const cols = ["type", "name", "body", "image_id", "event_date", "visible_to_players"].filter((f) => b[f] !== undefined);
   if (!cols.length) return res.status(400).json({ error: "no fields" });
   const sets = cols.map((f, i) => `${f}=$${i + 1}`).join(",");
   const { rows } = await pool.query(
@@ -267,7 +246,7 @@ r.delete("/links/:linkId", requireGM, async (req, res) => {
 
 // Turns a GM's freeform note ("a grizzled Vesk mercenary captain found
 // drinking alone at the Rust & Ration bar, used to run with the Vex
-// Cartel...") into a draft entry: type/name/summary/body, plus links to any
+// Cartel...") into a draft entry: type/name/body, plus links to any
 // EXISTING entries the description clearly references. Drafts only —
 // nothing is written to campaign_entries or campaign_links here; the GM
 // reviews/edits the draft client-side and hits the normal Save, same as a
@@ -278,20 +257,21 @@ r.post("/ai-draft", requireGM, async (req, res) => {
   const { description, hint_type } = req.body ?? {};
   if (!description || !description.trim()) return res.status(400).json({ error: "description required" });
 
-  const { rows: existing } = await pool.query("SELECT id, type, name, summary FROM campaign_entries ORDER BY name");
+  const { rows: existing } = await pool.query("SELECT id, type, name, body FROM campaign_entries ORDER BY name");
   // A compact index the model can cite by id — single-pass, not GalaxyGen's
   // two-pass shortlist-then-detail approach (Docs/11-AI-integration.md §3):
   // a home campaign's wiki tops out at a few hundred entries, comfortably
-  // small enough to send in full every time without a filtering pass.
-  const index = existing.map((e) => `${e.id} | ${e.type} | ${e.name} | ${e.summary || ""}`).join("\n");
+  // small enough to send in full every time without a filtering pass. The
+  // preview text is derived from `body` on the spot (bodyExcerpt) rather
+  // than a stored `summary` column, so it can never go stale.
+  const index = existing.map((e) => `${e.id} | ${e.type} | ${e.name} | ${bodyExcerpt(e.body)}`).join("\n");
 
   const system = `You are a Starfinder tabletop RPG campaign wiki assistant. The GM gives you a short freeform note; turn it into one structured wiki entry.
 
-Given the GM's note and a list of existing wiki entries (id | type | name | summary), respond with a single JSON object:
+Given the GM's note and a list of existing wiki entries (id | type | name | preview), respond with a single JSON object:
 {
   "type": one of "event", "location", "npc", "faction", "object" — whichever best fits the note,
   "name": a short proper name, taken from the note if it gives one, otherwise a fitting invented one,
-  "summary": one punchy sentence,
   "body": 1-3 short paragraphs expanding the note into wiki-entry prose — elaborate on tone and detail, but do not invent major new facts (names, factions, plot twists) the note didn't imply,
   "event_date": a freeform in-game date, only if type is "event" and the note mentions one, otherwise "",
   "links": an array of { "entry_id": <id copied exactly from the list above>, "relation": "short phrase, e.g. 'works for', 'located in', 'member of'" } for EXISTING entries the note clearly and specifically references. Never invent an entry_id that is not in the list. Leave "links" empty if nothing in the note clearly references an existing entry.
@@ -319,7 +299,6 @@ Given the GM's note and a list of existing wiki entries (id | type | name | summ
   res.json({
     type,
     name: String(draft.name || "").slice(0, 200),
-    summary: String(draft.summary || "").slice(0, 500),
     body: String(draft.body || ""),
     event_date: type === "event" ? String(draft.event_date || "") : "",
     links,

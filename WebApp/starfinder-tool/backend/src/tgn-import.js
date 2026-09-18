@@ -59,12 +59,17 @@ function cleanBlurb(blurb, name, idToName) {
   return text.trim();
 }
 
-// Only the entry's FIRST paragraph, not the whole body flattened and
-// sliced at a character count — that used to run straight through a
-// paragraph break into whatever came next (frequently a "**Scopi:**"-style
-// subheading and the start of its own text), producing a summary that
-// jumped mid-sentence into an unrelated section instead of ending cleanly.
-export function summarize(cleanedBody) {
+// A short preview of an entry's body — computed on demand, never stored.
+// campaign_entries used to carry a separately hand-maintained `summary`
+// column, which drifted out of sync with the body (stale after edits) and,
+// worse, had a bug where it flattened the whole body before slicing at a
+// character count instead of stopping at the first paragraph, so it'd run
+// straight through a paragraph break into whatever came next (frequently a
+// "**Scopi:**"-style subheading) — a summary that jumped mid-sentence into
+// an unrelated section. Deriving it fresh from `body` every time it's
+// needed (here, for the AI-draft context index) makes that whole class of
+// bug impossible: there's nothing to go stale or get out of sync.
+export function bodyExcerpt(cleanedBody) {
   const withoutImages = (cleanedBody || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "");
   const paragraphs = withoutImages.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   for (const para of paragraphs) {
@@ -129,12 +134,10 @@ export function parseTgn(yamlText) {
   // Pass 2: build the campaign_entries rows + campaign_links edges.
   const entries = flat.map((f) => {
     const body = cleanBlurb(f.blurb, f.name, idToName);
-    const summary = summarize(body);
     return {
       external_id: f.id,
       type: f.type,
       name: f.name,
-      summary,
       body,
       event_date: f.eventDate || "",
       visible_to_players: false,
@@ -172,11 +175,11 @@ export async function importTgnIntoDb(pool, parsed) {
 
   for (const e of parsed.entries) {
     const { rows } = await pool.query(
-      `INSERT INTO campaign_entries (external_id, type, name, summary, body, event_date, visible_to_players)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO campaign_entries (external_id, type, name, body, event_date, visible_to_players)
+       VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (external_id) DO UPDATE SET external_id = EXCLUDED.external_id
        RETURNING id, external_id, xmax = 0 AS inserted`,
-      [e.external_id, e.type, e.name, e.summary, e.body, e.event_date, e.visible_to_players]
+      [e.external_id, e.type, e.name, e.body, e.event_date, e.visible_to_players]
     );
     idByExternalId.set(rows[0].external_id, rows[0].id);
     if (rows[0].inserted) inserted++;

@@ -20,7 +20,7 @@ async function loadFull(id) {
 
   const [entries, media, encounters] = await Promise.all([
     pool.query(
-      `SELECT e.id, e.type, e.name, e.summary
+      `SELECT e.id, e.type, e.name
        FROM game_session_entries se JOIN campaign_entries e ON e.id = se.entry_id
        WHERE se.session_id = $1 ORDER BY e.type, e.name`,
       [id]

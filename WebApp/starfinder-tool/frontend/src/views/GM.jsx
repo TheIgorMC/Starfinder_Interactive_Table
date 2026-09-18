@@ -247,11 +247,7 @@ export default function GM() {
             onCellClick={onCellClick}
           />
         )}
-        {tab === "scene" && (
-          <div className="gm-panel">
-            <ScenePanel session={session} characters={characters} />
-          </div>
-        )}
+        {tab === "scene" && <ScenePanel session={session} characters={characters} />}
         {tab === "media" && <MediaLibrary />}
         {tab === "campaign" && (
           <Campaign onOpenCharacter={(id) => { setFocusCharacterId(id); setTab("characters"); }} />
