@@ -42,6 +42,20 @@ node scripts/validate-aon-cache.js
 node scripts/import-aon-cache.js                            # THE step that actually pushes aon-cache/ into the live `aon_entries` table — needs DATABASE_URL
 ```
 
+`import-foundry.js`'s icon-copying default was broken until 2026-09 — it pointed at the checkout root instead of the checkout's `static/icons/` (one directory short), so every icon silently "went missing" even on a from-scratch run. Fixed now; if `icon-cache/` after a run has 0 files copied, something's wrong with `--icons-src`, not with the checkout.
+
+**Deploying a re-imported cache to the Pi** (this machine has no Postgres — data is always prepared here, then pushed):
+
+```bash
+rsync -av aon-cache/ orangepi@<pi-ip>:/mnt/data_ssd/nas_share/SIT/aon-cache/
+rsync -av icon-cache/ orangepi@<pi-ip>:/mnt/data_ssd/nas_share/SIT/icon-cache/
+ssh orangepi@<pi-ip>
+cd /mnt/emmc/stacks/starfinder-tool   # wherever the stack's docker-compose.yml lives
+docker compose exec backend node scripts/import-aon-cache.js /app/aon-cache
+```
+
+`aon-cache`/`icon-cache` are both live bind mounts (`docker-compose.yml`) — the backend container sees a synced file immediately, no restart needed. The one exception: if `docker-compose.yml` itself changed (a new/changed volume line), that needs `docker compose up -d backend` (or a Dockge redeploy) to actually take effect — a plain file sync into an *existing* mount doesn't add a mount that wasn't there when the container was created.
+
 Grounded consistency checker (re-verifies derived `mechanics.*` fields against each entry's own source text via a **local** Ollama model — never trusts an LLM verdict blindly, never checks against "real Starfinder rules" from model memory):
 
 ```bash
