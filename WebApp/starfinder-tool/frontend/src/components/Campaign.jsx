@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import { api } from "../api.js";
 import CharacterSheet from "./CharacterSheet.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
-import { HIERARCHY_RELATIONS } from "../lib/campaignTree.js";
+import { HIERARCHY_RELATIONS, buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
 
 const TYPES = [
   { key: "event", label: "Events" },
@@ -144,18 +144,93 @@ function TgnImport({ onImported }) {
   );
 }
 
+// Groups of same-type/same-name entries — usually from re-creating
+// (rather than editing) something in Tangent between exports, which gives
+// it a fresh id there and so imports as a new duplicate entry instead of
+// updating the old one. Picking a "keep" merges every link the others had
+// onto it and deletes them (see POST /campaign/duplicates/merge).
+function DuplicatesTool({ onMerged }) {
+  const [open, setOpen] = useState(false);
+  const [groups, setGroups] = useState(null);
+  const [keepChoice, setKeepChoice] = useState({});
+  const [busyKey, setBusyKey] = useState(null);
+
+  const load = () => api("/campaign/duplicates").then((rows) => {
+    setGroups(rows);
+    setKeepChoice((cur) => {
+      const next = { ...cur };
+      for (const g of rows) if (next[`${g.type}:${g.name}`] === undefined) next[`${g.type}:${g.name}`] = g.ids[0];
+      return next;
+    });
+  });
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) load();
+  };
+
+  const merge = async (group) => {
+    const key = `${group.type}:${group.name}`;
+    const keepId = keepChoice[key];
+    const removeIds = group.ids.filter((id) => id !== keepId);
+    setBusyKey(key);
+    try {
+      await api("/campaign/duplicates/merge", { method: "POST", body: { keep_id: keepId, remove_ids: removeIds } });
+      await load();
+      onMerged();
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  return (
+    <div className="tgn-import">
+      <button className="link" onClick={toggle}>{open ? "✕ Close duplicates" : "Find duplicates"}</button>
+      {open && (
+        <div className="duplicates-panel">
+          {groups === null && <p className="muted">Checking…</p>}
+          {groups?.length === 0 && <p className="muted">No duplicates found.</p>}
+          {groups?.map((g) => {
+            const key = `${g.type}:${g.name}`;
+            return (
+              <div key={key} className="duplicates-group">
+                <p><span className="pill">{g.type}</span> <strong>{g.name}</strong> — {g.ids.length} copies</p>
+                <div className="row">
+                  {g.ids.map((id, i) => (
+                    <label key={id} className="checkbox-inline">
+                      <input
+                        type="radio" name={key} checked={keepChoice[key] === id}
+                        onChange={() => setKeepChoice((cur) => ({ ...cur, [key]: id }))}
+                      />
+                      keep #{id} {i === 0 ? "(oldest)" : ""}
+                    </label>
+                  ))}
+                  <button onClick={() => merge(g)} disabled={busyKey === key}>
+                    {busyKey === key ? "Merging…" : `Merge (delete ${g.ids.length - 1})`}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEntry, activeId }) {
   const kids = childrenOf.get(entry.id) || [];
   const isCollapsed = collapsed.has(entry.id);
   return (
     <li>
-      <div className="campaign-tree-row" style={{ paddingLeft: depth * 16 }}>
+      <div className={"campaign-tree-row" + (entry.id === activeId ? " active" : "")} style={{ paddingLeft: depth * 16 }}>
         {kids.length > 0 ? (
           <button className="campaign-tree-caret" onClick={() => toggleCollapsed(entry.id)}>{isCollapsed ? "▸" : "▾"}</button>
         ) : (
           <span className="campaign-tree-caret" />
         )}
-        <button className={"link" + (entry.id === activeId ? " active" : "")} onClick={() => openEntry(entry)}>
+        <button className="link" onClick={() => openEntry(entry)}>
           {entry.name} {entry.visible_to_players && <span className="pill ok">visible</span>}
         </button>
       </div>
@@ -181,6 +256,8 @@ export default function Campaign() {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [q, setQ] = useState("");
   const [chapterFilter, setChapterFilter] = useState("");
+  const [summaryRefreshMsg, setSummaryRefreshMsg] = useState("");
+  const [summaryRefreshBusy, setSummaryRefreshBusy] = useState(false);
   const [linkTargetId, setLinkTargetId] = useState("");
   const [relation, setRelation] = useState("");
   const [characters, setCharacters] = useState([]);
@@ -291,6 +368,20 @@ export default function Campaign() {
     loadLinks();
   };
 
+  const refreshAll = () => { load(); api("/campaign").then(setAllEntries); loadLinks(); };
+
+  const refreshSummaries = async () => {
+    setSummaryRefreshBusy(true); setSummaryRefreshMsg("");
+    try {
+      const r = await api("/campaign/refresh-summaries", { method: "POST" });
+      setSummaryRefreshMsg(`Updated ${r.updated} of ${r.checked} imported summaries.`);
+      refreshAll();
+      if (editing?.id) reloadEditing();
+    } finally {
+      setSummaryRefreshBusy(false);
+    }
+  };
+
   // Chapters an entry "appears in" — the same links tgn-import.js writes
   // from each Tangent object to the chapters (timeline entries, type
   // "event") it was tagged with there. Lets a GM narrow a long list down
@@ -301,8 +392,16 @@ export default function Campaign() {
   );
   const chapterEntryIds = useMemo(() => {
     if (!chapterFilter) return null;
-    const ids = new Set();
-    for (const l of links) if (l.relation === "appare in" && l.to_id === Number(chapterFilter)) ids.add(l.from_id);
+    const directIds = new Set();
+    for (const l of links) if (l.relation === "appare in" && l.to_id === Number(chapterFilter)) directIds.add(l.from_id);
+    // Tangent tagging is usually only set on the top-level entry a GM
+    // dragged into a chapter (e.g. a sector), not every nested child — so
+    // a direct-only match would show 2 top-level locations and hide the
+    // 15 sub-locations underneath, looking broken. Pull in the whole
+    // subtree of anything directly tagged, same cascade as session linking.
+    const childrenOf = buildChildrenIndex(links);
+    const ids = new Set(directIds);
+    for (const id of directIds) for (const d of descendantIds(id, childrenOf)) ids.add(d);
     return ids;
   }, [links, chapterFilter]);
 
@@ -323,7 +422,16 @@ export default function Campaign() {
         ))}
       </div>
 
-      <TgnImport onImported={() => { load(); api("/campaign").then(setAllEntries); loadLinks(); }} />
+      <div className="row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
+        <TgnImport onImported={refreshAll} />
+        <DuplicatesTool onMerged={refreshAll} />
+        <div className="tgn-import">
+          <button className="link" onClick={refreshSummaries} disabled={summaryRefreshBusy}>
+            {summaryRefreshBusy ? "Refreshing…" : "Refresh imported summaries"}
+          </button>
+          {summaryRefreshMsg && <span className="pill ok">{summaryRefreshMsg}</span>}
+        </div>
+      </div>
 
       {active?.status === "active" && (
         <label className="checkbox-inline" style={{ marginBottom: 12 }} title={`Session: ${active.name}`}>

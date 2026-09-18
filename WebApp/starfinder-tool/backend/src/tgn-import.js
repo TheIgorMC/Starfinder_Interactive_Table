@@ -59,13 +59,24 @@ function cleanBlurb(blurb, name, idToName) {
   return text.trim();
 }
 
-function summarize(cleanedBody) {
-  const plain = cleanedBody
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/[#*_>`-]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return plain.slice(0, 280);
+// Only the entry's FIRST paragraph, not the whole body flattened and
+// sliced at a character count — that used to run straight through a
+// paragraph break into whatever came next (frequently a "**Scopi:**"-style
+// subheading and the start of its own text), producing a summary that
+// jumped mid-sentence into an unrelated section instead of ending cleanly.
+export function summarize(cleanedBody) {
+  const withoutImages = (cleanedBody || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  const paragraphs = withoutImages.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  for (const para of paragraphs) {
+    const plain = para
+      .replace(/^#{1,6}\s*/, "") // leading heading marker
+      .replace(/^[-*]\s+/, "") // leading list bullet
+      .replace(/[*_`>]/g, "") // inline emphasis/quote markers
+      .replace(/\s+/g, " ")
+      .trim();
+    if (plain) return plain.length > 280 ? `${plain.slice(0, 277)}…` : plain;
+  }
+  return "";
 }
 
 export function parseTgn(yamlText) {

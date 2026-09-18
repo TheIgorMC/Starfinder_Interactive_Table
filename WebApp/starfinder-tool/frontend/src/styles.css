@@ -263,10 +263,22 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-list li { padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
 .campaign-search { margin: 10px 0 0; width: 100%; box-sizing: border-box; }
 
+.tgn-import { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.duplicates-panel {
+  flex-basis: 100%; margin-top: 8px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel);
+  display: flex; flex-direction: column; gap: 10px; max-width: 640px;
+}
+.duplicates-group { border-top: 1px solid var(--border-soft); padding-top: 8px; }
+.duplicates-group:first-child { border-top: none; padding-top: 0; }
+.duplicates-group p { margin: 0 0 4px; }
+
 .campaign-tree, .campaign-tree ul { list-style: none; padding: 0; margin: 0; border: none; max-height: 65vh; overflow-y: auto; }
 .campaign-tree > li { border-bottom: none; padding: 0; }
 .campaign-tree li { padding: 0; border: none; }
-.campaign-tree-row { display: flex; align-items: center; gap: 4px; padding: 4px 0; }
+.campaign-tree-row { display: flex; align-items: center; gap: 4px; padding: 4px 6px; margin: 0 -6px; border-radius: var(--radius-sm); }
+.campaign-tree-row.active { background: var(--accent-fill); box-shadow: inset 3px 0 0 var(--accent); }
+.campaign-tree-row.active .link { color: var(--accent-text); font-weight: 700; }
 .campaign-tree-caret { width: 16px; flex: 0 0 16px; background: none; border: none; padding: 0; color: var(--text-muted); font-size: 11px; }
 .campaign-editor, .campaign-reader {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px;

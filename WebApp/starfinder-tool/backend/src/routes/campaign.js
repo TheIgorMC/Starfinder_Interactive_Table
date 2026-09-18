@@ -3,7 +3,7 @@ import multer from "multer";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 import { askOllamaJson } from "../../scripts/lib/ollama-client.js";
-import { parseTgn, importTgnIntoDb } from "../tgn-import.js";
+import { parseTgn, importTgnIntoDb, summarize } from "../tgn-import.js";
 
 // Same local Ollama setup already used by scripts/audit-normalized.js
 // (Docs/04-data-pipeline-aon.md) — a GM-facing "AI drafts a wiki entry from
@@ -92,6 +92,87 @@ r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
   }
   const result = await importTgnIntoDb(pool, parsed);
   res.json(result);
+});
+
+// Recomputes `summary` (only) for every tgn-imported entry (external_id
+// IS NOT NULL) from its existing `body`, using the current summarize()
+// logic — for entries imported before a fix to that logic (e.g. it used
+// to flatten the whole body instead of stopping at the first paragraph),
+// re-importing the same .tgn is a no-op (insert-only) so it never repairs
+// them. This does, on purpose: body/links/everything else untouched, and
+// it never touches a hand-authored entry (external_id is null for those).
+r.post("/refresh-summaries", requireGM, async (req, res) => {
+  const { rows } = await pool.query("SELECT id, body FROM campaign_entries WHERE external_id IS NOT NULL");
+  let updated = 0;
+  for (const row of rows) {
+    const summary = summarize(row.body);
+    const { rowCount } = await pool.query(
+      "UPDATE campaign_entries SET summary=$1 WHERE id=$2 AND summary IS DISTINCT FROM $1",
+      [summary, row.id]
+    );
+    updated += rowCount;
+  }
+  res.json({ checked: rows.length, updated });
+});
+
+// Same (type, name) appearing more than once — typically because a GM
+// re-created (rather than edited) something in Tangent between exports,
+// which gives it a fresh internal id there and so imports as a brand new
+// entry here instead of updating the old one (import is keyed on that id,
+// external_id — see tgn-import.js). Grouped for the merge tool below.
+r.get("/duplicates", requireGM, async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT type, name, array_agg(id ORDER BY id) AS ids, array_agg(created_at ORDER BY id) AS created_ats
+    FROM campaign_entries
+    GROUP BY type, name
+    HAVING count(*) > 1
+    ORDER BY name
+  `);
+  res.json(rows);
+});
+
+// Merges `remove_ids` into `keep_id`: every link (campaign_links, and
+// game session lore links) pointing at a removed entry is re-pointed at
+// the kept one instead of just vanishing, then the removed rows are
+// deleted. Never guesses which one to keep — that's the GM's call in the
+// duplicates UI.
+r.post("/duplicates/merge", requireGM, async (req, res) => {
+  const keepId = Number(req.body?.keep_id);
+  const removeIds = Array.isArray(req.body?.remove_ids) ? req.body.remove_ids.map(Number).filter(Number.isFinite) : [];
+  if (!Number.isFinite(keepId) || !removeIds.length) return res.status(400).json({ error: "keep_id and remove_ids required" });
+  if (removeIds.includes(keepId)) return res.status(400).json({ error: "keep_id cannot also be in remove_ids" });
+
+  for (const removeId of removeIds) {
+    // campaign_links: re-point both directions, dropping any that would
+    // collide with a link the kept entry already has (from_id, to_id,
+    // relation is unique).
+    await pool.query(
+      `DELETE FROM campaign_links l WHERE l.from_id=$1
+       AND EXISTS (SELECT 1 FROM campaign_links l2 WHERE l2.from_id=$2 AND l2.to_id=l.to_id AND l2.relation=l.relation)`,
+      [removeId, keepId]
+    );
+    await pool.query("UPDATE campaign_links SET from_id=$1 WHERE from_id=$2", [keepId, removeId]);
+    await pool.query(
+      `DELETE FROM campaign_links l WHERE l.to_id=$1
+       AND EXISTS (SELECT 1 FROM campaign_links l2 WHERE l2.to_id=$2 AND l2.from_id=l.from_id AND l2.relation=l.relation)`,
+      [removeId, keepId]
+    );
+    await pool.query("UPDATE campaign_links SET to_id=$1 WHERE to_id=$2", [keepId, removeId]);
+    await pool.query("DELETE FROM campaign_links WHERE from_id = to_id");
+
+    // game_session_entries: same idea, PK (session_id, entry_id) instead
+    // of a named unique constraint.
+    await pool.query(
+      `INSERT INTO game_session_entries (session_id, entry_id)
+       SELECT session_id, $1 FROM game_session_entries WHERE entry_id=$2
+       ON CONFLICT DO NOTHING`,
+      [keepId, removeId]
+    );
+
+    await pool.query("DELETE FROM campaign_entries WHERE id=$1", [removeId]);
+  }
+
+  res.json({ merged: removeIds.length, keep_id: keepId });
 });
 
 r.get("/:id", requireAuth, async (req, res) => {
