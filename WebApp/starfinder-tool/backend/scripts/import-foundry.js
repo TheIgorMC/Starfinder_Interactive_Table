@@ -25,9 +25,13 @@ const DEFAULT_SRC = path.resolve(
   __dirname,
   "../../../../Docs/ReferenceFoundry/foundryvtt-starfinder-development/src/items"
 );
-// Icons live in the checkout's own icons/ folder, a sibling of src/ — see
-// iconPathFor() in src/foundry-import.js for the path shape this resolves.
-const DEFAULT_ICONS_SRC = path.resolve(DEFAULT_SRC, "../..");
+// Icons live under the checkout's static/icons/ folder, not directly at
+// the checkout root — confirmed live (a prior default of "../.." landed
+// one directory short, so every icon lookup failed: 0 copied, 8915
+// "missing" even though the referenced files were sitting right there
+// under static/). See iconPathFor() in src/foundry-import.js for the
+// systems/<name>/-stripped path shape this resolves against.
+const DEFAULT_ICONS_SRC = path.resolve(DEFAULT_SRC, "../../static");
 // A generic icon (Foundry's SFRPG set is hand-drawn line art, not
 // photography) tops out around a few tens of KB — anything past this is
 // almost certainly not a per-item icon and not worth copying/serving.

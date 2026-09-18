@@ -16,6 +16,7 @@ services:
     volumes:
       - /mnt/data_ssd/nas_share/SIT/uploads:/app/uploads
       - /mnt/data_ssd/nas_share/SIT/aon-cache:/app/aon-cache
+      - /mnt/data_ssd/nas_share/SIT/icon-cache:/app/icon-cache
       - /mnt/data_ssd/nas_share/SIT/content:/app/content
       - /mnt/data_ssd/nas_share/SIT/icon-cache:/app/icon-cache
     depends_on:

@@ -60,7 +60,13 @@ DATABASE_URL=postgres://sf:sf@localhost:5432/sf npm run import:aon
 # 5. Sync the validated cache to the Pi's data volume — this is the same
 # host path docker-compose.yml bind-mounts into the backend container at
 # /app/aon-cache, so nothing needs restarting for the container to see it.
+# icon-cache/ (populated by import:foundry alongside aon-cache/, see
+# below) gets the same treatment — its own bind mount, /app/icon-cache,
+# served by the backend at /api/aon/icons/<path>. Sync both; forgetting
+# icon-cache/ doesn't break anything, it just means every Compendium item
+# falls back to its generic per-category icon on the deployed instance.
 rsync -av aon-cache/ orangepi@<pi-ip>:/mnt/data_ssd/nas_share/SIT/aon-cache/
+rsync -av icon-cache/ orangepi@<pi-ip>:/mnt/data_ssd/nas_share/SIT/icon-cache/
 
 # 6. On the Pi, import into the running stack's Postgres — run *inside*
 # the backend container, not on the Pi's host shell: the container already

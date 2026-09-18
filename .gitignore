@@ -5,6 +5,7 @@ build/
 *.log
 .DS_Store
 aon-cache/
+icon-cache/
 DataEntry/output/
 docs/ReferenceFoundry
 GalaxyGen/galaxy/
