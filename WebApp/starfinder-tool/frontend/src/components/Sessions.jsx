@@ -230,7 +230,7 @@ export default function Sessions() {
         </div>
 
         {editingId && (
-          <div className="campaign-editor">
+          <div className="campaign-editor session-editor">
             <div className="row">
               <input placeholder="Session name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ flex: 2 }} />
               <input placeholder="Date (freeform)" value={form.session_date} onChange={(e) => setForm({ ...form, session_date: e.target.value })} style={{ flex: 1 }} />

@@ -513,7 +513,7 @@ export default function Campaign({ onOpenCharacter }) {
                     <li key={l.id}>
                       {l.direction === "out" ? `→ ${l.relation || "related to"}` : `← ${l.relation || "related to"}`}{" "}
                       <span className="pill">{l.type}</span> {l.name}
-                      <button className="link" onClick={() => removeLink(l.id)}>unlink</button>
+                      <button className="link unlink-btn" onClick={() => removeLink(l.id)}>unlink</button>
                     </li>
                   ))}
                   {(!editing.links || editing.links.length === 0) && <li className="muted">No links yet.</li>}

@@ -295,6 +295,11 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
   box-shadow: var(--shadow-card);
 }
 .campaign-editor { max-width: 640px; } /* the form's inputs don't benefit from going full-bleed wide */
+/* Sessions reuses .campaign-editor for a form that also holds wrapping
+   chip lists (linked lore) and a media grid — those DO benefit from more
+   width (fewer wrapped rows), so it gets a much looser cap than a plain
+   entry-editing form. */
+.session-editor { max-width: 1000px; }
 
 .campaign-reader-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .campaign-reader-head h2 { margin: 0 0 4px; }
@@ -312,7 +317,7 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-links h4 { margin: 0 0 8px; font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
 .campaign-links ul { list-style: none; padding: 0; margin: 0 0 8px; }
 .campaign-links li { padding: 4px 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-.campaign-links li button { margin-left: auto; }
+.campaign-links li .unlink-btn { margin-left: auto; }
 
 .ai-draft {
   display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; padding: 12px;
