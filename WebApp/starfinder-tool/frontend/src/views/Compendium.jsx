@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
+import CategoryIcon from "../components/CategoryIcon.jsx";
 
 // Fields already shown elsewhere (header, dedicated columns, mechanics
 // block) — don't repeat them in the generic "everything else in data" dump.
-const HIDDEN_DATA_FIELDS = new Set(["sourceUrl", "sourcePage", "description", "prerequisite", "combat", "topic", "results", "formula"]);
+const HIDDEN_DATA_FIELDS = new Set(["sourceUrl", "sourcePage", "description", "prerequisite", "combat", "topic", "results", "formula", "icon"]);
 // Shown big and first, if present, ahead of the rest of the fields.
 const HEADLINE_FIELD = "effect";
 
@@ -401,9 +402,12 @@ function ExpandedRow({ row, columns }) {
     <tr className="compendium-expand-row">
       <td colSpan={columns.length + 1}>
         <div className="compendium-expand">
-          <p className="muted compendium-detail-source">
-            {row.source}{row.data?.sourcePage != null && ` pg. ${row.data.sourcePage}`}
-          </p>
+          <div className="compendium-detail-head">
+            <CategoryIcon category={row.category} iconPath={row.data?.icon} size={40} />
+            <p className="muted compendium-detail-source">
+              {row.source}{row.data?.sourcePage != null && ` pg. ${row.data.sourcePage}`}
+            </p>
+          </div>
 
           {mechRows.length > 0 && (
             <dl className="compendium-fields compendium-mechanics">
@@ -697,7 +701,14 @@ export default function Compendium() {
                   <tr className={"compendium-row" + (expanded ? " active" : "")} onClick={() => setExpandedKey(expanded ? null : key)}>
                     <td className="compendium-expand-col">{expanded ? "▾" : "▸"}</td>
                     {section.columns.map((col) => (
-                      <td key={col.key}>{col.key === "name" ? r.name : String(col.get(r) ?? "")}</td>
+                      <td key={col.key}>
+                        {col.key === "name" ? (
+                          <span className="compendium-name-cell">
+                            <CategoryIcon category={r.category} iconPath={r.data?.icon} />
+                            {r.name}
+                          </span>
+                        ) : String(col.get(r) ?? "")}
+                      </td>
                     ))}
                   </tr>
                   {expanded && <ExpandedRow row={r} columns={section.columns} />}

@@ -33,10 +33,10 @@ There is no lint script in either `package.json` — don't invent one.
 
 ### The aon-cache data pipeline
 
-Rules content (feats/spells/races/equipment/conditions/...) is imported from two sources into `aon-cache/` (gitignored — regenerate, don't hand-edit expecting it to persist across a re-import) and from there into Postgres:
+Rules content (feats/spells/races/equipment/conditions/...) is imported from two sources into `aon-cache/` (gitignored — regenerate, don't hand-edit expecting it to persist across a re-import) and from there into Postgres. `import-foundry.js` also copies each entry's Foundry icon (if it has a real one, not Foundry's generic placeholder) into `icon-cache/` — served by the backend at `/api/aon/icons/<path>` (see `src/foundry-import.js`'s `iconPathFor()` and `src/routes/aon.js`) and shown by the Compendium/CategoryIcon component, falling back to a small generic per-category icon set when there's no real icon:
 
 ```bash
-node scripts/import-foundry.js [folder...] [--src=path]   # preferred: reads Docs/ReferenceFoundry/foundryvtt-starfinder-development/src/items by default
+node scripts/import-foundry.js [folder...] [--src=path] [--icons-src=path]  # preferred: reads Docs/ReferenceFoundry/foundryvtt-starfinder-development/src/items by default
 node scripts/scrape-aon.js                                 # fallback for categories Foundry doesn't cover (Equipment, Themes, rules/setting/tables)
 node scripts/validate-aon-cache.js
 node scripts/import-aon-cache.js                            # THE step that actually pushes aon-cache/ into the live `aon_entries` table — needs DATABASE_URL

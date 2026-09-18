@@ -181,6 +181,23 @@ export function normalizeSource(raw) {
   return { book: SOURCE_BOOKS[bookPart] || bookPart, page };
 }
 
+// A Foundry item's `img` is a runtime-virtual path like
+// "systems/sfrpg/icons/equipment/weapons/tactical-knife.webp" — meaningful
+// only inside a running Foundry install, not to us. Strips the
+// "systems/<id>/" prefix down to a plain relative path
+// ("icons/equipment/weapons/tactical-knife.webp") that scripts/
+// import-foundry.js resolves against the reference checkout to copy the
+// actual file, and that the backend later serves as-is under
+// /api/aon/icons/. Foundry's own placeholder ("icons/svg/mystery-man.svg"
+// and friends, from Foundry core's bundled generic icon set, not the
+// Starfinder system's own art) means "nobody ever set a real icon" —
+// treated as no icon at all rather than storing a meaningless silhouette.
+export function iconPathFor(img) {
+  if (!img || typeof img !== "string") return "";
+  if (img.includes("icons/svg/")) return "";
+  return img.replace(/^systems\/[^/]+\//, "");
+}
+
 // Resolves Foundry's own @UUID[...]{Label}, @Item[...]{Label}, and
 // @Check[type:x|dc:y]{Label} rich-text link syntax to plain labels — shared
 // by foundryTextToPlain() (items) and mapFoundryJournalPage() (rules/
@@ -624,13 +641,18 @@ export function mapFoundryItem(raw, categoryOverride) {
   const system = raw.system || {};
   const plainDescription = foundryTextToPlain(system.description?.value);
   const { book, page } = normalizeSource(system.source);
+  const icon = iconPathFor(raw.img);
 
   return {
     category: categoryFor(raw, categoryOverride),
     name: raw.name,
     source: book,
     url: "",
-    data: { ...buildData(raw.type, system, plainDescription), ...(page != null ? { sourcePage: page } : {}) },
+    data: {
+      ...buildData(raw.type, system, plainDescription),
+      ...(page != null ? { sourcePage: page } : {}),
+      ...(icon ? { icon } : {}),
+    },
     mechanics: deriveFoundryMechanics(raw.type, system, plainDescription),
     mechanicsSource: "foundry",
   };

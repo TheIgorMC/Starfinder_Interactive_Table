@@ -1,4 +1,6 @@
 import { Router } from "express";
+import express from "express";
+import path from "node:path";
 import { pool } from "../db.js";
 import { requireAuth } from "../auth.js";
 
@@ -8,6 +10,15 @@ import { requireAuth } from "../auth.js";
 // but still requires being logged in as someone (GM or player).
 const r = Router();
 r.use(requireAuth);
+
+// Per-item icons copied out of the Foundry reference checkout by
+// scripts/import-foundry.js (see iconPathFor() in src/foundry-import.js) —
+// small line-art icons, not full illustrations; a `data.icon` value on an
+// entry is a path relative to this root. Same requireAuth as the rest of
+// this router (a logged-in browser's <img> tag sends its session cookie
+// like any other same-origin request).
+const ICON_ROOT = path.resolve(process.env.ICON_CACHE_DIR || "icon-cache");
+r.use("/icons", express.static(ICON_ROOT));
 
 r.get("/categories", async (_req, res) => {
   const { rows } = await pool.query(

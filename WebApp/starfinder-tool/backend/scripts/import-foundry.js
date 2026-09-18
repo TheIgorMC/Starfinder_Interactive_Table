@@ -15,7 +15,7 @@
 // relative to the repo root (a gitignored local checkout) — override with
 // --src=/path/to/foundryvtt-starfinder/src/items if yours lives elsewhere.
 
-import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir, copyFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mapFoundryItem, mapFoundryJournalPage, mapFoundryRollTable } from "../src/foundry-import.js";
@@ -25,6 +25,13 @@ const DEFAULT_SRC = path.resolve(
   __dirname,
   "../../../../Docs/ReferenceFoundry/foundryvtt-starfinder-development/src/items"
 );
+// Icons live in the checkout's own icons/ folder, a sibling of src/ — see
+// iconPathFor() in src/foundry-import.js for the path shape this resolves.
+const DEFAULT_ICONS_SRC = path.resolve(DEFAULT_SRC, "../..");
+// A generic icon (Foundry's SFRPG set is hand-drawn line art, not
+// photography) tops out around a few tens of KB — anything past this is
+// almost certainly not a per-item icon and not worth copying/serving.
+const MAX_ICON_BYTES = 300 * 1024;
 
 // Source folder → stored `category` override. Most folders don't need one
 // (a folder of feats stores as category "feat"); these are the folders
@@ -77,17 +84,43 @@ function uniqueSlugger() {
 function parseArgs(argv) {
   const folders = [];
   let src = DEFAULT_SRC;
+  let iconsSrc = null;
   for (const arg of argv) {
     if (arg.startsWith("--src=")) src = path.resolve(arg.slice("--src=".length));
+    else if (arg.startsWith("--icons-src=")) iconsSrc = path.resolve(arg.slice("--icons-src=".length));
     else folders.push(arg);
   }
-  return { folders: folders.length ? folders : ALL_FOLDERS, src };
+  return { folders: folders.length ? folders : ALL_FOLDERS, src, iconsSrc: iconsSrc || DEFAULT_ICONS_SRC };
+}
+
+// Copies the one icon file an entry references from the reference checkout
+// into ICON_CACHE_DIR, preserving its relative path (so /api/aon/icons/<that
+// path> serves it later — see backend/src/routes/aon.js). Best-effort: a
+// missing or oversized source file just means this entry goes without an
+// icon (the frontend falls back to a generic per-category icon), never a
+// failed import.
+async function copyIcon(iconsSrc, iconCacheRoot, relPath, stats) {
+  const from = path.join(iconsSrc, relPath);
+  const to = path.join(iconCacheRoot, relPath);
+  try {
+    const info = await stat(from);
+    if (info.size > MAX_ICON_BYTES) { stats.tooLarge++; return false; }
+    await mkdir(path.dirname(to), { recursive: true });
+    await copyFile(from, to);
+    stats.copied++;
+    return true;
+  } catch {
+    stats.missing++;
+    return false;
+  }
 }
 
 async function main() {
-  const { folders, src } = parseArgs(process.argv.slice(2));
+  const { folders, src, iconsSrc } = parseArgs(process.argv.slice(2));
   const outRoot = path.resolve(process.env.AON_CACHE_DIR || "aon-cache");
+  const iconCacheRoot = path.resolve(process.env.ICON_CACHE_DIR || "icon-cache");
   let grandTotal = 0;
+  const iconStats = { copied: 0, missing: 0, tooLarge: 0 };
 
   for (const folder of folders) {
     const dir = path.join(src, folder);
@@ -136,6 +169,10 @@ async function main() {
         const raw = JSON.parse(await readFile(path.join(dir, file), "utf8"));
         const entry = mapFoundryItem(raw, categoryOverride);
         if (!entry) { skipped++; continue; }
+        if (entry.data.icon) {
+          const ok = await copyIcon(iconsSrc, iconCacheRoot, entry.data.icon, iconStats);
+          if (!ok) delete entry.data.icon; // no file on disk to serve — don't reference a broken image
+        }
         const slug = nextSlug(path.basename(file, ".json"));
         await writeFile(path.join(outDir, `${slug}.json`), JSON.stringify(entry, null, 2));
         count++;
@@ -147,6 +184,11 @@ async function main() {
   }
 
   console.log(`Total: ${grandTotal} entries. Next: npm run validate:aon`);
+  console.log(
+    `Icons: ${iconStats.copied} copied to ${iconCacheRoot}` +
+    `${iconStats.missing ? `, ${iconStats.missing} referenced but not found on disk` : ""}` +
+    `${iconStats.tooLarge ? `, ${iconStats.tooLarge} skipped for being over ${MAX_ICON_BYTES / 1024}KB` : ""}.`
+  );
 }
 
 main().catch((err) => {
