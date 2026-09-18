@@ -6,6 +6,7 @@ import SourcesConfig from "../components/SourcesConfig.jsx";
 import WealthLimitConfig from "../components/WealthLimitConfig.jsx";
 import MediaLibrary from "../components/MediaLibrary.jsx";
 import Campaign from "../components/Campaign.jsx";
+import Characters from "../components/Characters.jsx";
 import Sessions from "../components/Sessions.jsx";
 import { useAuth } from "../auth.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
@@ -72,6 +73,7 @@ const TABS = [
   { key: "scene", label: "Scene & Mood" },
   { key: "media", label: "Media Library" },
   { key: "campaign", label: "Campaign" },
+  { key: "characters", label: "Characters" },
   { key: "sessions", label: "Sessions" },
   { key: "sources", label: "Sources" },
 ];
@@ -169,6 +171,7 @@ export default function GM() {
   const [session, setSession] = useState(null);
   const [selectedToken, setSelectedToken] = useState(null);
   const [characters, setCharacters] = useState([]);
+  const [focusCharacterId, setFocusCharacterId] = useState(null);
   const sessionRef = useRef(null);
   sessionRef.current = session;
 
@@ -250,7 +253,12 @@ export default function GM() {
           </div>
         )}
         {tab === "media" && <MediaLibrary />}
-        {tab === "campaign" && <Campaign />}
+        {tab === "campaign" && (
+          <Campaign onOpenCharacter={(id) => { setFocusCharacterId(id); setTab("characters"); }} />
+        )}
+        {tab === "characters" && (
+          <Characters focusCharacterId={focusCharacterId} onFocusHandled={() => setFocusCharacterId(null)} />
+        )}
         {tab === "sessions" && <Sessions />}
         {tab === "sources" && (
           <div className="gm-panel">

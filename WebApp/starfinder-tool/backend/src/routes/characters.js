@@ -12,7 +12,7 @@ const FIELDS = [
   "hp_max","hp_cur","sp_max","sp_cur","rp_max","rp_cur",
   "eac","kac","bab","save_fort","save_ref","save_will",
   "init_bonus","speed","skills","feats","spells","equipment","notes","portrait_url",
-  "credits","conditions",
+  "credits","conditions","lore_entry_id",
 ];
 const JSON_FIELDS = new Set(["skills", "feats", "spells", "equipment", "conditions"]);
 
@@ -20,13 +20,22 @@ const forId = (req) => req.params.id;
 
 // Full list is GM-only — a player has exactly one character (their own,
 // fetched by id) and never needs to enumerate everyone else's.
+// Includes the linked lore entry's name (if any — see migrations/012) so
+// the Characters tab can show "linked to <name>" without a second request
+// per row.
+const SELECT_WITH_LORE = `
+  SELECT c.*, e.name AS lore_entry_name
+  FROM characters c
+  LEFT JOIN campaign_entries e ON e.id = c.lore_entry_id
+`;
+
 r.get("/", requireGM, async (_req, res) => {
-  const { rows } = await pool.query("SELECT * FROM characters ORDER BY name");
+  const { rows } = await pool.query(`${SELECT_WITH_LORE} ORDER BY c.name`);
   res.json(rows);
 });
 
 r.get("/:id", requireGmOrOwnCharacter(forId), async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM characters WHERE id=$1", [req.params.id]);
+  const { rows } = await pool.query(`${SELECT_WITH_LORE} WHERE c.id=$1`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "not found" });
   res.json(rows[0]);
 });

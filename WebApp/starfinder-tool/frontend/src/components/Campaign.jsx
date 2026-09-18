@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../api.js";
-import CharacterSheet from "./CharacterSheet.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
 import { HIERARCHY_RELATIONS, buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
 
 const TYPES = [
   { key: "event", label: "Events" },
   { key: "location", label: "Locations" },
-  { key: "npc", label: "Characters" },
+  { key: "npc", label: "People" },
   { key: "faction", label: "Factions" },
   { key: "quest", label: "Quests" },
   { key: "object", label: "Objects" },
@@ -35,64 +34,6 @@ function buildTree(entries, links) {
 }
 
 const blank = (type) => ({ type, name: "", summary: "", body: "", image_id: null, event_date: "", visible_to_players: false });
-
-function HephaistosImport({ onImported }) {
-  const [raw, setRaw] = useState("");
-  const [assignTo, setAssignTo] = useState("");
-  const [players, setPlayers] = useState([]);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => { api("/auth/users").then(setPlayers).catch(() => setPlayers([])); }, []);
-
-  const onFile = (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    file.text().then(setRaw);
-  };
-
-  const doImport = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const hephaistos = JSON.parse(raw);
-      await api("/characters/import/hephaistos", {
-        method: "POST",
-        body: { hephaistos, assignToUsername: assignTo || undefined },
-      });
-      setRaw("");
-      setAssignTo("");
-      onImported();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="hephaistos-import">
-      <div className="row">
-        <label className="button-like">
-          Choose JSON file…
-          <input type="file" accept=".json,application/json" onChange={onFile} hidden />
-        </label>
-        <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)}>
-          <option value="">Assign to player… (optional)</option>
-          {players.map((p) => (
-            <option key={p.username} value={p.username}>
-              {p.username}{p.character_id != null ? " (already has a character)" : ""}
-            </option>
-          ))}
-        </select>
-        <button onClick={doImport} disabled={!raw || busy}>{busy ? "Importing…" : "Import"}</button>
-      </div>
-      {error && <p className="pill bad">{error}</p>}
-      <textarea rows={4} placeholder="…or paste the exported Hephaistos JSON here" value={raw} onChange={(e) => setRaw(e.target.value)} />
-    </div>
-  );
-}
 
 // Raw fetch, not the api() helper — that one always JSON-encodes the body,
 // which doesn't work for multipart file uploads (same reason as
@@ -250,7 +191,7 @@ function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEn
   );
 }
 
-export default function Campaign() {
+export default function Campaign({ onOpenCharacter }) {
   const [type, setType] = useState("event");
   const [entries, setEntries] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -265,9 +206,6 @@ export default function Campaign() {
   const [summaryRefreshBusy, setSummaryRefreshBusy] = useState(false);
   const [linkTargetId, setLinkTargetId] = useState("");
   const [relation, setRelation] = useState("");
-  const [characters, setCharacters] = useState([]);
-  const [viewingChar, setViewingChar] = useState(null);
-  const [showPcImport, setShowPcImport] = useState(false);
   const { active, setFilterEnabled } = useActiveSession();
 
   const toggleCollapsed = (id) => setCollapsed((cur) => {
@@ -294,13 +232,6 @@ export default function Campaign() {
     api("/campaign").then(setAllEntries).catch(() => setAllEntries([]));
     loadLinks();
   }, []);
-
-  const loadCharacters = () => api("/characters").then(setCharacters);
-  useEffect(() => { if (type === "npc") loadCharacters(); }, [type]);
-
-  const openCharacter = (c) => api(`/characters/${c.id}`).then(setViewingChar);
-  const patchCharacter = (fields) =>
-    api(`/characters/${viewingChar.id}`, { method: "PATCH", body: fields }).then((c) => { setViewingChar(c); loadCharacters(); });
 
   const openEntry = async (entry) => {
     const full = entry.id ? await api(`/campaign/${entry.id}`) : entry;
@@ -445,38 +376,6 @@ export default function Campaign() {
         </label>
       )}
 
-      {type === "npc" && (
-        <div className="campaign-pcs">
-          <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
-            <h3 style={{ margin: 0 }}>Player Characters</h3>
-            <button className="link" onClick={() => setShowPcImport((v) => !v)}>
-              {showPcImport ? "✕ Close import" : "+ Import from Hephaistos"}
-            </button>
-          </div>
-          {showPcImport && <HephaistosImport onImported={() => { loadCharacters(); setShowPcImport(false); }} />}
-          <ul className="campaign-pc-list">
-            {characters.map((c) => (
-              <li key={c.id}>
-                <button className="link campaign-pc-row" onClick={() => openCharacter(c)}>
-                  {c.portrait_url && <img src={c.portrait_url} alt="" />}
-                  <strong>{c.name}</strong> <span className="muted">{c.race} {c.class} {c.level}</span>
-                </button>
-              </li>
-            ))}
-            {characters.length === 0 && <li className="muted">No player characters yet.</li>}
-          </ul>
-
-          {viewingChar && (
-            <div className="campaign-character-sheet">
-              <button className="link" onClick={() => setViewingChar(null)}>✕ Close sheet</button>
-              <CharacterSheet key={viewingChar.id} character={viewingChar} patch={patchCharacter} />
-            </div>
-          )}
-
-          <h3>NPCs</h3>
-        </div>
-      )}
-
       <div className="campaign-body">
         <div className="campaign-list">
           <button onClick={() => { setEditing(blank(type)); setViewMode("edit"); resetAiDraft(); }}>+ New {TYPES.find((t) => t.key === type).label.replace(/s$/, "")}</button>
@@ -523,6 +422,23 @@ export default function Campaign() {
             <div className="campaign-markdown">
               <ReactMarkdown>{editing.body || "*Nothing written yet — click Edit to add some.*"}</ReactMarkdown>
             </div>
+
+            {editing.type === "npc" && onOpenCharacter && (
+              <div className="campaign-links">
+                <h4>Character sheet</h4>
+                {editing.linked_character ? (
+                  <p>
+                    <strong>{editing.linked_character.name}</strong>{" "}
+                    <span className="muted">{editing.linked_character.race} {editing.linked_character.class} {editing.linked_character.level}</span>{" "}
+                    <button className="link" onClick={() => onOpenCharacter(editing.linked_character.id)}>Open sheet →</button>
+                  </p>
+                ) : (
+                  <p className="muted">
+                    No linked statblock. Link one from the Characters tab if this person needs stats.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="campaign-links">
               <h4>Related entries</h4>

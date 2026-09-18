@@ -45,7 +45,18 @@ async function withLinks(entry) {
      WHERE l.to_id = $1`,
     [entry.id]
   );
-  return { ...entry, links: [...out, ...inc] };
+  // A statted PC/NPC (characters table) may optionally point back at this
+  // wiki entry as its lore page (migrations/012) — surface it so the reader
+  // view can show "linked character sheet" without a second round trip.
+  let linked_character = null;
+  if (entry.type === "npc") {
+    const { rows: charRows } = await pool.query(
+      "SELECT id, name, race, class, level, portrait_url FROM characters WHERE lore_entry_id = $1",
+      [entry.id]
+    );
+    linked_character = charRows[0] || null;
+  }
+  return { ...entry, links: [...out, ...inc], linked_character };
 }
 
 r.get("/", requireAuth, async (req, res) => {
