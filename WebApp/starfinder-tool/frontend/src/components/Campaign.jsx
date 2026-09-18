@@ -159,7 +159,7 @@ function DuplicatesTool({ onMerged }) {
     setGroups(rows);
     setKeepChoice((cur) => {
       const next = { ...cur };
-      for (const g of rows) if (next[`${g.type}:${g.name}`] === undefined) next[`${g.type}:${g.name}`] = g.ids[0];
+      for (const g of rows) { const key = g.ids.join(","); if (next[key] === undefined) next[key] = g.ids[0]; }
       return next;
     });
   });
@@ -171,7 +171,7 @@ function DuplicatesTool({ onMerged }) {
   };
 
   const merge = async (group) => {
-    const key = `${group.type}:${group.name}`;
+    const key = group.ids.join(",");
     const keepId = keepChoice[key];
     const removeIds = group.ids.filter((id) => id !== keepId);
     setBusyKey(key);
@@ -192,10 +192,15 @@ function DuplicatesTool({ onMerged }) {
           {groups === null && <p className="muted">Checking…</p>}
           {groups?.length === 0 && <p className="muted">No duplicates found.</p>}
           {groups?.map((g) => {
-            const key = `${g.type}:${g.name}`;
+            const key = g.ids.join(",");
             return (
               <div key={key} className="duplicates-group">
-                <p><span className="pill">{g.type}</span> <strong>{g.name}</strong> — {g.ids.length} copies</p>
+                <p>
+                  {g.type ? <span className="pill">{g.type}</span> : <span className="pill bad">mixed type</span>}
+                  {" "}<strong>{g.name}</strong> — {g.ids.length} copies
+                  {g.name_variants.length > 1 && <span className="muted"> (spelled: {g.name_variants.join(" / ")})</span>}
+                  {g.confidence === "cross-type" && <span className="muted"> — same name, different types; check these are really the same thing before merging</span>}
+                </p>
                 <div className="row">
                   {g.ids.map((id, i) => (
                     <label key={id} className="checkbox-inline">
@@ -203,7 +208,7 @@ function DuplicatesTool({ onMerged }) {
                         type="radio" name={key} checked={keepChoice[key] === id}
                         onChange={() => setKeepChoice((cur) => ({ ...cur, [key]: id }))}
                       />
-                      keep #{id} {i === 0 ? "(oldest)" : ""}
+                      keep #{id} ({g.id_types[i]}){i === 0 ? " (oldest)" : ""}
                     </label>
                   ))}
                   <button onClick={() => merge(g)} disabled={busyKey === key}>
@@ -282,7 +287,7 @@ export default function Campaign() {
   const resetAiDraft = () => { setAiDescription(""); setAiBusy(false); setAiError(""); setAiLinks([]); };
 
   const load = () => api(`/campaign?type=${type}`).then(setEntries);
-  useEffect(() => { load(); setQ(""); setChapterFilter(""); }, [type]);
+  useEffect(() => { load(); setQ(""); }, [type]); // chapterFilter deliberately persists across tabs — it's a campaign-wide filter, not per-type
   const loadLinks = () => api("/campaign/links").then(setLinks).catch(() => setLinks([]));
   useEffect(() => {
     api("/media?category=portrait").then(setImages).catch(() => setImages([]));

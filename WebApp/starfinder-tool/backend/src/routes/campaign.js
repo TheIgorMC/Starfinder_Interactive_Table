@@ -120,14 +120,40 @@ r.post("/refresh-summaries", requireGM, async (req, res) => {
 // which gives it a fresh internal id there and so imports as a brand new
 // entry here instead of updating the old one (import is keyed on that id,
 // external_id — see tgn-import.js). Grouped for the merge tool below.
+// Grouped by normalized name (case/surrounding-whitespace folded away),
+// not an exact string match — hand-typed Tangent content routinely has
+// two entries that read identically ("Aether-Vane Aesthetics" vs
+// "aether-vane aesthetics " with a trailing space) but wouldn't group
+// under a byte-exact comparison, which is exactly the case that matters
+// most here (a GM staring at what's obviously the same name twice).
 r.get("/duplicates", requireGM, async (req, res) => {
-  const { rows } = await pool.query(`
-    SELECT type, name, array_agg(id ORDER BY id) AS ids, array_agg(created_at ORDER BY id) AS created_ats
+  // Two tiers: same type + normalized name is almost certainly the same
+  // thing re-created in Tangent between exports — safe to suggest merging
+  // outright. Same name but a *different* type (e.g. an entry moved
+  // between Tangent columns and re-exported, ending up both as the old
+  // type and the new one) is flagged separately and lower-confidence,
+  // since two unrelated concepts sharing a name (a faction and a quest
+  // both called after it) is also plausible — the GM decides, this just
+  // surfaces the possibility instead of silently missing it.
+  const { rows: sameType } = await pool.query(`
+    SELECT type, (array_agg(name ORDER BY id))[1] AS name,
+           array_agg(DISTINCT name) AS name_variants,
+           array_agg(id ORDER BY id) AS ids, array_agg(type ORDER BY id) AS id_types,
+           array_agg(created_at ORDER BY id) AS created_ats, 'name' AS confidence
     FROM campaign_entries
-    GROUP BY type, name
+    GROUP BY type, lower(btrim(name))
     HAVING count(*) > 1
-    ORDER BY name
   `);
+  const { rows: crossType } = await pool.query(`
+    SELECT NULL AS type, (array_agg(name ORDER BY id))[1] AS name,
+           array_agg(DISTINCT name) AS name_variants,
+           array_agg(id ORDER BY id) AS ids, array_agg(type ORDER BY id) AS id_types,
+           array_agg(created_at ORDER BY id) AS created_ats, 'cross-type' AS confidence
+    FROM campaign_entries
+    GROUP BY lower(btrim(name))
+    HAVING count(DISTINCT type) > 1
+  `);
+  const rows = [...sameType, ...crossType].sort((a, b) => a.name.localeCompare(b.name));
   res.json(rows);
 });
 
