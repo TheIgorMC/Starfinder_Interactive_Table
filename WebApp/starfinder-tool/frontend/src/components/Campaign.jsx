@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { api } from "../api.js";
 import CharacterSheet from "./CharacterSheet.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
+import { HIERARCHY_RELATIONS } from "../lib/campaignTree.js";
 
 const TYPES = [
   { key: "event", label: "Events" },
@@ -11,14 +13,6 @@ const TYPES = [
   { key: "quest", label: "Quests" },
   { key: "object", label: "Objects" },
 ];
-
-// The relation labels tgn-import.js writes for tree-nesting edges (see
-// backend/src/tgn-import.js's HIERARCHY_RELATION_BY_TYPE) — a link using
-// one of these, between two entries of the same type, is treated as
-// "child -> parent" for the tree view below rather than an ordinary
-// cross-reference. A link a GM adds by hand with one of these exact labels
-// gets the same tree treatment; anything else stays a flat "related entry".
-const HIERARCHY_RELATIONS = new Set(["si trova in", "parte di", "sotto-quest di", "sotto-capitolo di"]);
 
 // Groups a flat list of same-type entries into a tree using `links`
 // (id/from_id/to_id/relation, as returned by GET /api/campaign/links).
@@ -180,6 +174,7 @@ export default function Campaign() {
   const [type, setType] = useState("event");
   const [entries, setEntries] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [viewMode, setViewMode] = useState("read"); // "read" (rendered markdown) or "edit" (the form)
   const [images, setImages] = useState([]);
   const [allEntries, setAllEntries] = useState([]);
   const [links, setLinks] = useState([]);
@@ -226,6 +221,7 @@ export default function Campaign() {
   const openEntry = async (entry) => {
     const full = entry.id ? await api(`/campaign/${entry.id}`) : entry;
     setEditing(full);
+    setViewMode(full.id ? "read" : "edit");
     resetAiDraft();
   };
 
@@ -264,11 +260,11 @@ export default function Campaign() {
         api(`/campaign/${saved.id}/links`, { method: "POST", body: { to_id: l.entry_id, relation: l.relation } })
       ));
     }
-    setEditing(null);
     resetAiDraft();
     load();
     api("/campaign").then(setAllEntries);
     loadLinks();
+    openEntry(saved);
   };
 
   const remove = async () => {
@@ -347,7 +343,7 @@ export default function Campaign() {
 
       <div className="campaign-body">
         <div className="campaign-list">
-          <button onClick={() => { setEditing(blank(type)); resetAiDraft(); }}>+ New {TYPES.find((t) => t.key === type).label.replace(/s$/, "")}</button>
+          <button onClick={() => { setEditing(blank(type)); setViewMode("edit"); resetAiDraft(); }}>+ New {TYPES.find((t) => t.key === type).label.replace(/s$/, "")}</button>
           <input className="campaign-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
           <ul className="campaign-tree">
             {tree.roots.map((e) => (
@@ -361,7 +357,48 @@ export default function Campaign() {
           </ul>
         </div>
 
-        {editing && (
+        {editing && viewMode === "read" && (
+          <div className="campaign-reader">
+            <div className="campaign-reader-head">
+              <div>
+                <h2>{editing.name}</h2>
+                <p className="muted">
+                  {TYPES.find((t) => t.key === editing.type)?.label.replace(/s$/, "")}
+                  {editing.event_date && ` · ${editing.event_date}`}
+                  {editing.visible_to_players && <span className="pill ok" style={{ marginLeft: 8 }}>visible to players</span>}
+                </p>
+              </div>
+              <div className="row">
+                <button onClick={() => setViewMode("edit")}>Edit</button>
+                <button className="link" onClick={() => setEditing(null)}>Close</button>
+              </div>
+            </div>
+
+            {images.find((m) => m.id === editing.image_id) && (
+              <img className="campaign-reader-image" src={images.find((m) => m.id === editing.image_id).url} alt="" />
+            )}
+            {editing.summary && <p className="campaign-reader-summary">{editing.summary}</p>}
+            <div className="campaign-markdown">
+              <ReactMarkdown>{editing.body || "*Nothing written yet — click Edit to add some.*"}</ReactMarkdown>
+            </div>
+
+            <div className="campaign-links">
+              <h4>Related entries</h4>
+              <ul>
+                {(editing.links || []).map((l) => (
+                  <li key={l.id}>
+                    {l.direction === "out" ? `→ ${l.relation || "related to"}` : `← ${l.relation || "related to"}`}{" "}
+                    <span className="pill">{l.type}</span>{" "}
+                    <button className="link" onClick={() => openEntry({ id: l.entry_id })}>{l.name}</button>
+                  </li>
+                ))}
+                {(!editing.links || editing.links.length === 0) && <li className="muted">No links yet.</li>}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {editing && viewMode === "edit" && (
           <div className="campaign-editor">
             {!editing.id && (
               <div className="ai-draft">
@@ -440,7 +477,7 @@ export default function Campaign() {
 
             <div className="row">
               <button onClick={save} disabled={!editing.name}>Save</button>
-              <button className="link" onClick={() => { setEditing(null); resetAiDraft(); }}>Cancel</button>
+              <button className="link" onClick={() => { editing.id ? openEntry({ id: editing.id }) : setEditing(null); resetAiDraft(); }}>Cancel</button>
               {editing.id && <button className="link" onClick={remove}>Delete</button>}
             </div>
           </div>

@@ -257,8 +257,8 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 
 /* Campaign */
 .campaign { padding: 20px 24px; }
-.campaign-body { display: flex; gap: 20px; }
-.campaign-list { flex: 1; max-width: 320px; }
+.campaign-body { display: flex; gap: 20px; align-items: flex-start; }
+.campaign-list { flex: 0 0 300px; max-width: 300px; }
 .campaign-list ul { list-style: none; padding: 0; margin: 8px 0 0; }
 .campaign-list li { padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
 .campaign-search { margin: 10px 0 0; width: 100%; box-sizing: border-box; }
@@ -268,12 +268,27 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-tree li { padding: 0; border: none; }
 .campaign-tree-row { display: flex; align-items: center; gap: 4px; padding: 4px 0; }
 .campaign-tree-caret { width: 16px; flex: 0 0 16px; background: none; border: none; padding: 0; color: var(--text-muted); font-size: 11px; }
-.campaign-editor {
-  flex: 1.4; max-width: 560px; display: flex; flex-direction: column; gap: 8px;
+.campaign-editor, .campaign-reader {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
-  border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px;
+  border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px 24px 24px;
   box-shadow: var(--shadow-card);
 }
+.campaign-editor { max-width: 640px; } /* the form's inputs don't benefit from going full-bleed wide */
+
+.campaign-reader-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.campaign-reader-head h2 { margin: 0 0 4px; }
+.campaign-reader-image { width: 100%; max-height: 340px; object-fit: cover; border-radius: var(--radius-md); margin: 4px 0; }
+.campaign-reader-summary { font-size: 15px; color: var(--text-secondary); font-style: italic; margin: 0; }
+
+.campaign-markdown { line-height: 1.65; max-width: 78ch; }
+.campaign-markdown img { max-width: 100%; border-radius: var(--radius-sm); margin: 10px 0; display: block; }
+.campaign-markdown h1, .campaign-markdown h2, .campaign-markdown h3 { margin: 18px 0 8px; }
+.campaign-markdown h1:first-child, .campaign-markdown h2:first-child, .campaign-markdown h3:first-child { margin-top: 0; }
+.campaign-markdown p { margin: 0 0 12px; }
+.campaign-markdown ul, .campaign-markdown ol { margin: 0 0 12px; padding-left: 22px; }
+.campaign-markdown blockquote { margin: 0 0 12px; padding: 4px 14px; border-left: 3px solid var(--accent-border); color: var(--text-muted); }
+.campaign-markdown a { color: var(--accent-text); }
 .campaign-links { margin-top: 10px; border-top: 1px solid var(--border-soft); padding-top: 10px; }
 .campaign-links h4 { margin: 0 0 8px; font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
 .campaign-links ul { list-style: none; padding: 0; margin: 0 0 8px; }

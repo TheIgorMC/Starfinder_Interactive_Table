@@ -156,6 +156,22 @@ r.post("/:id/entries", async (req, res) => {
   res.status(201).json(await loadFull(req.params.id));
 });
 
+// Links several entries in one call — the frontend uses this when the GM
+// links a location/faction/quest that has sub-entries (per the hierarchy
+// links tgn-import.js writes, e.g. "si trova in"/"parte di") so the whole
+// subtree gets linked together, not just the one entry clicked.
+r.post("/:id/entries/bulk", async (req, res) => {
+  const ids = Array.isArray(req.body?.entry_ids) ? req.body.entry_ids.map(Number).filter(Number.isFinite) : [];
+  if (!ids.length) return res.status(400).json({ error: "entry_ids required" });
+  await pool.query(
+    `INSERT INTO game_session_entries (session_id, entry_id)
+     SELECT $1, unnest($2::int[]) ON CONFLICT DO NOTHING`,
+    [req.params.id, ids]
+  );
+  pingSession(req.params.id);
+  res.status(201).json(await loadFull(req.params.id));
+});
+
 r.delete("/:id/entries/:entryId", async (req, res) => {
   await pool.query("DELETE FROM game_session_entries WHERE session_id=$1 AND entry_id=$2", [req.params.id, req.params.entryId]);
   pingSession(req.params.id);

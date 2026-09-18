@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
 
 // Session planning: a GM prep container tying together which lore entries
 // (events/locations/NPCs/factions/objects, from the Campaign tab), media
@@ -22,11 +23,14 @@ const STATUS_LABEL = { planned: "Planned", active: "Active", completed: "Complet
 
 const blank = () => ({ name: "", session_date: "", summary: "", notes: "" });
 
-function EntryLinker({ linked, onLink, onUnlink }) {
+function EntryLinker({ linked, onLinkMany, onUnlink }) {
   const [all, setAll] = useState([]);
+  const [childrenOf, setChildrenOf] = useState(new Map());
   const [q, setQ] = useState("");
+  const [lastAdded, setLastAdded] = useState(null);
 
   useEffect(() => { api("/campaign").then(setAll).catch(() => setAll([])); }, []);
+  useEffect(() => { api("/campaign/links").then((rows) => setChildrenOf(buildChildrenIndex(rows))).catch(() => setChildrenOf(new Map())); }, []);
 
   const linkedIds = new Set(linked.map((e) => e.id));
   const matches = q
@@ -36,6 +40,17 @@ function EntryLinker({ linked, onLink, onUnlink }) {
   const grouped = Object.entries(ENTRY_TYPE_LABELS).map(([type, label]) => [
     type, label, linked.filter((e) => e.type === type),
   ]).filter(([, , items]) => items.length > 0);
+
+  // Linking a location/faction/quest/etc. that has sub-entries (per the
+  // hierarchy links tgn-import.js writes — see lib/campaignTree.js) pulls
+  // its whole subtree in with it: picking "Core Sector" should also prep
+  // every system/planet nested under it, not just the sector itself.
+  const pick = (entry) => {
+    const ids = [entry.id, ...descendantIds(entry.id, childrenOf)];
+    onLinkMany(ids);
+    setLastAdded(ids.length > 1 ? { name: entry.name, count: ids.length } : null);
+    setQ("");
+  };
 
   return (
     <div className="session-section">
@@ -50,14 +65,23 @@ function EntryLinker({ linked, onLink, onUnlink }) {
           ))}
         </div>
       ))}
+      {lastAdded && (
+        <p className="muted">
+          Added "{lastAdded.name}" and {lastAdded.count - 1} sub-entr{lastAdded.count - 1 === 1 ? "y" : "ies"}.
+        </p>
+      )}
       <input placeholder="Search lore to add…" value={q} onChange={(ev) => setQ(ev.target.value)} />
       {q && (
         <ul className="sheet-list wizard-picker-list">
-          {matches.map((e) => (
-            <li key={e.id} className="sheet-card wizard-pick-card" onClick={() => { onLink(e.id); setQ(""); }}>
-              <span className="pill">{ENTRY_TYPE_LABELS[e.type] || e.type}</span> {e.name}
-            </li>
-          ))}
+          {matches.map((e) => {
+            const subCount = descendantIds(e.id, childrenOf).length;
+            return (
+              <li key={e.id} className="sheet-card wizard-pick-card" onClick={() => pick(e)}>
+                <span className="pill">{ENTRY_TYPE_LABELS[e.type] || e.type}</span> {e.name}
+                {subCount > 0 && <span className="muted"> (+{subCount} nested)</span>}
+              </li>
+            );
+          })}
           {matches.length === 0 && <li className="muted">No matches.</li>}
         </ul>
       )}
@@ -177,7 +201,7 @@ export default function Sessions() {
   const end = async () => { await api(`/sessions/${editingId}/end`); await load(); open(editingId); };
   const setFilterEnabled = async (enabled) => { await api(`/sessions/${editingId}`, { method: "PATCH", body: { filter_enabled: enabled } }); open(editingId); };
 
-  const linkEntry = (id) => api(`/sessions/${editingId}/entries`, { method: "POST", body: { entry_id: id } }).then(setSession);
+  const linkEntries = (ids) => api(`/sessions/${editingId}/entries/bulk`, { method: "POST", body: { entry_ids: ids } }).then(setSession);
   const unlinkEntry = (id) => api(`/sessions/${editingId}/entries/${id}`, { method: "DELETE" }).then(setSession);
   const linkMedia = (id) => api(`/sessions/${editingId}/media`, { method: "POST", body: { media_id: id } }).then(setSession);
   const unlinkMedia = (id) => api(`/sessions/${editingId}/media/${id}`, { method: "DELETE" }).then(setSession);
@@ -234,7 +258,7 @@ export default function Sessions() {
                   </p>
                 )}
 
-                <EntryLinker linked={session.entries} onLink={linkEntry} onUnlink={unlinkEntry} />
+                <EntryLinker linked={session.entries} onLinkMany={linkEntries} onUnlink={unlinkEntry} />
                 <MediaLinker linked={session.media} onLink={linkMedia} onUnlink={unlinkMedia} />
                 <EncounterLinker linked={session.encounters} onLink={linkEncounter} onUnlink={unlinkEncounter} onCreate={createEncounter} />
               </>
