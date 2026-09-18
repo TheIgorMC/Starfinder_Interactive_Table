@@ -231,14 +231,16 @@ export default function Sessions() {
 
         {editingId && (
           <div className="campaign-editor">
-            <input placeholder="Session name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <input placeholder="Date (in-game or real-world, freeform)" value={form.session_date} onChange={(e) => setForm({ ...form, session_date: e.target.value })} />
+            <div className="row">
+              <input placeholder="Session name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ flex: 2 }} />
+              <input placeholder="Date (freeform)" value={form.session_date} onChange={(e) => setForm({ ...form, session_date: e.target.value })} style={{ flex: 1 }} />
+            </div>
             <input placeholder="One-line summary" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
-            <textarea rows={6} placeholder="GM prep notes, planned beats…" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <textarea rows={3} placeholder="GM prep notes, planned beats…" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
 
             {session && (
               <>
-                <div className="row" style={{ margin: "12px 0" }}>
+                <div className="row" style={{ margin: "8px 0" }}>
                   <span className={`pill${session.status === "active" ? " ok" : ""}`}>{STATUS_LABEL[session.status]}</span>
                   {session.status !== "active" && session.status !== "completed" && <button onClick={start}>Start session</button>}
                   {session.status === "completed" && <button onClick={start}>Resume as active</button>}

@@ -74,35 +74,30 @@ export function parseTgn(yamlText) {
 
   const columns = doc.meta?.columns || [];
   const columnById = new Map(columns.map((c) => [c.id, c]));
-  const subtypeNamesByColumn = new Map(
-    columns.map((c) => [c.id, new Map((c.types || []).map((t) => [t.id, t.name]))])
-  );
 
   // Pass 1: flatten the recursive `objects` trees + timeline into one list,
   // recording parent/child and every id's display name along the way.
   const flat = [];
   const idToName = new Map();
 
-  function walk(node, entryType, subtypeNames, parentId) {
+  function walk(node, entryType, parentId) {
     if (!node?.id) return;
     idToName.set(node.id, node.name || "");
     flat.push({
       id: node.id,
       name: node.name?.trim() || "(untitled)",
       type: entryType,
-      subtype: subtypeNames.get(node.subtype) || "",
       blurb: node.blurb || "",
       chapters: node.chapters || [],
       parentId,
     });
-    for (const child of node.children || []) walk(child, entryType, subtypeNames, node.id);
+    for (const child of node.children || []) walk(child, entryType, node.id);
   }
 
   for (const group of doc.objects || []) {
     const column = columnById.get(group.id);
     const entryType = CATEGORY_TO_TYPE[column?.base_type] || "object";
-    const subtypeNames = subtypeNamesByColumn.get(group.id) || new Map();
-    for (const obj of group.objects || []) walk(obj, entryType, subtypeNames, null);
+    for (const obj of group.objects || []) walk(obj, entryType, null);
   }
 
   const chapters = doc.timeline || [];
@@ -113,7 +108,6 @@ export function parseTgn(yamlText) {
       id: ch.id,
       name: ch.name?.trim() || "(untitled)",
       type: "event",
-      subtype: "",
       blurb: ch.blurb || "",
       chapters: [],
       parentId: null,
@@ -129,7 +123,7 @@ export function parseTgn(yamlText) {
       external_id: f.id,
       type: f.type,
       name: f.name,
-      summary: f.subtype ? `[${f.subtype}] ${summary}` : summary,
+      summary,
       body,
       event_date: f.eventDate || "",
       visible_to_players: false,

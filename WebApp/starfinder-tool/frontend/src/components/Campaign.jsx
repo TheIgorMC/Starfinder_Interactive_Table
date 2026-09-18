@@ -180,10 +180,12 @@ export default function Campaign() {
   const [links, setLinks] = useState([]);
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [q, setQ] = useState("");
+  const [chapterFilter, setChapterFilter] = useState("");
   const [linkTargetId, setLinkTargetId] = useState("");
   const [relation, setRelation] = useState("");
   const [characters, setCharacters] = useState([]);
   const [viewingChar, setViewingChar] = useState(null);
+  const [showPcImport, setShowPcImport] = useState(false);
   const { active, setFilterEnabled } = useActiveSession();
 
   const toggleCollapsed = (id) => setCollapsed((cur) => {
@@ -203,7 +205,7 @@ export default function Campaign() {
   const resetAiDraft = () => { setAiDescription(""); setAiBusy(false); setAiError(""); setAiLinks([]); };
 
   const load = () => api(`/campaign?type=${type}`).then(setEntries);
-  useEffect(() => { load(); setQ(""); }, [type]);
+  useEffect(() => { load(); setQ(""); setChapterFilter(""); }, [type]);
   const loadLinks = () => api("/campaign/links").then(setLinks).catch(() => setLinks([]));
   useEffect(() => {
     api("/media?category=portrait").then(setImages).catch(() => setImages([]));
@@ -289,10 +291,26 @@ export default function Campaign() {
     loadLinks();
   };
 
+  // Chapters an entry "appears in" — the same links tgn-import.js writes
+  // from each Tangent object to the chapters (timeline entries, type
+  // "event") it was tagged with there. Lets a GM narrow a long list down
+  // to "just what's relevant to Chapter 2" instead of scrolling everything.
+  const chapters = useMemo(
+    () => allEntries.filter((e) => e.type === "event").sort((a, b) => a.name.localeCompare(b.name)),
+    [allEntries]
+  );
+  const chapterEntryIds = useMemo(() => {
+    if (!chapterFilter) return null;
+    const ids = new Set();
+    for (const l of links) if (l.relation === "appare in" && l.to_id === Number(chapterFilter)) ids.add(l.from_id);
+    return ids;
+  }, [links, chapterFilter]);
+
   const visibleEntries = filterToSession(entries, active, "entryIds");
+  const chapterEntries = chapterEntryIds ? visibleEntries.filter((e) => chapterEntryIds.has(e.id)) : visibleEntries;
   const searchedEntries = q.trim()
-    ? visibleEntries.filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase()))
-    : visibleEntries;
+    ? chapterEntries.filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase()))
+    : chapterEntries;
   const tree = useMemo(() => buildTree(searchedEntries, links), [searchedEntries, links]);
 
   return (
@@ -316,8 +334,13 @@ export default function Campaign() {
 
       {type === "npc" && (
         <div className="campaign-pcs">
-          <h3>Player Characters</h3>
-          <HephaistosImport onImported={loadCharacters} />
+          <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0 }}>Player Characters</h3>
+            <button className="link" onClick={() => setShowPcImport((v) => !v)}>
+              {showPcImport ? "✕ Close import" : "+ Import from Hephaistos"}
+            </button>
+          </div>
+          {showPcImport && <HephaistosImport onImported={() => { loadCharacters(); setShowPcImport(false); }} />}
           <ul className="campaign-pc-list">
             {characters.map((c) => (
               <li key={c.id}>
@@ -345,6 +368,12 @@ export default function Campaign() {
         <div className="campaign-list">
           <button onClick={() => { setEditing(blank(type)); setViewMode("edit"); resetAiDraft(); }}>+ New {TYPES.find((t) => t.key === type).label.replace(/s$/, "")}</button>
           <input className="campaign-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
+          {chapters.length > 0 && (
+            <select className="campaign-search" value={chapterFilter} onChange={(e) => setChapterFilter(e.target.value)}>
+              <option value="">All chapters</option>
+              {chapters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
           <ul className="campaign-tree">
             {tree.roots.map((e) => (
               <TreeNode key={e.id} entry={e} depth={0} childrenOf={tree.childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={editing?.id} />
