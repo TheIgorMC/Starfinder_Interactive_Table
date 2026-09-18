@@ -341,6 +341,11 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-pc-row { display: flex; align-items: center; gap: 8px; }
 .hephaistos-import { display: flex; flex-direction: column; gap: 6px; }
 .hephaistos-import textarea { font-family: var(--font-mono); font-size: 11px; }
+.hephaistos-review { margin-top: 6px; }
+.hephaistos-match-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.hephaistos-match-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--border-soft); }
+.hephaistos-match-name { font-weight: 600; min-width: 140px; }
+.hephaistos-match-row select { flex: 1; min-width: 240px; width: auto; }
 .campaign-character-sheet {
   margin-top: 14px; padding: 18px;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));

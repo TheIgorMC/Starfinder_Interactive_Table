@@ -3,6 +3,7 @@ import { pool } from "../db.js";
 import { broadcast } from "../ws.js";
 import { requireGM, requireGmOrOwnCharacter, setSessionCookie } from "../auth.js";
 import { mapHephaistosCharacter } from "../hephaistos.js";
+import { previewHephaistosMatches } from "../hephaistos-match.js";
 
 const r = Router();
 
@@ -38,6 +39,20 @@ r.get("/:id", requireGmOrOwnCharacter(forId), async (req, res) => {
   const { rows } = await pool.query(`${SELECT_WITH_LORE} WHERE c.id=$1`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "not found" });
   res.json(rows[0]);
+});
+
+// GM-only: before committing a Hephaistos import, propose a compendium
+// match for every free-text name it carries (race/theme/class/feats/
+// spells/equipment) so the GM can catch a spelling mismatch or a name that
+// isn't actually in the compendium — never blocks the import itself, just
+// gives the review step something to show.
+r.post("/import/hephaistos/preview", requireGM, async (req, res) => {
+  const { hephaistos } = req.body ?? {};
+  if (hephaistos?.type !== "character") {
+    return res.status(400).json({ error: 'not a Hephaistos character export (expected type: "character")' });
+  }
+  const items = await previewHephaistosMatches(pool, hephaistos);
+  res.json({ items });
 });
 
 // GM-only: import a character exported from Hephaistos (hephaistos.online),

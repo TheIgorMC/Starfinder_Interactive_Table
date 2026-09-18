@@ -10,12 +10,103 @@ import CharacterSheet from "./CharacterSheet.jsx";
 // statted character may optionally point at one of those as its lore page
 // (characters.lore_entry_id), but neither side requires the other.
 
+const FIELD_LABELS = { race: "Race", theme: "Theme", class: "Class", feats: "Feat", spells: "Spell", equipment: "Equipment" };
+
+// Mirrors backend/src/hephaistos-match.js's own traversal of the raw
+// Hephaistos export exactly — same fields, same order — so a correction
+// keyed by "field::lowercased original name" lands on every occurrence of
+// that name (a repeated feat, a spell known by two classes, a stack of the
+// same item) rather than just the first one.
+function applyCorrections(hephaistos, corrections) {
+  const doc = JSON.parse(JSON.stringify(hephaistos));
+  const pick = (field, name) => corrections[`${field}::${(name || "").toLowerCase()}`];
+
+  if (doc.race?.name) doc.race.name = pick("race", doc.race.name) || doc.race.name;
+  if (doc.theme?.name) doc.theme.name = pick("theme", doc.theme.name) || doc.theme.name;
+  for (const c of doc.classes ?? []) {
+    if (c?.name) c.name = pick("class", c.name) || c.name;
+  }
+  if (Array.isArray(doc.feats?.acquiredFeats)) {
+    doc.feats.acquiredFeats = doc.feats.acquiredFeats.map((f) => {
+      const name = typeof f === "string" ? f : f?.name;
+      const corrected = pick("feats", name);
+      if (!corrected) return f;
+      return typeof f === "string" ? corrected : { ...f, name: corrected };
+    });
+  }
+  const renameSpell = (s) => {
+    const name = typeof s === "string" ? s : s?.name;
+    const corrected = pick("spells", name);
+    if (!corrected) return s;
+    return typeof s === "string" ? corrected : { ...s, name: corrected };
+  };
+  for (const c of doc.classes ?? []) {
+    if (Array.isArray(c.spells)) c.spells = c.spells.map(renameSpell);
+  }
+  if (Array.isArray(doc.additionalSpells)) doc.additionalSpells = doc.additionalSpells.map(renameSpell);
+  for (const it of doc.inventory ?? []) {
+    if (it?.name) it.name = pick("equipment", it.name) || it.name;
+  }
+  return doc;
+}
+
+function MatchReview({ items, corrections, setCorrections }) {
+  const setChoice = (field, name, value) => {
+    const key = `${field}::${name.toLowerCase()}`;
+    setCorrections((cur) => {
+      const next = { ...cur };
+      if (value) next[key] = value; else delete next[key];
+      return next;
+    });
+  };
+
+  const needsAttention = items.filter((it) => !it.exact);
+  const confirmed = items.filter((it) => it.exact);
+
+  return (
+    <div className="hephaistos-review">
+      <p className="muted">
+        {confirmed.length} matched the compendium exactly.
+        {needsAttention.length > 0 && ` ${needsAttention.length} need a look — pick the right entry, or leave as typed.`}
+      </p>
+      {needsAttention.length > 0 && (
+        <ul className="hephaistos-match-list">
+          {needsAttention.map((it) => {
+            const key = `${it.field}::${it.name.toLowerCase()}`;
+            const top = it.candidates[0];
+            return (
+              <li key={key} className="hephaistos-match-row">
+                <span className="pill">{FIELD_LABELS[it.field] || it.field}</span>
+                <span className="hephaistos-match-name">{it.name}</span>
+                {it.candidates.length > 0 ? (
+                  <select value={corrections[key] || ""} onChange={(e) => setChoice(it.field, it.name, e.target.value)}>
+                    <option value="">Keep as typed: "{it.name}"</option>
+                    {it.candidates.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}{c === top ? " (best match)" : ""} — {Math.round(c.score * 100)}% · {c.source}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="pill bad">no compendium match found</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function HephaistosImport({ onImported }) {
   const [raw, setRaw] = useState("");
   const [assignTo, setAssignTo] = useState("");
   const [players, setPlayers] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [corrections, setCorrections] = useState({});
 
   useEffect(() => { api("/auth/users").then(setPlayers).catch(() => setPlayers([])); }, []);
 
@@ -23,20 +114,37 @@ function HephaistosImport({ onImported }) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    file.text().then(setRaw);
+    file.text().then((text) => { setRaw(text); setPreview(null); setCorrections({}); });
+  };
+
+  const review = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const hephaistos = JSON.parse(raw);
+      const { items } = await api("/characters/import/hephaistos/preview", { method: "POST", body: { hephaistos } });
+      setPreview(items);
+      setCorrections({});
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const doImport = async () => {
     setBusy(true);
     setError("");
     try {
-      const hephaistos = JSON.parse(raw);
+      const hephaistos = applyCorrections(JSON.parse(raw), corrections);
       await api("/characters/import/hephaistos", {
         method: "POST",
         body: { hephaistos, assignToUsername: assignTo || undefined },
       });
       setRaw("");
       setAssignTo("");
+      setPreview(null);
+      setCorrections({});
       onImported();
     } catch (err) {
       setError(err.message);
@@ -60,10 +168,23 @@ function HephaistosImport({ onImported }) {
             </option>
           ))}
         </select>
-        <button onClick={doImport} disabled={!raw || busy}>{busy ? "Importing…" : "Import"}</button>
+        {!preview ? (
+          <button onClick={review} disabled={!raw || busy}>{busy ? "Checking…" : "Review matches"}</button>
+        ) : (
+          <>
+            <button onClick={doImport} disabled={busy}>{busy ? "Importing…" : "Confirm & import"}</button>
+            <button className="link" onClick={() => { setPreview(null); setCorrections({}); }}>✕ Back</button>
+          </>
+        )}
       </div>
       {error && <p className="pill bad">{error}</p>}
-      <textarea rows={4} placeholder="…or paste the exported Hephaistos JSON here" value={raw} onChange={(e) => setRaw(e.target.value)} />
+      {!preview && (
+        <textarea
+          rows={4} placeholder="…or paste the exported Hephaistos JSON here"
+          value={raw} onChange={(e) => { setRaw(e.target.value); setPreview(null); }}
+        />
+      )}
+      {preview && <MatchReview items={preview} corrections={corrections} setCorrections={setCorrections} />}
     </div>
   );
 }
