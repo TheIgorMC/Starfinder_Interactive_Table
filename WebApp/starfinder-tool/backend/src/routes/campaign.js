@@ -166,6 +166,9 @@ async function findDuplicateGroups(pool) {
 // external_id — see tgn-import.js). Grouped for the merge tool below.
 r.get("/duplicates", requireGM, async (req, res) => {
   const { sameType, crossType } = await findDuplicateGroups(pool);
+  const { rows: dismissedRows } = await pool.query("SELECT entry_ids FROM campaign_duplicate_dismissals");
+  const dismissed = new Set(dismissedRows.map((r) => r.entry_ids.slice().sort((a, b) => a - b).join(",")));
+
   const toRow = (group, confidence, type) => ({
     type: type ?? null,
     name: group[0].name,
@@ -177,9 +180,30 @@ r.get("/duplicates", requireGM, async (req, res) => {
   });
   const rows = [
     ...sameType.map((g) => toRow(g, "name", g[0].type)),
-    ...crossType.map((g) => toRow(g, "cross-type")),
+    // A cross-type group the GM has already confirmed is two genuinely
+    // different things (see POST /duplicates/dismiss) is filtered out here
+    // rather than just hidden client-side, so it stays gone across page
+    // loads and other GM sessions too.
+    ...crossType
+      .filter((g) => !dismissed.has(g.map((e) => e.id).sort((a, b) => a - b).join(",")))
+      .map((g) => toRow(g, "cross-type")),
   ].sort((a, b) => a.name.localeCompare(b.name));
   res.json(rows);
+});
+
+// Marks a cross-type group as "reviewed, these are two different things" —
+// see the comment on campaign_duplicate_dismissals (migrations/014) for how
+// this is keyed and why it naturally un-dismisses itself if the group's
+// membership ever changes.
+r.post("/duplicates/dismiss", requireGM, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isFinite) : [];
+  if (ids.length < 2) return res.status(400).json({ error: "ids (2+) required" });
+  const sorted = [...ids].sort((a, b) => a - b);
+  await pool.query(
+    "INSERT INTO campaign_duplicate_dismissals (entry_ids) VALUES ($1) ON CONFLICT (entry_ids) DO NOTHING",
+    [sorted]
+  );
+  res.status(201).json({ dismissed: sorted });
 });
 
 // Merges `remove_ids` into `keep_id`: every link (campaign_links, and

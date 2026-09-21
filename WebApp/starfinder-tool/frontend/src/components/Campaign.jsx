@@ -159,6 +159,21 @@ function DuplicatesTool({ onMerged }) {
 
   const sameTypeCount = (groups || []).filter((g) => g.confidence === "name").length;
 
+  // "These really are two different things" — a faction and a quest that
+  // just happen to share a name, say. Remembered server-side (see
+  // POST /campaign/duplicates/dismiss) so it doesn't come back the next
+  // time the panel opens.
+  const dismiss = async (group) => {
+    const key = group.ids.join(",");
+    setBusyKey(key);
+    try {
+      await api("/campaign/duplicates/dismiss", { method: "POST", body: { ids: group.ids } });
+      setGroups((cur) => cur.filter((g) => g.ids.join(",") !== key));
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const mergeAll = async () => {
     if (!confirm(`Merge all ${sameTypeCount} exact same-type duplicate groups? Each keeps its oldest copy and deletes the rest — this can't be undone.`)) return;
     setMergeAllBusy(true);
@@ -208,6 +223,11 @@ function DuplicatesTool({ onMerged }) {
                       keep #{id} ({g.id_types[i]}){i === 0 ? " (oldest)" : ""}
                     </label>
                   ))}
+                  {g.confidence === "cross-type" ? (
+                    <button className="link" onClick={() => dismiss(g)} disabled={busyKey === key}>
+                      {busyKey === key ? "…" : "✓ It's fine, these are different things"}
+                    </button>
+                  ) : null}
                   <button onClick={() => merge(g)} disabled={busyKey === key}>
                     {busyKey === key ? "Merging…" : `Merge (delete ${g.ids.length - 1})`}
                   </button>
