@@ -110,19 +110,40 @@ r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
   res.json(result);
 });
 
+// A handful of Cyrillic/Greek letters that render pixel-for-pixel
+// identical to a Latin one at normal text sizes ("Gammon Industries" typed
+// twice, one of them with a stray Cyrillic а instead of Latin a, reads as
+// "the same name" to a GM and to lower(btrim()) alike, but is a different
+// codepoint — NFKC normalization does NOT fold these, since they're
+// genuinely distinct letters in different scripts, not compatibility
+// variants of the same one). Only covers the common single-letter
+// look-alikes, not a full Unicode-confusables table — enough for the
+// realistic case of an accidental script switch while typing/pasting, not
+// meant to catch deliberate spoofing.
+const CONFUSABLES = {
+  а: "a", е: "e", о: "o", р: "p", с: "c", у: "y", х: "x", к: "k", м: "m", т: "t", н: "h", в: "b", і: "i", ѕ: "s", ј: "j",
+  А: "a", Е: "e", О: "o", Р: "p", С: "c", У: "y", Х: "x", К: "k", М: "m", Т: "t", Н: "h", В: "b", І: "i", Ѕ: "s", Ј: "j",
+  α: "a", ο: "o", ρ: "p", ι: "i", υ: "y", Α: "a", Ο: "o", Ρ: "p", Ι: "i", Υ: "y",
+};
+
 // Folds away everything that makes two names *look* identical to a GM but
 // wouldn't group under SQL's lower(btrim()): not just surrounding
-// whitespace, but internal double-spaces, zero-width/invisible characters
-// (easy to end up with when pasting into or exporting from Tangent), and
-// characters that only differ by Unicode normalization form (NFKC folds
-// full-width/compatibility variants together). Done in JS rather than SQL
-// because Postgres has no built-in Unicode normalization without an
-// extension, and this only ever runs over the duplicates-tool's request,
-// never a hot path.
+// whitespace, but internal double-spaces, zero-width/invisible/formatting
+// characters (easy to end up with when pasting into or exporting from
+// Tangent), diacritics (NFKD + stripping combining marks — "café" vs
+// "cafe"), the single-letter script look-alikes above, and characters
+// that only differ by Unicode normalization form (NFKC folds full-width/
+// compatibility variants together). Done in JS rather than SQL because
+// Postgres has no built-in Unicode normalization without an extension,
+// and this only ever runs over the duplicates-tool's request, never a hot
+// path.
 function normalizeEntryName(name) {
   return (name || "")
     .normalize("NFKC")
-    .replace(/[​-‍﻿]/g, "") // zero-width space/joiners, BOM
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // combining diacritical marks, post-NFKD
+    .replace(/[​-‏‪-‮⁠-⁤﻿­]/g, "") // zero-width/format/BOM/soft-hyphen
+    .replace(/[Ѐ-ӿͰ-Ͽ]/g, (ch) => CONFUSABLES[ch] || ch) // Cyrillic/Greek look-alikes
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
