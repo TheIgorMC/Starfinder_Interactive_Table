@@ -127,6 +127,8 @@ function DuplicatesTool({ onMerged }) {
   const [busyKey, setBusyKey] = useState(null);
   const [mergeAllBusy, setMergeAllBusy] = useState(false);
   const [mergeAllMsg, setMergeAllMsg] = useState("");
+  const [mergeAllHadFailures, setMergeAllHadFailures] = useState(false);
+  const [error, setError] = useState("");
 
   const load = () => api("/campaign/duplicates").then((rows) => {
     setGroups(rows);
@@ -148,10 +150,13 @@ function DuplicatesTool({ onMerged }) {
     const keepId = keepChoice[key];
     const removeIds = group.ids.filter((id) => id !== keepId);
     setBusyKey(key);
+    setError("");
     try {
       await api("/campaign/duplicates/merge", { method: "POST", body: { keep_id: keepId, remove_ids: removeIds } });
       await load();
       onMerged();
+    } catch (err) {
+      setError(`Couldn't merge "${group.name}": ${err.message}`);
     } finally {
       setBusyKey(null);
     }
@@ -166,9 +171,12 @@ function DuplicatesTool({ onMerged }) {
   const dismiss = async (group) => {
     const key = group.ids.join(",");
     setBusyKey(key);
+    setError("");
     try {
       await api("/campaign/duplicates/dismiss", { method: "POST", body: { ids: group.ids } });
       setGroups((cur) => cur.filter((g) => g.ids.join(",") !== key));
+    } catch (err) {
+      setError(`Couldn't dismiss "${group.name}": ${err.message}`);
     } finally {
       setBusyKey(null);
     }
@@ -178,11 +186,18 @@ function DuplicatesTool({ onMerged }) {
     if (!confirm(`Merge all ${sameTypeCount} exact same-type duplicate groups? Each keeps its oldest copy and deletes the rest — this can't be undone.`)) return;
     setMergeAllBusy(true);
     setMergeAllMsg("");
+    setError("");
     try {
       const r = await api("/campaign/duplicates/merge-all", { method: "POST" });
-      setMergeAllMsg(`Merged ${r.groupsMerged} groups (${r.entriesMerged} duplicate ${r.entriesMerged === 1 ? "entry" : "entries"} removed).`);
+      const failMsg = r.failures?.length
+        ? ` ${r.failures.length} group${r.failures.length === 1 ? "" : "s"} failed: ${r.failures.map((f) => `"${f.name}" (${f.error})`).join("; ")}`
+        : "";
+      setMergeAllHadFailures(!!r.failures?.length);
+      setMergeAllMsg(`Merged ${r.groupsMerged} groups (${r.entriesMerged} duplicate ${r.entriesMerged === 1 ? "entry" : "entries"} removed).${failMsg}`);
       await load();
       onMerged();
+    } catch (err) {
+      setError(`Merge all failed: ${err.message}`);
     } finally {
       setMergeAllBusy(false);
     }
@@ -193,6 +208,7 @@ function DuplicatesTool({ onMerged }) {
       <button className="link" onClick={toggle}>{open ? "✕ Close duplicates" : "Find duplicates"}</button>
       {open && (
         <div className="duplicates-panel">
+          {error && <p className="pill bad">{error}</p>}
           {groups === null && <p className="muted">Checking…</p>}
           {groups?.length === 0 && <p className="muted">No duplicates found.</p>}
           {sameTypeCount > 1 && (
@@ -200,7 +216,7 @@ function DuplicatesTool({ onMerged }) {
               <button onClick={mergeAll} disabled={mergeAllBusy}>
                 {mergeAllBusy ? "Merging…" : `Merge all ${sameTypeCount} exact duplicates`}
               </button>
-              {mergeAllMsg && <span className="pill ok">{mergeAllMsg}</span>}
+              {mergeAllMsg && <span className={`pill ${mergeAllHadFailures ? "bad" : "ok"}`}>{mergeAllMsg}</span>}
             </div>
           )}
           {groups?.map((g) => {

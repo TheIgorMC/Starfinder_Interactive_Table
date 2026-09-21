@@ -261,13 +261,25 @@ r.post("/duplicates/merge", requireGM, async (req, res) => {
 // judgment call, not a re-import artifact.
 r.post("/duplicates/merge-all", requireGM, async (req, res) => {
   const { sameType } = await findDuplicateGroups(pool);
+  let groupsMerged = 0;
   let entriesMerged = 0;
+  // Each group merges independently — one group hitting a DB error (e.g. a
+  // link conflict the pairwise merge logic doesn't expect) must not abort
+  // every group queued after it, and must not fail *silently* either: the
+  // response lists exactly which groups didn't go through and why, instead
+  // of the GM just seeing some still there with no explanation.
+  const failures = [];
   for (const group of sameType) {
     const [keep, ...rest] = group; // already ordered by id ascending
-    await mergeEntries(pool, keep.id, rest.map((e) => e.id));
-    entriesMerged += rest.length;
+    try {
+      await mergeEntries(pool, keep.id, rest.map((e) => e.id));
+      groupsMerged++;
+      entriesMerged += rest.length;
+    } catch (err) {
+      failures.push({ name: keep.name, type: keep.type, ids: group.map((e) => e.id), error: err.message });
+    }
   }
-  res.json({ groupsMerged: sameType.length, entriesMerged });
+  res.json({ groupsMerged, entriesMerged, failures });
 });
 
 r.get("/:id", requireAuth, async (req, res) => {
