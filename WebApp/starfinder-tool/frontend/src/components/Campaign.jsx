@@ -215,14 +215,22 @@ function DuplicatesTool({ onMerged }) {
     }
   };
 
+  // The empty/loading states are one line of text — showing them in the
+  // full bordered/padded panel (meant for a list of groups) shoves the
+  // whole list+reader layout down for no reason on the common case of
+  // "checked, nothing wrong." Those stay inline next to the toggle;
+  // only an actual result list gets the full panel treatment.
+  const hasContent = groups && groups.length > 0;
+
   return (
     <div className="tgn-import">
       <button className="link" onClick={toggle}>{open ? "✕ Close duplicates" : "Find duplicates"}</button>
-      {open && (
+      {open && groups === null && <span className="muted">Checking…</span>}
+      {open && groups?.length === 0 && <span className="pill ok">No duplicates found.</span>}
+      {open && error && !hasContent && <span className="pill bad">{error}</span>}
+      {open && hasContent && (
         <div className="duplicates-panel">
           {error && <p className="pill bad">{error}</p>}
-          {groups === null && <p className="muted">Checking…</p>}
-          {groups?.length === 0 && <p className="muted">No duplicates found.</p>}
           {sameTypeCount > 1 && (
             <div className="row" style={{ marginBottom: 10 }}>
               <button onClick={mergeAll} disabled={mergeAllBusy}>

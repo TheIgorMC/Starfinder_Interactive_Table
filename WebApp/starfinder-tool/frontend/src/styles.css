@@ -105,6 +105,12 @@ button {
 button:hover { background: var(--panel-strong); border-color: rgba(255, 255, 255, 0.16); }
 button:active { transform: scale(0.97); }
 button:disabled { opacity: 0.4; cursor: default; transform: none; }
+/* :focus-visible only fires for keyboard/programmatic focus, not a mouse
+   click — so this keeps a visible ring for keyboard nav (accessibility)
+   while dropping the browser's default thick white outline box that
+   otherwise appears on every button click. */
+button:focus { outline: none; }
+button:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 2px; }
 button.link { background: none; border: none; color: var(--accent-text); padding: 2px 0; font-weight: 500; border-radius: 0; }
 button.link:hover { background: none; border-color: transparent; color: #cfe0ff; }
 button.active:not(.gm-tabs button):not(.sheet-tabs button):not(.compendium-tabs button):not(.wizard-steps button):not(.tab-row button) {
