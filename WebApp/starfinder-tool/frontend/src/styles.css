@@ -683,6 +683,17 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .tablet-mood .caption { margin-top: 14px; font-size: 15px; color: var(--text-secondary); text-align: center; max-width: 70%; }
 .tablet-chapter { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .tablet-chapter img { max-height: 55vh; }
+.tablet-chapter-type {
+  font: 700 13px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.18em;
+  color: var(--text-secondary); opacity: 0.8;
+}
+
+/* Cross-fades in whenever its content changes — Tablet.jsx keys the
+   element on the thing that identifies "what's showing" (the chapter's
+   id, the media URL, the featured NPC ids), so React remounts it and the
+   animation replays, instead of the tablet just snapping to new content. */
+.tablet-fade { animation: tablet-fade-in 1.1s ease; }
+@keyframes tablet-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .char-strip { position: relative; z-index: 2; display: flex; gap: 18px; padding: 24px; flex-wrap: wrap; justify-content: center; align-items: center; height: 100%; }
 .npc-card {

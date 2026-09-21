@@ -38,21 +38,22 @@ export default function Tablet() {
   return (
     <div className="tablet-mood" style={{ "--mood": mood.color }}>
       {channel.mode === "idle" && (
-        <div className="center">
+        <div className="center" key={chapter?.id ?? "mood"}>
           {chapter ? (
-            <div className="tablet-chapter">
+            <div className="tablet-chapter tablet-fade">
               {chapter.imageUrl && <img src={chapter.imageUrl} alt="" />}
+              {chapter.type && <span className="tablet-chapter-type">{chapter.type}</span>}
               <h1>{chapter.name}</h1>
               {chapter.summary && <p className="caption">{chapter.summary}</p>}
             </div>
           ) : (
-            <h1>{mood.name || "Starfinder"}</h1>
+            <h1 className="tablet-fade">{mood.name || "Starfinder"}</h1>
           )}
         </div>
       )}
 
       {channel.mode === "media" && (
-        <div className="center">
+        <div className="center tablet-fade" key={channel.mediaUrl}>
           {channel.mediaUrl && (
             isVideo(channel.mediaUrl)
               ? <video src={channel.mediaUrl} autoPlay muted loop={channel.loop} playsInline />
@@ -63,7 +64,7 @@ export default function Tablet() {
       )}
 
       {channel.mode === "npc_narrative" && (
-        <div className="char-strip">
+        <div className="char-strip tablet-fade" key={featured.map((c) => c.id).join(",")}>
           {featured.map((c) => (
             <div key={c.id} className="npc-card npc-narrative">
               {c.portrait_url && <img src={c.portrait_url} alt="" />}
@@ -74,7 +75,7 @@ export default function Tablet() {
       )}
 
       {channel.mode === "npc_boss" && (
-        <div className="char-strip">
+        <div className="char-strip tablet-fade" key={featured.map((c) => c.id).join(",")}>
           {featured.map((c) => (
             <div key={c.id} className="npc-card npc-boss">
               {c.portrait_url && <img src={c.portrait_url} alt="" />}
