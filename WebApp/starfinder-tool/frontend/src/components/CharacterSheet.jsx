@@ -129,6 +129,15 @@ export default function CharacterSheet({ character, patch }) {
 
   const equippedWeapons = equipment.filter((it) => it.type === "Weapon" && it.isEquipped);
   const ammoItems = equipment.filter((it) => it.type === "Ammunition");
+  // Two ammo rows with the same name and capacity aren't necessarily a
+  // duplicate — a loaded battery and a spare battery are both real,
+  // independently-tracked items (that's the whole point of "Reload"
+  // swapping between them). What actually needs distinguishing them in the
+  // UI is which weapon, if any, currently has each one loaded.
+  const weaponByAmmoId = new Map();
+  for (const w of equipment.filter((it) => it.type === "Weapon")) {
+    for (const a of linkedAmmo(w, equipment)) weaponByAmmoId.set(a.id, w.name);
+  }
 
   const fireWeapon = (weapon) => {
     const ammo = linkedAmmo(weapon, equipment).filter((a) => (a.used ?? 0) < (a.capacity ?? 0));
@@ -335,14 +344,24 @@ export default function CharacterSheet({ character, patch }) {
             <>
               <h3>Ammunition</h3>
               <ul className="sheet-list">
-                {ammoItems.map((a) => (
-                  <li key={a.id} className="row">
-                    <span>{a.name}</span>
-                    <span className="muted">{itemSubtitle(a)}</span>
-                    <button onClick={() => updateItem(a.id, { used: Math.max(0, (a.used || 0) - 1) })}>−</button>
-                    <button onClick={() => updateItem(a.id, { used: Math.min(a.capacity ?? 0, (a.used || 0) + 1) })}>+</button>
-                  </li>
-                ))}
+                {ammoItems.map((a) => {
+                  const loadedIn = weaponByAmmoId.get(a.id);
+                  return (
+                    <li key={a.id} className="sheet-card ammo-card">
+                      <div className="ammo-card-info">
+                        <strong>{a.name}</strong>
+                        <span className="muted">
+                          {itemSubtitle(a)}
+                          {loadedIn ? ` · loaded in ${loadedIn}` : " · spare"}
+                        </span>
+                      </div>
+                      <div className="ammo-card-stepper">
+                        <button onClick={() => updateItem(a.id, { used: Math.max(0, (a.used || 0) - 1) })}>−</button>
+                        <button onClick={() => updateItem(a.id, { used: Math.min(a.capacity ?? 0, (a.used || 0) + 1) })}>+</button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}

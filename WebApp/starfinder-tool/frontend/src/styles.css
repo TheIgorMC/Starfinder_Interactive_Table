@@ -434,6 +434,16 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .sheet-card h3, .sheet-card h4 { margin: 0 0 10px; line-height: 1.3; font-size: 15px; }
 .sheet-card p { margin: 4px 0; line-height: 1.45; }
 .sheet-card strong { font-family: var(--font-display); color: var(--text-primary); }
+.ammo-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; }
+.ammo-card-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ammo-card-info span { font-size: 12.5px; }
+.ammo-card-stepper { display: flex; gap: 6px; flex: none; }
+.ammo-card-stepper button {
+  width: 34px; height: 34px; padding: 0; border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05); font: 600 16px/1 var(--font-body);
+  display: flex; align-items: center; justify-content: center;
+}
+.ammo-card-stepper button:hover { background: var(--accent-fill); border-color: var(--accent-border); color: var(--accent-text); }
 
 /* Ability score / defense grid — used for the STR..CHA row and reused as a
    generic auto-fit tile grid elsewhere (wizard summary step). */
