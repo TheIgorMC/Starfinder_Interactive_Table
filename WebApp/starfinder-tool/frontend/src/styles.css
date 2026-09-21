@@ -179,19 +179,42 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 
 /* GM */
 .gm { min-height: 100vh; }
-.gm header {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 12px; padding: 14px 22px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
-  border-bottom: 1px solid var(--border);
+/* Replaces the old separate <header> (title + sync/tracker pills + sign
+   out, permanently taking a full row for things a GM checks rarely) — the
+   title, the tab nav, and a settings gear (opening a modal with the rest)
+   now share one slim row. */
+.gm-topbar {
+  display: flex; align-items: center; gap: 14px; padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.015); border-bottom: 1px solid var(--border);
 }
-.gm header::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background-image: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 3px);
-  opacity: 0.6;
+.gm-topbar h2 { margin: 0; font-size: 14px; letter-spacing: 0.04em; white-space: nowrap; color: var(--text-secondary); }
+.gm-topbar .gm-tabs { flex: 1; margin: 0; border: none; background: none; padding: 0; min-width: 0; }
+.icon-button {
+  flex: none; width: 32px; height: 32px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; border-radius: var(--radius-pill);
+  background: none; border: 1px solid transparent; color: var(--text-muted);
 }
-.gm header > * { position: relative; z-index: 1; }
-.gm header h2 { margin: 0; font-size: 17px; letter-spacing: 0.04em; }
+.icon-button:hover { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
+.icon-button-alert { color: var(--danger-text); }
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(4, 6, 10, 0.6); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-card {
+  width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)), var(--panel);
+  border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-float);
+}
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border-soft); }
+.modal-header h3 { margin: 0; font-size: 15px; }
+.modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.modal-footer-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border-soft);
+}
 .gm-body { display: flex; }
 .gm-body aside {
   width: 290px; padding: 16px 18px; flex-shrink: 0;
@@ -238,6 +261,12 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
   background: var(--accent-grad); color: #08101f; box-shadow: 0 4px 16px rgba(110, 168, 255, 0.3);
 }
 .wizard-steps button:disabled { color: var(--text-faint); background: none; }
+/* Campaign's type sub-tabs (Events/Locations/People/...) specifically —
+   shares the same visual language as the others above but sits directly
+   under a page that's already tight on vertical room (list + reader below
+   it), so it gets a noticeably tighter version. */
+.tab-row { padding: 3px; margin: 0 0 10px; }
+.tab-row button { padding: 6px 12px; font-size: 12px; }
 .gm-tab-content { min-height: 0; }
 .gm-panel { padding: 20px 24px; max-width: 480px; }
 .gm-panel > * + * { margin-top: 18px; }

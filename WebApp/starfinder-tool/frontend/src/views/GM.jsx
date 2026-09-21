@@ -78,6 +78,43 @@ const TABS = [
   { key: "sources", label: "Sources" },
 ];
 
+// The tracker/sync status and sign-out used to live in a full-width header
+// bar of their own — permanently taking up vertical space for things a GM
+// checks rarely (connect the tracker once per session) or glances at only
+// when something's wrong. Folded into this on-demand modal instead, opened
+// from a small gear button in the tab row.
+function SettingsModal({ onClose, wsConnected, tracker, username, logout }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Settings</h3>
+          <button className="link" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span>Sync</span>
+            <span className={wsConnected ? "pill ok" : "pill bad"}>{wsConnected ? "live" : "down"}</span>
+          </div>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span>Mini tracker</span>
+            <span className={tracker.status === "connected" ? "pill ok" : "pill"}>{tracker.status}</span>
+          </div>
+          <div className="row">
+            {tracker.status === "connected"
+              ? <button onClick={tracker.disconnect}>Disconnect tracker</button>
+              : <button onClick={tracker.connect}>Connect tracker</button>}
+          </div>
+          <div className="modal-footer-row">
+            <span className="muted">Signed in as {username}</span>
+            <button className="link" onClick={logout}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BattleMapTab({ session, sessions, loadSessions, loadSession, createSession, selectedToken, setSelectedToken, onCellClick }) {
   const [newLabel, setNewLabel] = useState("");
   const [newTrackerId, setNewTrackerId] = useState("");
@@ -172,6 +209,7 @@ export default function GM() {
   const [selectedToken, setSelectedToken] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [focusCharacterId, setFocusCharacterId] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
   const sessionRef = useRef(null);
   sessionRef.current = session;
 
@@ -219,24 +257,31 @@ export default function GM() {
 
   return (
     <div className="gm">
-      <header>
+      <nav className="gm-topbar">
         <h2>GM Console</h2>
-        <span className={wsConnected ? "pill ok" : "pill bad"}>{wsConnected ? "sync live" : "sync down"}</span>
-        <span className={tracker.status === "connected" ? "pill ok" : "pill"}>tracker: {tracker.status}</span>
-        {tracker.status === "connected"
-          ? <button onClick={tracker.disconnect}>Disconnect tracker</button>
-          : <button onClick={tracker.connect}>Connect tracker</button>}
-        <span className="muted" style={{ marginLeft: "auto" }}>{user?.username}</span>
-        <button className="link" onClick={logout}>Sign out</button>
-      </header>
-
-      <nav className="gm-tabs">
-        {TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
+        <div className="gm-tabs">
+          {TABS.map((t) => (
+            <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button
+          className={`icon-button${!wsConnected ? " icon-button-alert" : ""}`}
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+        >⚙</button>
       </nav>
+
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          wsConnected={wsConnected}
+          tracker={tracker}
+          username={user?.username}
+          logout={logout}
+        />
+      )}
 
       <div className="gm-tab-content">
         {tab === "battlemap" && (
