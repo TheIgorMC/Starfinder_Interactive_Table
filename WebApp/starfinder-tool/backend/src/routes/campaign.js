@@ -4,6 +4,7 @@ import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 import { askOllamaJson } from "../../scripts/lib/ollama-client.js";
 import { parseTgn, importTgnIntoDb, bodyExcerpt } from "../tgn-import.js";
+import { stripGmNotes } from "../gm-notes.js";
 
 // Same local Ollama setup already used by scripts/audit-normalized.js
 // (Docs/04-data-pipeline-aon.md) — a GM-facing "AI drafts a wiki entry from
@@ -69,6 +70,10 @@ r.get("/", requireAuth, async (req, res) => {
   if (req.user.role !== "gm") conditions.push("visible_to_players = true");
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const { rows } = await pool.query(`SELECT * FROM campaign_entries ${where} ORDER BY name`, params);
+  // A "!!private note!!" inside body is a GM-only aside — strip it from
+  // any non-GM response at the API layer itself (not just in the reader
+  // UI), since a logged-in player can call this endpoint directly.
+  if (req.user.role !== "gm") for (const row of rows) row.body = stripGmNotes(row.body);
   res.json(rows);
 });
 
@@ -105,18 +110,34 @@ r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
   res.json(result);
 });
 
+// Folds away everything that makes two names *look* identical to a GM but
+// wouldn't group under SQL's lower(btrim()): not just surrounding
+// whitespace, but internal double-spaces, zero-width/invisible characters
+// (easy to end up with when pasting into or exporting from Tangent), and
+// characters that only differ by Unicode normalization form (NFKC folds
+// full-width/compatibility variants together). Done in JS rather than SQL
+// because Postgres has no built-in Unicode normalization without an
+// extension, and this only ever runs over the duplicates-tool's request,
+// never a hot path.
+function normalizeEntryName(name) {
+  return (name || "")
+    .normalize("NFKC")
+    .replace(/[​-‍﻿]/g, "") // zero-width space/joiners, BOM
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 // Same (type, name) appearing more than once — typically because a GM
 // re-created (rather than edited) something in Tangent between exports,
 // which gives it a fresh internal id there and so imports as a brand new
 // entry here instead of updating the old one (import is keyed on that id,
 // external_id — see tgn-import.js). Grouped for the merge tool below.
-// Grouped by normalized name (case/surrounding-whitespace folded away),
-// not an exact string match — hand-typed Tangent content routinely has
-// two entries that read identically ("Aether-Vane Aesthetics" vs
-// "aether-vane aesthetics " with a trailing space) but wouldn't group
-// under a byte-exact comparison, which is exactly the case that matters
-// most here (a GM staring at what's obviously the same name twice).
 r.get("/duplicates", requireGM, async (req, res) => {
+  const { rows: entries } = await pool.query(
+    "SELECT id, type, name, created_at FROM campaign_entries ORDER BY id"
+  );
+
   // Two tiers: same type + normalized name is almost certainly the same
   // thing re-created in Tangent between exports — safe to suggest merging
   // outright. Same name but a *different* type (e.g. an entry moved
@@ -125,24 +146,35 @@ r.get("/duplicates", requireGM, async (req, res) => {
   // since two unrelated concepts sharing a name (a faction and a quest
   // both called after it) is also plausible — the GM decides, this just
   // surfaces the possibility instead of silently missing it.
-  const { rows: sameType } = await pool.query(`
-    SELECT type, (array_agg(name ORDER BY id))[1] AS name,
-           array_agg(DISTINCT name) AS name_variants,
-           array_agg(id ORDER BY id) AS ids, array_agg(type ORDER BY id) AS id_types,
-           array_agg(created_at ORDER BY id) AS created_ats, 'name' AS confidence
-    FROM campaign_entries
-    GROUP BY type, lower(btrim(name))
-    HAVING count(*) > 1
-  `);
-  const { rows: crossType } = await pool.query(`
-    SELECT NULL AS type, (array_agg(name ORDER BY id))[1] AS name,
-           array_agg(DISTINCT name) AS name_variants,
-           array_agg(id ORDER BY id) AS ids, array_agg(type ORDER BY id) AS id_types,
-           array_agg(created_at ORDER BY id) AS created_ats, 'cross-type' AS confidence
-    FROM campaign_entries
-    GROUP BY lower(btrim(name))
-    HAVING count(DISTINCT type) > 1
-  `);
+  const sameTypeGroups = new Map(); // `${type}::${normalized}` -> entries[]
+  const crossTypeGroups = new Map(); // normalized -> entries[]
+  for (const e of entries) {
+    const norm = normalizeEntryName(e.name);
+    if (!norm) continue;
+    const sameKey = `${e.type}::${norm}`;
+    if (!sameTypeGroups.has(sameKey)) sameTypeGroups.set(sameKey, []);
+    sameTypeGroups.get(sameKey).push(e);
+    if (!crossTypeGroups.has(norm)) crossTypeGroups.set(norm, []);
+    crossTypeGroups.get(norm).push(e);
+  }
+
+  const toRow = (group, confidence, type) => ({
+    type: type ?? null,
+    name: group[0].name,
+    name_variants: [...new Set(group.map((e) => e.name))],
+    ids: group.map((e) => e.id),
+    id_types: group.map((e) => e.type),
+    created_ats: group.map((e) => e.created_at),
+    confidence,
+  });
+
+  const sameType = [...sameTypeGroups.entries()]
+    .filter(([, group]) => group.length > 1)
+    .map(([key, group]) => toRow(group, "name", group[0].type));
+  const crossType = [...crossTypeGroups.entries()]
+    .filter(([, group]) => group.length > 1 && new Set(group.map((e) => e.type)).size > 1)
+    .map(([, group]) => toRow(group, "cross-type"));
+
   const rows = [...sameType, ...crossType].sort((a, b) => a.name.localeCompare(b.name));
   res.json(rows);
 });
@@ -196,6 +228,7 @@ r.get("/:id", requireAuth, async (req, res) => {
   const entry = rows[0];
   if (!entry) return res.status(404).json({ error: "not found" });
   if (req.user.role !== "gm" && !entry.visible_to_players) return res.status(403).json({ error: "not visible" });
+  if (req.user.role !== "gm") entry.body = stripGmNotes(entry.body);
   res.json(await withLinks(entry));
 });
 

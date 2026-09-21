@@ -35,13 +35,23 @@ function buildTree(entries, links) {
 
 const blank = (type) => ({ type, name: "", body: "", image_id: null, event_date: "", visible_to_players: false });
 
+// "!!private note!!" inside a body is a GM-only aside (see the editor's
+// hint under the body textarea) — never let one show up in a preview,
+// mirrors backend/src/gm-notes.js's stripGmNotes(). The server already
+// strips it from a non-GM API response too; this is what keeps the GM's
+// own hover-preview tooltip in the tree from spoiling it for themselves
+// at a glance while skimming.
+function stripGmNotes(text) {
+  return (text || "").replace(/!!([\s\S]*?)!!/g, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 // A short preview of an entry, derived from its body on the spot — this
 // used to be a separately hand-maintained "summary" field that routinely
 // went stale after an edit (or, for tgn-imported entries, got mangled by a
 // buggy auto-generator). Computing it fresh from `body` every render makes
 // staleness impossible: there's nothing stored to drift out of sync.
 function excerptOf(body) {
-  const withoutImages = (body || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  const withoutImages = stripGmNotes(body).replace(/!\[[^\]]*\]\([^)]*\)/g, "");
   const paragraphs = withoutImages.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   for (const para of paragraphs) {
     const plain = para
@@ -181,6 +191,87 @@ function DuplicatesTool({ onMerged }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// Splits a body on "!!...!!" pairs and renders the note segments in a
+// visibly distinct "GM only" box instead of feeding the literal "!!"
+// markers through the markdown renderer — the GM console is the only
+// place this ever runs (players never receive raw body text; the API
+// itself strips notes for non-GM requests, see backend/src/gm-notes.js),
+// so this is purely about making the marker's effect visible while
+// editing/reading, not a second enforcement layer.
+function MarkdownWithNotes({ body }) {
+  const text = body || "*Nothing written yet — click Edit to add some.*";
+  const parts = text.split(/(!![\s\S]*?!!)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = part.match(/^!!([\s\S]*)!!$/);
+        if (!m) return part ? <ReactMarkdown key={i}>{part}</ReactMarkdown> : null;
+        return (
+          <div key={i} className="campaign-gm-note">
+            <span className="campaign-gm-note-label">GM only</span>
+            <ReactMarkdown>{m[1]}</ReactMarkdown>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// A chapter/hub entry can easily collect dozens of incoming links (every
+// location "appare in" it, say) — one flat list makes the genuinely
+// distinct relationships (e.g. a single "member of" faction link) just as
+// hard to spot as the pile of same-relation entries. Grouped by
+// direction+relation, with any group past a handful collapsed behind a
+// "show all N" toggle instead of dumping the whole thing on-screen.
+const RELATED_GROUP_COLLAPSE_AT = 6;
+
+function RelatedEntries({ links, renderItem }) {
+  const [expanded, setExpanded] = useState(() => new Set());
+
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const l of links || []) {
+      const key = `${l.direction}::${l.relation || "related to"}`;
+      if (!map.has(key)) map.set(key, { key, direction: l.direction, relation: l.relation || "related to", items: [] });
+      map.get(key).items.push(l);
+    }
+    for (const g of map.values()) g.items.sort((a, b) => a.name.localeCompare(b.name));
+    return [...map.values()].sort((a, b) => b.items.length - a.items.length);
+  }, [links]);
+
+  const toggle = (key) => setExpanded((cur) => {
+    const next = new Set(cur);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  if (!groups.length) return <p className="muted">No links yet.</p>;
+
+  return (
+    <div className="campaign-links-groups">
+      {groups.map((g) => {
+        const isLong = g.items.length > RELATED_GROUP_COLLAPSE_AT;
+        const isOpen = !isLong || expanded.has(g.key);
+        const shown = isOpen ? g.items : g.items.slice(0, RELATED_GROUP_COLLAPSE_AT);
+        return (
+          <div key={g.key} className="campaign-links-group">
+            <div className="campaign-links-group-head">
+              <span>{g.direction === "out" ? "→" : "←"} {g.relation}</span>
+              <span className="pill">{g.items.length}</span>
+            </div>
+            <ul>{shown.map(renderItem)}</ul>
+            {isLong && (
+              <button className="link" onClick={() => toggle(g.key)}>
+                {isOpen ? "Show less" : `Show all ${g.items.length}`}
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -419,7 +510,7 @@ export default function Campaign({ onOpenCharacter }) {
               <img className="campaign-reader-image" src={images.find((m) => m.id === editing.image_id).url} alt="" />
             )}
             <div className="campaign-markdown">
-              <ReactMarkdown>{editing.body || "*Nothing written yet — click Edit to add some.*"}</ReactMarkdown>
+              <MarkdownWithNotes body={editing.body} />
             </div>
 
             {editing.type === "npc" && onOpenCharacter && (
@@ -441,16 +532,15 @@ export default function Campaign({ onOpenCharacter }) {
 
             <div className="campaign-links">
               <h4>Related entries</h4>
-              <ul>
-                {(editing.links || []).map((l) => (
+              <RelatedEntries
+                links={editing.links}
+                renderItem={(l) => (
                   <li key={l.id}>
-                    {l.direction === "out" ? `→ ${l.relation || "related to"}` : `← ${l.relation || "related to"}`}{" "}
                     <span className="pill">{l.type}</span>{" "}
                     <button className="link" onClick={() => openEntry({ id: l.entry_id })}>{l.name}</button>
                   </li>
-                ))}
-                {(!editing.links || editing.links.length === 0) && <li className="muted">No links yet.</li>}
-              </ul>
+                )}
+              />
             </div>
           </div>
         )}
@@ -480,6 +570,9 @@ export default function Campaign({ onOpenCharacter }) {
               {images.map((m) => <option key={m.id} value={m.id}>{m.label || m.original_name}</option>)}
             </select>
             <textarea rows={8} placeholder="Details, stat block, lore text…" value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} />
+            <p className="muted" style={{ marginTop: -4 }}>
+              Wrap text in <code>!!like this!!</code> to keep it a GM-only note — hidden from players and the mood tablet, however this entry is shared.
+            </p>
             <label className="checkbox-inline">
               <input type="checkbox" checked={editing.visible_to_players} onChange={(e) => setEditing({ ...editing, visible_to_players: e.target.checked })} />
               Visible to players
@@ -508,16 +601,15 @@ export default function Campaign({ onOpenCharacter }) {
             {editing.id && (
               <div className="campaign-links">
                 <h4>Related entries</h4>
-                <ul>
-                  {(editing.links || []).map((l) => (
+                <RelatedEntries
+                  links={editing.links}
+                  renderItem={(l) => (
                     <li key={l.id}>
-                      {l.direction === "out" ? `→ ${l.relation || "related to"}` : `← ${l.relation || "related to"}`}{" "}
                       <span className="pill">{l.type}</span> {l.name}
                       <button className="link unlink-btn" onClick={() => removeLink(l.id)}>unlink</button>
                     </li>
-                  ))}
-                  {(!editing.links || editing.links.length === 0) && <li className="muted">No links yet.</li>}
-                </ul>
+                  )}
+                />
                 <div className="row">
                   <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
                     <option value="">Link to…</option>

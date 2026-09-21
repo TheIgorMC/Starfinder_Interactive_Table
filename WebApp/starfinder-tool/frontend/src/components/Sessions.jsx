@@ -197,8 +197,8 @@ export default function Sessions() {
     cancel();
   };
 
-  const start = async () => { await api(`/sessions/${editingId}/start`); await load(); open(editingId); };
-  const end = async () => { await api(`/sessions/${editingId}/end`); await load(); open(editingId); };
+  const start = async () => { await api(`/sessions/${editingId}/start`, { method: "POST" }); await load(); open(editingId); };
+  const end = async () => { await api(`/sessions/${editingId}/end`, { method: "POST" }); await load(); open(editingId); };
   const setFilterEnabled = async (enabled) => { await api(`/sessions/${editingId}`, { method: "PATCH", body: { filter_enabled: enabled } }); open(editingId); };
 
   const linkEntries = (ids) => api(`/sessions/${editingId}/entries/bulk`, { method: "POST", body: { entry_ids: ids } }).then(setSession);

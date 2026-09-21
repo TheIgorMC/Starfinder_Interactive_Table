@@ -313,11 +313,26 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-markdown ul, .campaign-markdown ol { margin: 0 0 12px; padding-left: 22px; }
 .campaign-markdown blockquote { margin: 0 0 12px; padding: 4px 14px; border-left: 3px solid var(--accent-border); color: var(--text-muted); }
 .campaign-markdown a { color: var(--accent-text); }
+.campaign-gm-note {
+  margin: 10px 0; padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--danger-fill); border: 1px dashed var(--danger-border);
+}
+.campaign-gm-note-label {
+  display: block; font: 700 10px/1 var(--font-mono); text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--danger-text); margin-bottom: 6px;
+}
+.campaign-gm-note p:last-child { margin-bottom: 0; }
 .campaign-links { margin-top: 10px; border-top: 1px solid var(--border-soft); padding-top: 10px; }
 .campaign-links h4 { margin: 0 0 8px; font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
 .campaign-links ul { list-style: none; padding: 0; margin: 0 0 8px; }
 .campaign-links li { padding: 4px 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .campaign-links li .unlink-btn { margin-left: auto; }
+.campaign-links-groups { display: flex; flex-direction: column; gap: 10px; }
+.campaign-links-group ul { margin: 4px 0 0; }
+.campaign-links-group-head {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600;
+  color: var(--text-muted); text-transform: capitalize;
+}
 
 .ai-draft {
   display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; padding: 12px;
