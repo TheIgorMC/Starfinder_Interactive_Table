@@ -125,6 +125,8 @@ function DuplicatesTool({ onMerged }) {
   const [groups, setGroups] = useState(null);
   const [keepChoice, setKeepChoice] = useState({});
   const [busyKey, setBusyKey] = useState(null);
+  const [mergeAllBusy, setMergeAllBusy] = useState(false);
+  const [mergeAllMsg, setMergeAllMsg] = useState("");
 
   const load = () => api("/campaign/duplicates").then((rows) => {
     setGroups(rows);
@@ -155,6 +157,22 @@ function DuplicatesTool({ onMerged }) {
     }
   };
 
+  const sameTypeCount = (groups || []).filter((g) => g.confidence === "name").length;
+
+  const mergeAll = async () => {
+    if (!confirm(`Merge all ${sameTypeCount} exact same-type duplicate groups? Each keeps its oldest copy and deletes the rest — this can't be undone.`)) return;
+    setMergeAllBusy(true);
+    setMergeAllMsg("");
+    try {
+      const r = await api("/campaign/duplicates/merge-all", { method: "POST" });
+      setMergeAllMsg(`Merged ${r.groupsMerged} groups (${r.entriesMerged} duplicate ${r.entriesMerged === 1 ? "entry" : "entries"} removed).`);
+      await load();
+      onMerged();
+    } finally {
+      setMergeAllBusy(false);
+    }
+  };
+
   return (
     <div className="tgn-import">
       <button className="link" onClick={toggle}>{open ? "✕ Close duplicates" : "Find duplicates"}</button>
@@ -162,6 +180,14 @@ function DuplicatesTool({ onMerged }) {
         <div className="duplicates-panel">
           {groups === null && <p className="muted">Checking…</p>}
           {groups?.length === 0 && <p className="muted">No duplicates found.</p>}
+          {sameTypeCount > 1 && (
+            <div className="row" style={{ marginBottom: 10 }}>
+              <button onClick={mergeAll} disabled={mergeAllBusy}>
+                {mergeAllBusy ? "Merging…" : `Merge all ${sameTypeCount} exact duplicates`}
+              </button>
+              {mergeAllMsg && <span className="pill ok">{mergeAllMsg}</span>}
+            </div>
+          )}
           {groups?.map((g) => {
             const key = g.ids.join(",");
             return (

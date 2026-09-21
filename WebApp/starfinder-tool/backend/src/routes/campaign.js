@@ -128,24 +128,21 @@ function normalizeEntryName(name) {
     .toLowerCase();
 }
 
-// Same (type, name) appearing more than once — typically because a GM
-// re-created (rather than edited) something in Tangent between exports,
-// which gives it a fresh internal id there and so imports as a brand new
-// entry here instead of updating the old one (import is keyed on that id,
-// external_id — see tgn-import.js). Grouped for the merge tool below.
-r.get("/duplicates", requireGM, async (req, res) => {
+// Two tiers: same type + normalized name is almost certainly the same
+// thing re-created in Tangent between exports — safe to suggest merging
+// outright. Same name but a *different* type (e.g. an entry moved
+// between Tangent columns and re-exported, ending up both as the old
+// type and the new one) is flagged separately and lower-confidence,
+// since two unrelated concepts sharing a name (a faction and a quest
+// both called after it) is also plausible — the GM decides, this just
+// surfaces the possibility instead of silently missing it.
+// Shared by GET /duplicates (which shows both tiers) and POST
+// /duplicates/merge-all (which only ever auto-merges the same-type tier —
+// cross-type always needs a human call).
+async function findDuplicateGroups(pool) {
   const { rows: entries } = await pool.query(
     "SELECT id, type, name, created_at FROM campaign_entries ORDER BY id"
   );
-
-  // Two tiers: same type + normalized name is almost certainly the same
-  // thing re-created in Tangent between exports — safe to suggest merging
-  // outright. Same name but a *different* type (e.g. an entry moved
-  // between Tangent columns and re-exported, ending up both as the old
-  // type and the new one) is flagged separately and lower-confidence,
-  // since two unrelated concepts sharing a name (a faction and a quest
-  // both called after it) is also plausible — the GM decides, this just
-  // surfaces the possibility instead of silently missing it.
   const sameTypeGroups = new Map(); // `${type}::${normalized}` -> entries[]
   const crossTypeGroups = new Map(); // normalized -> entries[]
   for (const e of entries) {
@@ -157,7 +154,18 @@ r.get("/duplicates", requireGM, async (req, res) => {
     if (!crossTypeGroups.has(norm)) crossTypeGroups.set(norm, []);
     crossTypeGroups.get(norm).push(e);
   }
+  const sameType = [...sameTypeGroups.values()].filter((g) => g.length > 1);
+  const crossType = [...crossTypeGroups.values()].filter((g) => g.length > 1 && new Set(g.map((e) => e.type)).size > 1);
+  return { sameType, crossType };
+}
 
+// Same (type, name) appearing more than once — typically because a GM
+// re-created (rather than edited) something in Tangent between exports,
+// which gives it a fresh internal id there and so imports as a brand new
+// entry here instead of updating the old one (import is keyed on that id,
+// external_id — see tgn-import.js). Grouped for the merge tool below.
+r.get("/duplicates", requireGM, async (req, res) => {
+  const { sameType, crossType } = await findDuplicateGroups(pool);
   const toRow = (group, confidence, type) => ({
     type: type ?? null,
     name: group[0].name,
@@ -167,29 +175,18 @@ r.get("/duplicates", requireGM, async (req, res) => {
     created_ats: group.map((e) => e.created_at),
     confidence,
   });
-
-  const sameType = [...sameTypeGroups.entries()]
-    .filter(([, group]) => group.length > 1)
-    .map(([key, group]) => toRow(group, "name", group[0].type));
-  const crossType = [...crossTypeGroups.entries()]
-    .filter(([, group]) => group.length > 1 && new Set(group.map((e) => e.type)).size > 1)
-    .map(([, group]) => toRow(group, "cross-type"));
-
-  const rows = [...sameType, ...crossType].sort((a, b) => a.name.localeCompare(b.name));
+  const rows = [
+    ...sameType.map((g) => toRow(g, "name", g[0].type)),
+    ...crossType.map((g) => toRow(g, "cross-type")),
+  ].sort((a, b) => a.name.localeCompare(b.name));
   res.json(rows);
 });
 
 // Merges `remove_ids` into `keep_id`: every link (campaign_links, and
 // game session lore links) pointing at a removed entry is re-pointed at
 // the kept one instead of just vanishing, then the removed rows are
-// deleted. Never guesses which one to keep — that's the GM's call in the
-// duplicates UI.
-r.post("/duplicates/merge", requireGM, async (req, res) => {
-  const keepId = Number(req.body?.keep_id);
-  const removeIds = Array.isArray(req.body?.remove_ids) ? req.body.remove_ids.map(Number).filter(Number.isFinite) : [];
-  if (!Number.isFinite(keepId) || !removeIds.length) return res.status(400).json({ error: "keep_id and remove_ids required" });
-  if (removeIds.includes(keepId)) return res.status(400).json({ error: "keep_id cannot also be in remove_ids" });
-
+// deleted.
+async function mergeEntries(pool, keepId, removeIds) {
   for (const removeId of removeIds) {
     // campaign_links: re-point both directions, dropping any that would
     // collide with a link the kept entry already has (from_id, to_id,
@@ -219,8 +216,34 @@ r.post("/duplicates/merge", requireGM, async (req, res) => {
 
     await pool.query("DELETE FROM campaign_entries WHERE id=$1", [removeId]);
   }
+}
 
+// Never guesses which one to keep — that's the GM's call in the duplicates UI.
+r.post("/duplicates/merge", requireGM, async (req, res) => {
+  const keepId = Number(req.body?.keep_id);
+  const removeIds = Array.isArray(req.body?.remove_ids) ? req.body.remove_ids.map(Number).filter(Number.isFinite) : [];
+  if (!Number.isFinite(keepId) || !removeIds.length) return res.status(400).json({ error: "keep_id and remove_ids required" });
+  if (removeIds.includes(keepId)) return res.status(400).json({ error: "keep_id cannot also be in remove_ids" });
+  await mergeEntries(pool, keepId, removeIds);
   res.json({ merged: removeIds.length, keep_id: keepId });
+});
+
+// One-click cleanup for the (common, after a few re-imports) case of many
+// same-type/same-name duplicate pairs piling up — going through the
+// duplicates panel one group at a time doesn't scale once there are
+// a dozen+ of them. Only ever touches the same-type tier (keeping the
+// oldest, i.e. lowest id, of each group) — cross-type matches always stay
+// manual, since two different kinds of thing sharing a name is a real
+// judgment call, not a re-import artifact.
+r.post("/duplicates/merge-all", requireGM, async (req, res) => {
+  const { sameType } = await findDuplicateGroups(pool);
+  let entriesMerged = 0;
+  for (const group of sameType) {
+    const [keep, ...rest] = group; // already ordered by id ascending
+    await mergeEntries(pool, keep.id, rest.map((e) => e.id));
+    entriesMerged += rest.length;
+  }
+  res.json({ groupsMerged: sameType.length, entriesMerged });
 });
 
 r.get("/:id", requireAuth, async (req, res) => {
