@@ -19,18 +19,29 @@ const TYPES = [
 // filtered out by the session/visibility filter) become roots.
 function buildTree(entries, links) {
   const byId = new Map(entries.map((e) => [e.id, e]));
+  // childrenOf.get(parentId) is keyed by child id, not a plain array — an
+  // entry that's linked to the same parent via two different links that
+  // both happen to be hierarchy relations (e.g. the auto-generated tree
+  // nesting from a Tangent import *and* a separate manual "connection"
+  // that reads the same, like "parte di") must still render as ONE tree
+  // row, not two. Rendering it twice from two links pointing at the same
+  // pair of ids looks exactly like a duplicate entry (same id — selecting
+  // either row highlights both), even though there's only one entry.
   const childrenOf = new Map();
   const hasParent = new Set();
   for (const l of links) {
     if (!HIERARCHY_RELATIONS.has(l.relation)) continue;
     if (!byId.has(l.from_id) || !byId.has(l.to_id)) continue;
-    if (!childrenOf.has(l.to_id)) childrenOf.set(l.to_id, []);
-    childrenOf.get(l.to_id).push(byId.get(l.from_id));
+    if (!childrenOf.has(l.to_id)) childrenOf.set(l.to_id, new Map());
+    childrenOf.get(l.to_id).set(l.from_id, byId.get(l.from_id));
     hasParent.add(l.from_id);
   }
-  for (const kids of childrenOf.values()) kids.sort((a, b) => a.name.localeCompare(b.name));
+  const sortedChildrenOf = new Map();
+  for (const [parentId, kidsById] of childrenOf) {
+    sortedChildrenOf.set(parentId, [...kidsById.values()].sort((a, b) => a.name.localeCompare(b.name)));
+  }
   const roots = entries.filter((e) => !hasParent.has(e.id)).sort((a, b) => a.name.localeCompare(b.name));
-  return { roots, childrenOf };
+  return { roots, childrenOf: sortedChildrenOf };
 }
 
 const blank = (type) => ({ type, name: "", body: "", image_id: null, event_date: "", visible_to_players: false });
