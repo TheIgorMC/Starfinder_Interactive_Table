@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "../api.js";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
 import { HIERARCHY_RELATIONS, buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
@@ -282,11 +283,11 @@ function MarkdownWithNotes({ body }) {
     <>
       {parts.map((part, i) => {
         const m = part.match(/^!!([\s\S]*)!!$/);
-        if (!m) return part ? <ReactMarkdown key={i}>{part}</ReactMarkdown> : null;
+        if (!m) return part ? <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>{part}</ReactMarkdown> : null;
         return (
           <div key={i} className="campaign-gm-note">
             <span className="campaign-gm-note-label">GM only</span>
-            <ReactMarkdown>{m[1]}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m[1]}</ReactMarkdown>
           </div>
         );
       })}

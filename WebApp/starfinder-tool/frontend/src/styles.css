@@ -313,6 +313,11 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-markdown ul, .campaign-markdown ol { margin: 0 0 12px; padding-left: 22px; }
 .campaign-markdown blockquote { margin: 0 0 12px; padding: 4px 14px; border-left: 3px solid var(--accent-border); color: var(--text-muted); }
 .campaign-markdown a { color: var(--accent-text); }
+.campaign-markdown table { border-collapse: collapse; width: 100%; margin: 0 0 14px; font-size: 13.5px; }
+.campaign-markdown th, .campaign-markdown td { border: 1px solid var(--border-soft); padding: 6px 10px; text-align: left; }
+.campaign-markdown th { background: var(--panel-raised); font-weight: 600; color: var(--text-secondary); }
+.campaign-markdown tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
+.campaign-markdown del { color: var(--text-muted); }
 .campaign-gm-note {
   margin: 10px 0; padding: 10px 12px; border-radius: var(--radius-sm);
   background: var(--danger-fill); border: 1px dashed var(--danger-border);
