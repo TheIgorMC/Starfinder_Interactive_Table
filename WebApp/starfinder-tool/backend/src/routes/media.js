@@ -3,7 +3,7 @@ import express from "express";
 import multer from "multer";
 import crypto from "node:crypto";
 import path from "node:path";
-import { unlink } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 
@@ -12,7 +12,16 @@ const LINK_CATEGORIES = ["music", "sfx"];
 const ROOT = process.env.UPLOADS_DIR || "/app/uploads";
 
 const storage = multer.diskStorage({
-  destination: (req, _file, cb) => cb(null, path.join(ROOT, req.params.category)),
+  // The uploads dir is a bind mount (see docker-compose.yml) that only
+  // ever had map/mood/token/portrait created in it by hand at deploy time
+  // — a newly added category (like music/sfx) has no subfolder yet on an
+  // existing deployment, and multer's diskStorage doesn't create one
+  // itself (ENOENT). Create it on first use instead of requiring a manual
+  // mkdir on the host for every future category.
+  destination: (req, _file, cb) => {
+    const dir = path.join(ROOT, req.params.category);
+    mkdir(dir, { recursive: true }).then(() => cb(null, dir)).catch((err) => cb(err));
+  },
   filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname)}`),
 });
 const upload = multer({
