@@ -113,7 +113,7 @@ function TgnImport({ onImported }) {
   return (
     <div className="tgn-import">
       <label className="button-like">
-        {busy ? "Importing…" : "Import Tangent (.tgn) export…"}
+        {busy ? "Importing…" : "Import Goblin Notebook (.tgn) export…"}
         <input type="file" accept=".tgn" onChange={onFile} disabled={busy} hidden />
       </label>
       {error && <span className="pill bad">{error}</span>}
@@ -495,6 +495,28 @@ export default function Campaign({ onOpenCharacter }) {
     loadLinks();
   };
 
+  // Turns a Goblin Notebook-imported NPC entry (a name + prose, nothing
+  // stated) into a blank character sheet the GM can flesh out with actual
+  // stats — everything numeric defaults to 0/10 (see characters table), and
+  // the entry's own portrait/body carry over as a starting point. Only ever
+  // offered while no character already links back to this entry (see
+  // linked_character below) — converting twice would just create a second,
+  // disconnected sheet.
+  const convertToCharacter = async () => {
+    const portrait = images.find((m) => m.id === editing.image_id);
+    const created = await api("/characters", {
+      method: "POST",
+      body: {
+        name: editing.name,
+        notes: stripGmNotes(editing.body),
+        portrait_url: portrait?.url || "",
+        lore_entry_id: editing.id,
+      },
+    });
+    await reloadEditing();
+    onOpenCharacter?.(created.id);
+  };
+
   const refreshAll = () => { load(); api("/campaign").then(setAllEntries); loadLinks(); };
 
   // Chapters an entry "appears in" — the same links tgn-import.js writes
@@ -607,6 +629,9 @@ export default function Campaign({ onOpenCharacter }) {
                 ) : (
                   <p className="muted">
                     No linked statblock. Link one from the Characters tab if this person needs stats.
+                    {editing.external_id && (
+                      <> <button className="link" onClick={convertToCharacter}>Convert to character →</button></>
+                    )}
                   </p>
                 )}
               </div>

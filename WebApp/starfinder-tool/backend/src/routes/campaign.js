@@ -104,7 +104,7 @@ r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
   try {
     parsed = parseTgn(req.file.buffer.toString("utf8"));
   } catch (err) {
-    return res.status(400).json({ error: `Could not parse .tgn file: ${err.message}` });
+    return res.status(400).json({ error: `Could not parse Goblin Notebook file: ${err.message}` });
   }
   const result = await importTgnIntoDb(pool, parsed);
   res.json(result);
