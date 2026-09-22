@@ -59,10 +59,7 @@ function TrackItem({ m, onToggleLoop, onDelete }) {
           <input type="checkbox" checked={!!m.loop} onChange={(e) => onToggleLoop(m, e.target.checked)} />
           Loop
         </label>
-        <span className="row" style={{ gap: 10 }}>
-          {m.source_url && <a className="link" href={m.source_url} target="_blank" rel="noreferrer">Source</a>}
-          <button className="link" onClick={() => onDelete(m.id)}>Delete</button>
-        </span>
+        <button className="link" onClick={() => onDelete(m.id)}>Delete</button>
       </div>
     </div>
   );
