@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
+import { useMusicPlayer } from "../lib/musicPlayer.jsx";
 
 const CATEGORIES = [
   { key: "map", label: "Maps" },
@@ -26,34 +27,52 @@ async function upload(category, file, label) {
 
 const isVideo = (m) => /\.(mp4|webm|mov|m4v)$/i.test(m.filename || m.url || "");
 
-function youtubeId(url) {
-  const m = /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/)([\w-]{11})/.exec(url || "");
-  return m ? m[1] : null;
-}
+// A music/SFX track is either an uploaded audio file or a link (YouTube,
+// Suno, a direct audio URL, ...). Playback itself lives in the shared
+// MusicPlayerProvider (mounted once in GM.jsx, above the tab switch) so it
+// survives navigating away from this tab — this just drives it. Links
+// never autoplay: nothing plays until the GM presses Play here.
+function TrackItem({ m, onToggleLoop, onDelete, onEditTags, onEditFolder, folders }) {
+  const player = useMusicPlayer();
+  const isCurrent = player.current?.id === m.id;
+  const [tagInput, setTagInput] = useState(() => (m.tags || []).join(", "));
+  const [folderInput, setFolderInput] = useState(m.folder || "");
 
-// A music/SFX track is either an uploaded audio file (plain <audio>) or a
-// link (YouTube, Suno, a direct audio URL, ...). Links never autoplay and
-// never chain into "up next" — a YouTube embed only avoids that entirely
-// once looping is on (loop=1&playlist=<id> replays the same video instead
-// of ending into suggestions); with looping off the GM presses play by hand
-// and nothing queues automatically either way.
-function TrackItem({ m, onToggleLoop, onDelete }) {
-  const ytId = m.url && !m.filename ? youtubeId(m.url) : null;
   return (
-    <div className="media-item track-item">
+    <div className={`media-item track-item${isCurrent ? " track-item-playing" : ""}`}>
       <div className="media-item-label" title={m.label || m.original_name || m.url}>{m.label || m.original_name || m.url}</div>
-      {ytId ? (
-        <iframe
-          key={`${ytId}-${m.loop}`}
-          className="track-embed"
-          src={`https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1${m.loop ? `&loop=1&playlist=${ytId}` : ""}`}
-          title={m.label || ytId}
-          allow="autoplay; encrypted-media"
-          frameBorder="0"
-        />
-      ) : (
-        <audio src={m.url} controls loop={m.loop} preload="none" />
+      <div className="row" style={{ gap: 8 }}>
+        <button className="icon-button" onClick={() => (isCurrent ? player.togglePlay() : player.play(m))}>
+          {isCurrent && player.playing ? "⏸" : "▶"}
+        </button>
+        <span className="muted" style={{ fontSize: 12 }}>{isCurrent && player.playing ? "Playing…" : isCurrent ? "Paused" : ""}</span>
+      </div>
+
+      <input
+        className="track-folder-input"
+        list="track-folders"
+        placeholder="Folder (optional)"
+        value={folderInput}
+        onChange={(e) => setFolderInput(e.target.value)}
+        onBlur={() => folderInput.trim() !== (m.folder || "") && onEditFolder(m, folderInput.trim())}
+      />
+      <datalist id="track-folders">
+        {folders.map((f) => <option key={f} value={f} />)}
+      </datalist>
+
+      <input
+        className="track-tags-input"
+        placeholder="Tags, comma separated"
+        value={tagInput}
+        onChange={(e) => setTagInput(e.target.value)}
+        onBlur={() => onEditTags(m, tagInput)}
+      />
+      {m.tags?.length > 0 && (
+        <div className="tag-pills">
+          {m.tags.map((t) => <span key={t} className="pill">{t}</span>)}
+        </div>
       )}
+
       <div className="media-item-actions">
         <label className="checkbox-inline">
           <input type="checkbox" checked={!!m.loop} onChange={(e) => onToggleLoop(m, e.target.checked)} />
@@ -74,10 +93,13 @@ export default function MediaLibrary() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(null);
+  const [folderFilter, setFolderFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const { active, setFilterEnabled } = useActiveSession();
+  const player = useMusicPlayer();
 
   const load = () => api(`/media?category=${category}`).then(setItems).catch(() => setItems([]));
-  useEffect(() => { load(); }, [category]);
+  useEffect(() => { load(); setFolderFilter(""); setTagFilter(""); }, [category]);
   useEffect(() => { if (category === "portrait") api("/characters").then(setCharacters).catch(() => {}); }, [category]);
 
   const onFile = async (e) => {
@@ -121,7 +143,19 @@ export default function MediaLibrary() {
 
   const toggleLoop = async (track, loop) => {
     setItems((cur) => cur.map((it) => (it.id === track.id ? { ...it, loop } : it)));
+    player.setLoop(track.id, loop);
     await api(`/media/${track.id}`, { method: "PATCH", body: { loop } });
+  };
+
+  const editTags = async (track, tagsCsv) => {
+    const tags = [...new Set(tagsCsv.split(",").map((t) => t.trim()).filter(Boolean))];
+    setItems((cur) => cur.map((it) => (it.id === track.id ? { ...it, tags } : it)));
+    await api(`/media/${track.id}`, { method: "PATCH", body: { tags } });
+  };
+
+  const editFolder = async (track, folder) => {
+    setItems((cur) => cur.map((it) => (it.id === track.id ? { ...it, folder } : it)));
+    await api(`/media/${track.id}`, { method: "PATCH", body: { folder } });
   };
 
   const copyUrl = (url) => {
@@ -135,7 +169,12 @@ export default function MediaLibrary() {
     setCharacters((cur) => cur.map((c) => (c.id === Number(characterId) ? { ...c, portrait_url: url } : c)));
   };
 
-  const visibleItems = filterToSession(items, active, "mediaIds");
+  const sessionFilteredItems = filterToSession(items, active, "mediaIds");
+  const folders = useMemo(() => [...new Set(items.map((m) => m.folder).filter(Boolean))].sort(), [items]);
+  const allTags = useMemo(() => [...new Set(items.flatMap((m) => m.tags || []))].sort(), [items]);
+  const visibleItems = sessionFilteredItems
+    .filter((m) => !folderFilter || m.folder === folderFilter)
+    .filter((m) => !tagFilter || (m.tags || []).includes(tagFilter));
 
   return (
     <div className="media-library">
@@ -175,12 +214,33 @@ export default function MediaLibrary() {
       </div>
 
       {AUDIO_CATEGORIES.has(category) ? (
-        <div className="media-grid track-grid">
-          {visibleItems.length === 0 && <p className="muted">No {category} tracks {active?.filter_enabled ? "linked to this session" : "yet"}.</p>}
-          {visibleItems.map((m) => (
-            <TrackItem key={m.id} m={m} onToggleLoop={toggleLoop} onDelete={remove} />
-          ))}
-        </div>
+        <>
+          {(folders.length > 0 || allTags.length > 0) && (
+            <div className="row track-filters">
+              {folders.length > 0 && (
+                <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)}>
+                  <option value="">All folders</option>
+                  {folders.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              )}
+              {allTags.map((t) => (
+                <button
+                  key={t}
+                  className={`pill tag-filter-pill${tagFilter === t ? " active" : ""}`}
+                  onClick={() => setTagFilter(tagFilter === t ? "" : t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="media-grid track-grid">
+            {visibleItems.length === 0 && <p className="muted">No {category} tracks {active?.filter_enabled ? "linked to this session" : "match these filters"}.</p>}
+            {visibleItems.map((m) => (
+              <TrackItem key={m.id} m={m} onToggleLoop={toggleLoop} onDelete={remove} onEditTags={editTags} onEditFolder={editFolder} folders={folders} />
+            ))}
+          </div>
+        </>
       ) : (
         <div className="media-grid">
           {visibleItems.length === 0 && <p className="muted">No {category} images {active?.filter_enabled ? "linked to this session" : "yet"}.</p>}

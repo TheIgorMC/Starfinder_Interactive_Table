@@ -298,8 +298,23 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .media-item-actions { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
 
 .track-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.track-item audio { width: 100%; }
-.track-embed { width: 100%; aspect-ratio: 16/9; border-radius: 8px; background: #06070f; }
+.track-item-playing { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+.track-folder-input, .track-tags-input { width: 100%; box-sizing: border-box; font-size: 12.5px; }
+.tag-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.track-filters { flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.tag-filter-pill { cursor: pointer; border: 1px solid transparent; background: var(--panel-raised); }
+.tag-filter-pill.active { background: var(--accent-grad); color: #08101f; border-color: transparent; }
+
+/* Compact "now playing" widget — lives in the GM topbar itself (see
+   GM.jsx's MiniPlayer), so it's visible and controllable from every tab,
+   not just the Music tab the track was started from. Only takes up space
+   while something's actually playing. */
+.mini-player {
+  display: flex; align-items: center; gap: 6px; flex: none;
+  max-width: 220px; padding: 3px 8px 3px 3px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); border-radius: var(--radius-pill);
+}
+.mini-player-label { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Campaign */
 .campaign { padding: 20px 24px; }

@@ -35,6 +35,15 @@ const upload = multer({
 
 const r = Router();
 
+// "combat, tense , combat" -> ["combat", "tense"] — trimmed, deduped, blanks
+// dropped. Same normalization on write regardless of upload/link/patch, so
+// the tag list shown as filter chips never carries a stray empty or
+// duplicate entry.
+function normalizeTags(tags) {
+  if (!Array.isArray(tags)) return undefined;
+  return [...new Set(tags.map((t) => String(t).trim()).filter(Boolean))];
+}
+
 // Serves uploaded files directly — public, like the battle map itself these
 // are images meant to be visible to the whole table (projector, tablet),
 // not sensitive data.
@@ -62,9 +71,12 @@ r.post("/:category", requireGM, (req, res, next) => {
   });
 }, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "file required (field name: file)" });
+  // multipart fields arrive as strings — "tags" is a comma-separated list
+  // from the upload form, not JSON.
+  const tags = normalizeTags((req.body?.tags || "").split(",")) || [];
   const { rows } = await pool.query(
-    `INSERT INTO media (category, filename, original_name, label) VALUES ($1,$2,$3,$4) RETURNING *`,
-    [req.params.category, req.file.filename, req.file.originalname, req.body?.label || ""]
+    `INSERT INTO media (category, filename, original_name, label, folder, tags) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.params.category, req.file.filename, req.file.originalname, req.body?.label || "", req.body?.folder || "", tags]
   );
   res.status(201).json(withUrl(rows[0]));
 });
@@ -76,9 +88,10 @@ r.post("/:category/link", requireGM, async (req, res) => {
   if (!LINK_CATEGORIES.includes(req.params.category)) return res.status(400).json({ error: "links only supported for music/sfx" });
   const url = (req.body?.url || "").trim();
   if (!url) return res.status(400).json({ error: "url required" });
+  const tags = normalizeTags(req.body?.tags) || [];
   const { rows } = await pool.query(
-    `INSERT INTO media (category, url, label, loop) VALUES ($1,$2,$3,$4) RETURNING *`,
-    [req.params.category, url, req.body?.label || "", !!req.body?.loop]
+    `INSERT INTO media (category, url, label, loop, folder, tags) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.params.category, url, req.body?.label || "", !!req.body?.loop, req.body?.folder || "", tags]
   );
   res.status(201).json(withUrl(rows[0]));
 });
@@ -86,10 +99,16 @@ r.post("/:category/link", requireGM, async (req, res) => {
 r.patch("/:id", requireGM, async (req, res) => {
   const fields = [];
   const params = [];
-  for (const key of ["label", "loop"]) {
+  for (const key of ["label", "loop", "folder"]) {
     if (req.body?.[key] === undefined) continue;
     params.push(req.body[key]);
     fields.push(`${key} = $${params.length}`);
+  }
+  if (req.body?.tags !== undefined) {
+    const tags = normalizeTags(req.body.tags);
+    if (tags === undefined) return res.status(400).json({ error: "tags must be an array of strings" });
+    params.push(tags);
+    fields.push(`tags = $${params.length}`);
   }
   if (!fields.length) return res.status(400).json({ error: "nothing to update" });
   params.push(req.params.id);

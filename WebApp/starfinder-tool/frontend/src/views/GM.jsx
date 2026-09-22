@@ -10,6 +10,7 @@ import Characters from "../components/Characters.jsx";
 import Sessions from "../components/Sessions.jsx";
 import { useAuth } from "../auth.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
+import { MusicPlayerProvider, useMusicPlayer } from "../lib/musicPlayer.jsx";
 
 /*
  * Mini tracker protocol (placeholder — adjust to real PCB firmware):
@@ -111,6 +112,21 @@ function SettingsModal({ onClose, wsConnected, tracker, username, logout }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Compact, only takes up topbar space while something's actually playing —
+// persists across tabs because it (and the playback engine behind it) live
+// above the tab switch, see lib/musicPlayer.jsx.
+function MiniPlayer() {
+  const { current, playing, togglePlay, stop } = useMusicPlayer();
+  if (!current) return null;
+  return (
+    <div className="mini-player" title={current.label || current.original_name || "Track"}>
+      <button className="icon-button" onClick={togglePlay}>{playing ? "⏸" : "▶"}</button>
+      <span className="mini-player-label">{current.label || current.original_name || "Track"}</span>
+      <button className="icon-button" onClick={stop} title="Stop">✕</button>
     </div>
   );
 }
@@ -256,6 +272,7 @@ export default function GM() {
   };
 
   return (
+    <MusicPlayerProvider>
     <div className="gm">
       <nav className="gm-topbar">
         <h2>GM Console</h2>
@@ -266,6 +283,7 @@ export default function GM() {
             </button>
           ))}
         </div>
+        <MiniPlayer />
         <button
           className={`icon-button${!wsConnected ? " icon-button-alert" : ""}`}
           onClick={() => setShowSettings(true)}
@@ -309,5 +327,6 @@ export default function GM() {
         )}
       </div>
     </div>
+    </MusicPlayerProvider>
   );
 }
