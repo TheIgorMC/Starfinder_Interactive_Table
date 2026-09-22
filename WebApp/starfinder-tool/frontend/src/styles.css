@@ -261,12 +261,19 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
   background: var(--accent-grad); color: #08101f; box-shadow: 0 4px 16px rgba(110, 168, 255, 0.3);
 }
 .wizard-steps button:disabled { color: var(--text-faint); background: none; }
-/* Campaign's type sub-tabs (Events/Locations/People/...) specifically —
-   shares the same visual language as the others above but sits directly
-   under a page that's already tight on vertical room (list + reader below
-   it), so it gets a noticeably tighter version. */
-.tab-row { padding: 3px; margin: 0 0 10px; }
-.tab-row button { padding: 6px 12px; font-size: 12px; }
+/* Campaign's type sub-tabs (Events/Locations/People/...) and Media Library's
+   category sub-tabs (Maps/Mood/.../Music/SFX) — a real submenu flush against
+   the gm-topbar above it, not a second floating pill bar with its own card
+   border/radius/gap that reads as an unrelated toolbar. Bleeds out to the
+   page edges via negative margin (undoes the page's own 20px/24px padding)
+   and drops the border/radius/background of the shared tab look above. */
+.tab-row {
+  margin: -20px -24px 16px; padding: 6px 24px 6px;
+  background: rgba(255, 255, 255, 0.02); border: none; border-radius: 0;
+  border-bottom: 1px solid var(--border);
+}
+.tab-row button { padding: 7px 12px; font-size: 12px; border-radius: var(--radius-sm); }
+.tab-row button.active { box-shadow: none; }
 .gm-tab-content { min-height: 0; }
 .gm-panel { padding: 20px 24px; max-width: 480px; }
 .gm-panel > * + * { margin-top: 18px; }
@@ -288,7 +295,11 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 }
 .media-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: #06070f; }
 .media-item-label { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.media-item-actions { display: flex; justify-content: space-between; font-size: 12px; }
+.media-item-actions { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+
+.track-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.track-item audio { width: 100%; }
+.track-embed { width: 100%; aspect-ratio: 16/9; border-radius: 8px; background: #06070f; }
 
 /* Campaign */
 .campaign { padding: 20px 24px; }

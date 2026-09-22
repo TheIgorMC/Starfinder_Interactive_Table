@@ -7,7 +7,8 @@ import { unlink } from "node:fs/promises";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 
-const CATEGORIES = ["map", "mood", "token", "portrait"];
+const CATEGORIES = ["map", "mood", "token", "portrait", "music", "sfx"];
+const LINK_CATEGORIES = ["music", "sfx"];
 const ROOT = process.env.UPLOADS_DIR || "/app/uploads";
 
 const storage = multer.diskStorage({
@@ -17,10 +18,10 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   // 80MB — small for a map/portrait/token image, but the "mood" category
-  // also doubles as looping scenic video for the tablet (Tablet.jsx),
-  // which needs real headroom.
+  // also doubles as looping scenic video for the tablet (Tablet.jsx), and
+  // "music"/"sfx" hold uploaded audio, so this stays generous.
   limits: { fileSize: 80 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => cb(null, /^(image|video)\//.test(file.mimetype)),
+  fileFilter: (_req, file, cb) => cb(null, /^(image|video|audio)\//.test(file.mimetype)),
 });
 
 const r = Router();
@@ -59,14 +60,44 @@ r.post("/:category", requireGM, (req, res, next) => {
   res.status(201).json(withUrl(rows[0]));
 });
 
+// Link-based track (YouTube, Suno, a direct audio URL, ...) — no file
+// upload, just a URL the player embeds/streams directly. Only meaningful
+// for music/sfx; the image/video categories are always real uploads.
+r.post("/:category/link", requireGM, async (req, res) => {
+  if (!LINK_CATEGORIES.includes(req.params.category)) return res.status(400).json({ error: "links only supported for music/sfx" });
+  const url = (req.body?.url || "").trim();
+  if (!url) return res.status(400).json({ error: "url required" });
+  const { rows } = await pool.query(
+    `INSERT INTO media (category, url, label, loop) VALUES ($1,$2,$3,$4) RETURNING *`,
+    [req.params.category, url, req.body?.label || "", !!req.body?.loop]
+  );
+  res.status(201).json(withUrl(rows[0]));
+});
+
+r.patch("/:id", requireGM, async (req, res) => {
+  const fields = [];
+  const params = [];
+  for (const key of ["label", "loop"]) {
+    if (req.body?.[key] === undefined) continue;
+    params.push(req.body[key]);
+    fields.push(`${key} = $${params.length}`);
+  }
+  if (!fields.length) return res.status(400).json({ error: "nothing to update" });
+  params.push(req.params.id);
+  const { rows } = await pool.query(`UPDATE media SET ${fields.join(", ")} WHERE id=$${params.length} RETURNING *`, params);
+  if (!rows[0]) return res.status(404).json({ error: "not found" });
+  res.json(withUrl(rows[0]));
+});
+
 r.delete("/:id", requireGM, async (req, res) => {
   const { rows } = await pool.query("DELETE FROM media WHERE id=$1 RETURNING *", [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "not found" });
-  await unlink(path.join(ROOT, rows[0].category, rows[0].filename)).catch(() => {});
+  if (rows[0].filename) await unlink(path.join(ROOT, rows[0].category, rows[0].filename)).catch(() => {});
   res.status(204).end();
 });
 
 function withUrl(row) {
+  if (!row.filename) return { ...row };
   return { ...row, url: `/api/media/files/${row.category}/${row.filename}` };
 }
 
