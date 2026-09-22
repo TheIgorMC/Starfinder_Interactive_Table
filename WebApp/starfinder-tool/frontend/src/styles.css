@@ -297,13 +297,45 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .media-item-label { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-item-actions { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
 
-.track-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.track-item-playing { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
-.track-folder-input, .track-tags-input { width: 100%; box-sizing: border-box; font-size: 12.5px; }
-.tag-pills { display: flex; flex-wrap: wrap; gap: 4px; }
-.track-filters { flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
-.tag-filter-pill { cursor: pointer; border: 1px solid transparent; background: var(--panel-raised); }
+/* Music/SFX — a file-explorer-style folder sidebar + a compact one-row-
+   per-track list (the old card grid, ~260px per track, stopped making
+   sense past a handful of tracks). Drag a track row onto a sidebar folder
+   to move it there, or drag a tag chip onto a row's tag zone to tag it —
+   both faster than the always-available dropdown/+ input fallback. */
+.track-explorer { display: flex; gap: 16px; align-items: flex-start; }
+.track-folder-sidebar { flex: 0 0 190px; display: flex; flex-direction: column; gap: 2px; }
+.track-folder-row {
+  display: flex; justify-content: space-between; gap: 6px;
+  padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12.5px;
+  background: none; border: none; color: var(--text-secondary); text-align: left; white-space: nowrap; overflow: hidden;
+}
+.track-folder-row:hover { background: rgba(255, 255, 255, 0.05); }
+.track-folder-row.active { background: var(--accent-fill); color: var(--accent-text); font-weight: 600; }
+.track-folder-new { color: var(--text-faint); font-size: 11px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); white-space: normal; }
+.track-main { flex: 1; min-width: 0; }
+
+.tag-chip-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.tag-filter-pill { cursor: grab; border: 1px solid transparent; background: var(--panel-raised); }
 .tag-filter-pill.active { background: var(--accent-grad); color: #08101f; border-color: transparent; }
+
+.track-list { display: flex; flex-direction: column; }
+.track-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px;
+  border-bottom: 1px solid var(--border-soft); font-size: 12.5px; cursor: grab;
+}
+.track-row:hover { background: rgba(255, 255, 255, 0.03); }
+.track-row-playing { background: var(--accent-fill); }
+.track-row-play { width: 26px; height: 26px; font-size: 12px; flex: none; }
+.track-row-label { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-row-folder { flex: 0 0 140px; font-size: 11.5px; padding: 3px 6px; }
+.track-row-tags { flex: 1 1 200px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.track-tag-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 2px 4px 2px 8px; }
+.tag-remove { background: none; border: none; color: inherit; opacity: 0.6; padding: 0 2px; font-size: 12px; line-height: 1; }
+.tag-remove:hover { opacity: 1; }
+.track-tag-add-btn { width: 18px; height: 18px; font-size: 12px; line-height: 1; padding: 0; border: 1px dashed var(--border); border-radius: var(--radius-pill); background: none; color: var(--text-faint); }
+.track-tag-add-input { width: 70px; font-size: 11px; padding: 2px 4px; }
+.track-row-loop { width: 26px; height: 26px; font-size: 12px; flex: none; opacity: 0.4; }
+.track-row-loop.active { opacity: 1; color: var(--accent-text); }
 
 /* Compact "now playing" widget — lives in the GM topbar itself (see
    GM.jsx's MiniPlayer), so it's visible and controllable from every tab,
