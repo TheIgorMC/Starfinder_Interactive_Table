@@ -6,6 +6,7 @@ import path from "node:path";
 import { unlink } from "node:fs/promises";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
+import { isSunoPageUrl, resolveSunoAudio } from "../suno-resolve.js";
 
 const CATEGORIES = ["map", "mood", "token", "portrait", "music", "sfx"];
 const LINK_CATEGORIES = ["music", "sfx"];
@@ -65,11 +66,27 @@ r.post("/:category", requireGM, (req, res, next) => {
 // for music/sfx; the image/video categories are always real uploads.
 r.post("/:category/link", requireGM, async (req, res) => {
   if (!LINK_CATEGORIES.includes(req.params.category)) return res.status(400).json({ error: "links only supported for music/sfx" });
-  const url = (req.body?.url || "").trim();
+  let url = (req.body?.url || "").trim();
   if (!url) return res.status(400).json({ error: "url required" });
+
+  // A suno.com/s/... or /song/... link is the share PAGE, not a playable
+  // file — <audio src> against it just fails. Resolve it server-side to the
+  // actual CDN mp3 once, up front, so the GM gets a clear error immediately
+  // if that ever breaks (Suno changes their page) instead of a silently
+  // dead player later.
+  let sourceUrl = null;
+  if (isSunoPageUrl(url)) {
+    try {
+      sourceUrl = url;
+      url = await resolveSunoAudio(url);
+    } catch (err) {
+      return res.status(502).json({ error: `Suno link: ${err.message}` });
+    }
+  }
+
   const { rows } = await pool.query(
-    `INSERT INTO media (category, url, label, loop) VALUES ($1,$2,$3,$4) RETURNING *`,
-    [req.params.category, url, req.body?.label || "", !!req.body?.loop]
+    `INSERT INTO media (category, url, source_url, label, loop) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [req.params.category, url, sourceUrl, req.body?.label || "", !!req.body?.loop]
   );
   res.status(201).json(withUrl(rows[0]));
 });
