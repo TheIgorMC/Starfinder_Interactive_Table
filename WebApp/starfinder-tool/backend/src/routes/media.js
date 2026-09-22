@@ -124,7 +124,7 @@ r.delete("/:id", requireGM, async (req, res) => {
   res.status(204).end();
 });
 
-function withUrl(row) {
+export function withUrl(row) {
   if (!row.filename) return { ...row };
   return { ...row, url: `/api/media/files/${row.category}/${row.filename}` };
 }

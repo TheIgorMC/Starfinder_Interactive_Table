@@ -18,7 +18,10 @@ const MEDIA_CATEGORIES = [
   { key: "mood", label: "Mood screens" },
   { key: "token", label: "Tokens" },
   { key: "portrait", label: "Portraits" },
+  { key: "music", label: "Music" },
+  { key: "sfx", label: "SFX" },
 ];
+const AUDIO_CATEGORIES = new Set(["music", "sfx"]);
 const STATUS_LABEL = { planned: "Planned", active: "Active", completed: "Completed" };
 
 const blank = () => ({ name: "", session_date: "", summary: "", notes: "" });
@@ -96,21 +99,29 @@ function MediaLinker({ linked, onLink, onUnlink }) {
   useEffect(() => { api(`/media?category=${cat}`).then(setItems).catch(() => setItems([])); }, [cat]);
 
   const linkedIds = new Set(linked.map((m) => m.id));
+  const audio = AUDIO_CATEGORIES.has(cat);
 
   return (
     <div className="session-section">
       <h4>Linked media</h4>
-      {linked.length === 0 && <p className="muted">Nothing linked yet — pick maps, mood screens, tokens, or portraits to prep below.</p>}
+      {linked.length === 0 && <p className="muted">Nothing linked yet — pick maps, mood screens, tokens, portraits, music, or SFX to prep below.</p>}
       {linked.length > 0 && (
         <div className="media-grid" style={{ marginBottom: 10 }}>
           {linked.map((m) => (
-            <div key={m.id} className="media-item">
-              <img src={m.url} alt={m.label || m.original_name} />
-              <div className="media-item-label">{m.label || m.original_name}</div>
-              <div className="media-item-actions">
+            AUDIO_CATEGORIES.has(m.category) ? (
+              <div key={m.id} className="track-row">
+                <span className="track-row-label">{m.label || m.original_name || m.url}</span>
                 <button className="link" onClick={() => onUnlink(m.id)}>Remove</button>
               </div>
-            </div>
+            ) : (
+              <div key={m.id} className="media-item">
+                <img src={m.url} alt={m.label || m.original_name} />
+                <div className="media-item-label">{m.label || m.original_name}</div>
+                <div className="media-item-actions">
+                  <button className="link" onClick={() => onUnlink(m.id)}>Remove</button>
+                </div>
+              </div>
+            )
           ))}
         </div>
       )}
@@ -119,15 +130,26 @@ function MediaLinker({ linked, onLink, onUnlink }) {
           <button key={c.key} className={cat === c.key ? "active" : ""} onClick={() => setCat(c.key)}>{c.label}</button>
         ))}
       </div>
-      <div className="media-grid">
-        {items.filter((m) => !linkedIds.has(m.id)).map((m) => (
-          <div key={m.id} className="media-item" onClick={() => onLink(m.id)} style={{ cursor: "pointer" }}>
-            <img src={m.url} alt={m.label || m.original_name} />
-            <div className="media-item-label">{m.label || m.original_name}</div>
-          </div>
-        ))}
-        {items.length === 0 && <p className="muted">No {cat} images uploaded yet.</p>}
-      </div>
+      {audio ? (
+        <div className="track-list">
+          {items.filter((m) => !linkedIds.has(m.id)).map((m) => (
+            <div key={m.id} className="track-row" onClick={() => onLink(m.id)} style={{ cursor: "pointer" }}>
+              <span className="track-row-label">{m.label || m.original_name || m.url}</span>
+            </div>
+          ))}
+          {items.length === 0 && <p className="muted">No {cat} tracks uploaded yet.</p>}
+        </div>
+      ) : (
+        <div className="media-grid">
+          {items.filter((m) => !linkedIds.has(m.id)).map((m) => (
+            <div key={m.id} className="media-item" onClick={() => onLink(m.id)} style={{ cursor: "pointer" }}>
+              <img src={m.url} alt={m.label || m.original_name} />
+              <div className="media-item-label">{m.label || m.original_name}</div>
+            </div>
+          ))}
+          {items.length === 0 && <p className="muted">No {cat} images uploaded yet.</p>}
+        </div>
+      )}
     </div>
   );
 }
