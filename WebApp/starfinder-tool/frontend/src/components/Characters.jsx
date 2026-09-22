@@ -366,9 +366,7 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
               players={players}
               onChanged={() => { reload(); openCharacter(viewingChar); }}
             />
-            {!linkedCharacterIds.has(viewingChar.id) && (
-              <LoreLinkPicker character={viewingChar} onLinked={() => openCharacter(viewingChar)} />
-            )}
+            <LoreLinkPicker character={viewingChar} onLinked={() => openCharacter(viewingChar)} />
           </div>
           <CharacterSheet key={viewingChar.id} character={viewingChar} patch={patchCharacter} />
         </div>

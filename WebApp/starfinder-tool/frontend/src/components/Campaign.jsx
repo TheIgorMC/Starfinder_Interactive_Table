@@ -358,6 +358,69 @@ function RelatedEntries({ links, renderItem }) {
   );
 }
 
+// The old "add a link" control was a flat <select> of every single
+// campaign entry — hundreds of them in a real campaign, in whatever order
+// the API happened to return, with nothing to narrow it down. Same
+// search-then-pick pattern already used by Sessions.jsx's EntryLinker:
+// type a few letters, click the match, then set the relation (with a
+// datalist of relations already used elsewhere in the campaign, so
+// wording — "member of" vs "membro di" — stays consistent instead of
+// drifting entry by entry).
+function LinkPicker({ allEntries, excludeId, relationSuggestions, onLink }) {
+  const [q, setQ] = useState("");
+  const [target, setTarget] = useState(null);
+  const [relation, setRelation] = useState("");
+
+  const matches = q.trim()
+    ? allEntries.filter((e) => e.id !== excludeId && e.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 20)
+    : [];
+
+  const link = () => {
+    if (!target) return;
+    onLink(target.id, relation);
+    setTarget(null);
+    setRelation("");
+  };
+
+  if (target) {
+    return (
+      <div className="row" style={{ flexWrap: "wrap" }}>
+        <span className="pill">{target.type}</span>
+        <strong>{target.name}</strong>
+        <input
+          list="campaign-relation-suggestions"
+          placeholder="relation (e.g. member of)"
+          value={relation}
+          onChange={(e) => setRelation(e.target.value)}
+          style={{ maxWidth: 200 }}
+          autoFocus
+        />
+        <datalist id="campaign-relation-suggestions">
+          {relationSuggestions.map((r) => <option key={r} value={r} />)}
+        </datalist>
+        <button onClick={link}>Link</button>
+        <button className="link" onClick={() => setTarget(null)}>change target</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <input placeholder="Search entry to link…" value={q} onChange={(e) => setQ(e.target.value)} />
+      {q.trim() && (
+        <ul className="sheet-list wizard-picker-list">
+          {matches.map((e) => (
+            <li key={e.id} className="sheet-card wizard-pick-card" onClick={() => { setTarget(e); setQ(""); }}>
+              <span className="pill">{e.type}</span> {e.name}
+            </li>
+          ))}
+          {matches.length === 0 && <li className="muted">No matches.</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEntry, activeId }) {
   const kids = childrenOf.get(entry.id) || [];
   const isCollapsed = collapsed.has(entry.id);
@@ -395,9 +458,8 @@ export default function Campaign({ onOpenCharacter }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [q, setQ] = useState("");
   const [chapterFilter, setChapterFilter] = useState("");
-  const [linkTargetId, setLinkTargetId] = useState("");
-  const [relation, setRelation] = useState("");
   const { active, setFilterEnabled } = useActiveSession();
+  const relationSuggestions = useMemo(() => [...new Set(links.map((l) => l.relation).filter(Boolean))].sort(), [links]);
 
   const toggleCollapsed = (id) => setCollapsed((cur) => {
     const next = new Set(cur);
@@ -481,10 +543,8 @@ export default function Campaign({ onOpenCharacter }) {
     loadLinks();
   };
 
-  const addLink = async () => {
-    if (!linkTargetId) return;
-    await api(`/campaign/${editing.id}/links`, { method: "POST", body: { to_id: Number(linkTargetId), relation } });
-    setLinkTargetId(""); setRelation("");
+  const addLink = async (toId, rel) => {
+    await api(`/campaign/${editing.id}/links`, { method: "POST", body: { to_id: Number(toId), relation: rel } });
     reloadEditing();
     loadLinks();
   };
@@ -717,16 +777,7 @@ export default function Campaign({ onOpenCharacter }) {
                     </li>
                   )}
                 />
-                <div className="row">
-                  <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
-                    <option value="">Link to…</option>
-                    {allEntries.filter((e) => e.id !== editing.id).map((e) => (
-                      <option key={e.id} value={e.id}>{e.type}: {e.name}</option>
-                    ))}
-                  </select>
-                  <input placeholder="relation (e.g. member of)" value={relation} onChange={(e) => setRelation(e.target.value)} style={{ maxWidth: 160 }} />
-                  <button onClick={addLink} disabled={!linkTargetId}>Link</button>
-                </div>
+                <LinkPicker allEntries={allEntries} excludeId={editing.id} relationSuggestions={relationSuggestions} onLink={addLink} />
               </div>
             )}
 
