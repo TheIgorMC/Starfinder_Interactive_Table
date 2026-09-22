@@ -109,6 +109,24 @@ export default function CharacterSheet({ character, patch }) {
   // previous call's change instead of composing with it.
   const updateItems = (idToChanges) => patchEquipment(equipment.map((it) => (idToChanges.has(it.id) ? { ...it, ...idToChanges.get(it.id) } : it)));
 
+  // A pack with nothing left in its reserve (capacity - used <= 0) and no
+  // spare packs (quantity <= 0) is permanently useless — nothing can ever
+  // refill it again, so it's just a dead 0/0 row cluttering the list.
+  // Applied only from the actions that can actually cause depletion (the
+  // pack/spares "consume" steppers, and Reload) — never from a generic
+  // updateItem/updateItems call — so editing some unrelated field on an
+  // ammo item a GM just hasn't configured numbers for yet can't silently
+  // vanish it.
+  const isDepletedAmmo = (it) => it.type === "Ammunition" && (it.capacity ?? 0) - (it.used ?? 0) <= 0 && (it.quantity ?? 0) <= 0;
+  const updateItemPruned = (id, changes) => {
+    const next = equipment.map((it) => (it.id === id ? { ...it, ...changes } : it));
+    patchEquipment(next.filter((it) => it.id !== id || !isDepletedAmmo(it)));
+  };
+  const updateItemsPruned = (idToChanges) => {
+    const next = equipment.map((it) => (idToChanges.has(it.id) ? { ...it, ...idToChanges.get(it.id) } : it));
+    patchEquipment(next.filter((it) => !idToChanges.has(it.id) || !isDepletedAmmo(it)));
+  };
+
   // SF1e bulk rule: items lighter than 1 Bulk ("L") don't add up fractionally —
   // every 10 light items together count as 1 Bulk, any remainder is dropped.
   // Summing the raw fractional values instead (e.g. 8 light items -> 0.8)
@@ -182,10 +200,19 @@ export default function CharacterSheet({ character, patch }) {
     // Whatever couldn't be drawn (ran out of packs entirely) just leaves
     // the magazine short of full instead of silently pretending it reloaded.
     changes.set(weapon.id, { loadedCharges: magSize - need });
-    updateItems(changes);
+    updateItemsPruned(changes);
   };
 
   const spells = normalizeSpells(char.spells);
+  // No dedicated "is a caster" flag exists on a character — infer it from
+  // the same data the Spells tab itself would show: an actual
+  // spellcasting class (Mystic/Technomancer/Witchwarper, core SF1e's
+  // casters) on the sheet, or spell data already present (a multiclass/
+  // archetype caster, or a GM-authored homebrew NPC that doesn't use one
+  // of those three class names). A blank non-caster never has either.
+  const CASTER_CLASSES = new Set(["mystic", "technomancer", "witchwarper"]);
+  const isCaster = spells.classes.length > 0 || spells.additional.length > 0 || CASTER_CLASSES.has((char.class || "").trim().toLowerCase());
+  const visibleTabs = TABS.filter((t) => t.key !== "spells" || isCaster);
   const restAll = () => patch({
     spells: { ...spells, classes: spells.classes.map((c) => ({ ...c, spellsUsed: (c.spellsPerDay || []).map(() => 0) })) },
   });
@@ -231,7 +258,7 @@ export default function CharacterSheet({ character, patch }) {
       </header>
 
       <nav className="sheet-tabs">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </nav>
@@ -393,12 +420,12 @@ export default function CharacterSheet({ character, patch }) {
                       <div className="ammo-card-steppers">
                         <div className="ammo-card-stepper">
                           <span className="muted">pack</span>
-                          <button onClick={() => updateItem(a.id, { used: Math.max(0, (a.used || 0) - 1) })}>−</button>
-                          <button onClick={() => updateItem(a.id, { used: Math.min(a.capacity ?? 0, (a.used || 0) + 1) })}>+</button>
+                          <button onClick={() => updateItemPruned(a.id, { used: Math.min(a.capacity ?? 0, (a.used || 0) + 1) })}>−</button>
+                          <button onClick={() => updateItem(a.id, { used: Math.max(0, (a.used || 0) - 1) })}>+</button>
                         </div>
                         <div className="ammo-card-stepper">
                           <span className="muted">spares ({a.quantity ?? 0})</span>
-                          <button onClick={() => updateItem(a.id, { quantity: Math.max(0, (a.quantity || 0) - 1) })}>−</button>
+                          <button onClick={() => updateItemPruned(a.id, { quantity: Math.max(0, (a.quantity || 0) - 1) })}>−</button>
                           <button onClick={() => updateItem(a.id, { quantity: (a.quantity || 0) + 1 })}>+</button>
                         </div>
                       </div>

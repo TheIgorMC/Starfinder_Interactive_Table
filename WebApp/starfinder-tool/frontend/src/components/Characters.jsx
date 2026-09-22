@@ -367,6 +367,19 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
               onChanged={() => { reload(); openCharacter(viewingChar); }}
             />
             <LoreLinkPicker character={viewingChar} onLinked={() => openCharacter(viewingChar)} />
+            {!linkedCharacterIds.has(viewingChar.id) && (
+              <button
+                className="link"
+                onClick={async () => {
+                  if (!window.confirm(`Delete "${viewingChar.name}"? This can't be undone.`)) return;
+                  await api(`/characters/${viewingChar.id}`, { method: "DELETE" });
+                  setViewingChar(null);
+                  reload();
+                }}
+              >
+                Delete NPC
+              </button>
+            )}
           </div>
           <CharacterSheet key={viewingChar.id} character={viewingChar} patch={patchCharacter} />
         </div>

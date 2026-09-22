@@ -381,6 +381,10 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .campaign-tree-row.active .link { color: var(--accent-text); font-weight: 700; }
 .campaign-tree-row .link { white-space: normal; text-align: left; word-break: break-word; }
 .campaign-tree-caret { width: 16px; flex: 0 0 16px; background: none; border: none; padding: 0; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.campaign-tree-reorder { display: flex; flex: 0 0 auto; gap: 2px; margin-left: auto; }
+.campaign-tree-reorder button { font-size: 9px; padding: 0 3px; color: var(--text-faint); }
+.campaign-tree-reorder button:disabled { opacity: 0.25; }
+.campaign-tree-reorder button:not(:disabled):hover { color: var(--text-secondary); }
 .campaign-editor, .campaign-reader {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));

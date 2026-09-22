@@ -325,7 +325,7 @@ r.post("/", requireGM, async (req, res) => {
 
 r.patch("/:id", requireGM, async (req, res) => {
   const b = req.body ?? {};
-  const cols = ["type", "name", "body", "image_id", "event_date", "visible_to_players"].filter((f) => b[f] !== undefined);
+  const cols = ["type", "name", "body", "image_id", "event_date", "visible_to_players", "sort_order"].filter((f) => b[f] !== undefined);
   if (!cols.length) return res.status(400).json({ error: "no fields" });
   const sets = cols.map((f, i) => `${f}=$${i + 1}`).join(",");
   const { rows } = await pool.query(
@@ -338,6 +338,19 @@ r.patch("/:id", requireGM, async (req, res) => {
 
 r.delete("/:id", requireGM, async (req, res) => {
   await pool.query("DELETE FROM campaign_entries WHERE id=$1", [req.params.id]);
+  res.status(204).end();
+});
+
+// Sets an explicit position for a whole sibling group (same parent in the
+// tree, or same type at the root) in one call — the frontend sends the
+// full sibling list in its new order, index becomes sort_order. Cheaper
+// and less error-prone than N individual PATCH calls, and it's how a
+// still-unordered (sort_order NULL) sibling gets folded into the explicit
+// order the moment a GM drags/moves anything in that group.
+r.post("/reorder", requireGM, async (req, res) => {
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: "ids required" });
+  await Promise.all(ids.map((id, i) => pool.query("UPDATE campaign_entries SET sort_order=$1 WHERE id=$2", [i, id])));
   res.status(204).end();
 });
 

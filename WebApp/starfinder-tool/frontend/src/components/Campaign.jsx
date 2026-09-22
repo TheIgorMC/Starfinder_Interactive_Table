@@ -14,6 +14,21 @@ const TYPES = [
   { key: "object", label: "Objects" },
 ];
 
+// Plain localeCompare sorts "Settore 10" before "Settore 2" (character by
+// character, "1" < "2") — { numeric: true } compares embedded number runs
+// by value instead, which is what anyone actually expects from a list of
+// "Settore 1".."Settore 12". Used as the fallback for any entry that
+// hasn't been manually reordered (sort_order still NULL); an explicitly
+// ordered entry always sorts before one that isn't, so dragging one thing
+// in a sibling group doesn't reshuffle everything else in that group that
+// hasn't been touched yet.
+function compareEntries(a, b) {
+  const aHas = a.sort_order != null, bHas = b.sort_order != null;
+  if (aHas && bHas) return a.sort_order - b.sort_order;
+  if (aHas !== bHas) return aHas ? -1 : 1;
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+}
+
 // Groups a flat list of same-type entries into a tree using `links`
 // (id/from_id/to_id/relation, as returned by GET /api/campaign/links).
 // Entries whose parent isn't in this type (or isn't present at all, e.g.
@@ -39,9 +54,9 @@ function buildTree(entries, links) {
   }
   const sortedChildrenOf = new Map();
   for (const [parentId, kidsById] of childrenOf) {
-    sortedChildrenOf.set(parentId, [...kidsById.values()].sort((a, b) => a.name.localeCompare(b.name)));
+    sortedChildrenOf.set(parentId, [...kidsById.values()].sort(compareEntries));
   }
-  const roots = entries.filter((e) => !hasParent.has(e.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const roots = entries.filter((e) => !hasParent.has(e.id)).sort(compareEntries);
   return { roots, childrenOf: sortedChildrenOf };
 }
 
@@ -421,9 +436,10 @@ function LinkPicker({ allEntries, excludeId, relationSuggestions, onLink }) {
   );
 }
 
-function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEntry, activeId }) {
+function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEntry, activeId, siblings, onMove }) {
   const kids = childrenOf.get(entry.id) || [];
   const isCollapsed = collapsed.has(entry.id);
+  const idx = siblings.findIndex((s) => s.id === entry.id);
   return (
     <li>
       <div className={"campaign-tree-row" + (entry.id === activeId ? " active" : "")} style={{ paddingLeft: depth * 16 }}>
@@ -435,11 +451,17 @@ function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEn
         <button className="link" onClick={() => openEntry(entry)} title={excerptOf(entry.body)}>
           {entry.name} {entry.visible_to_players && <span className="pill ok">visible</span>}
         </button>
+        {onMove && (
+          <span className="campaign-tree-reorder">
+            <button className="link" disabled={idx <= 0} title="Move up" onClick={() => onMove(siblings, entry.id, -1)}>▲</button>
+            <button className="link" disabled={idx < 0 || idx >= siblings.length - 1} title="Move down" onClick={() => onMove(siblings, entry.id, 1)}>▼</button>
+          </span>
+        )}
       </div>
       {kids.length > 0 && !isCollapsed && (
         <ul>
           {kids.map((k) => (
-            <TreeNode key={k.id} entry={k} depth={depth + 1} childrenOf={childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={activeId} />
+            <TreeNode key={k.id} entry={k} depth={depth + 1} childrenOf={childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={activeId} siblings={kids} onMove={onMove} />
           ))}
         </ul>
       )}
@@ -579,6 +601,20 @@ export default function Campaign({ onOpenCharacter }) {
 
   const refreshAll = () => { load(); api("/campaign").then(setAllEntries); loadLinks(); };
 
+  // Moving one entry within its sibling group assigns explicit sort_order
+  // to the WHOLE group (see compareEntries/POST /campaign/reorder) — the
+  // chosen order then sticks instead of drifting back to natural-sort the
+  // next time a sibling that hasn't been touched gets added.
+  const moveEntry = async (siblings, entryId, delta) => {
+    const ids = siblings.map((s) => s.id);
+    const idx = ids.indexOf(entryId);
+    const swapWith = idx + delta;
+    if (idx < 0 || swapWith < 0 || swapWith >= ids.length) return;
+    [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
+    await api("/campaign/reorder", { method: "POST", body: { ids } });
+    refreshAll();
+  };
+
   // Chapters an entry "appears in" — the same links tgn-import.js writes
   // from each Tangent object to the chapters (timeline entries, type
   // "event") it was tagged with there. Lets a GM narrow a long list down
@@ -643,7 +679,7 @@ export default function Campaign({ onOpenCharacter }) {
           )}
           <ul className="campaign-tree">
             {tree.roots.map((e) => (
-              <TreeNode key={e.id} entry={e} depth={0} childrenOf={tree.childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={editing?.id} />
+              <TreeNode key={e.id} entry={e} depth={0} childrenOf={tree.childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={editing?.id} siblings={tree.roots} onMove={q.trim() ? null : moveEntry} />
             ))}
             {tree.roots.length === 0 && (
               <li className="muted">
