@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "../api.js";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
-import { HIERARCHY_RELATIONS, buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
+import { isHierarchyRelation, buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
 
 const TYPES = [
   { key: "event", label: "Events" },
@@ -13,27 +14,63 @@ const TYPES = [
   { key: "object", label: "Objects" },
 ];
 
+// Plain localeCompare sorts "Settore 10" before "Settore 2" (character by
+// character, "1" < "2") — { numeric: true } compares embedded number runs
+// by value instead, which is what anyone actually expects from a list of
+// "Settore 1".."Settore 12". Used as the fallback for any entry that
+// hasn't been manually reordered (sort_order still NULL); an explicitly
+// ordered entry always sorts before one that isn't, so dragging one thing
+// in a sibling group doesn't reshuffle everything else in that group that
+// hasn't been touched yet.
+function compareEntries(a, b) {
+  const aHas = a.sort_order != null, bHas = b.sort_order != null;
+  if (aHas && bHas) return a.sort_order - b.sort_order;
+  if (aHas !== bHas) return aHas ? -1 : 1;
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+}
+
 // Groups a flat list of same-type entries into a tree using `links`
 // (id/from_id/to_id/relation, as returned by GET /api/campaign/links).
 // Entries whose parent isn't in this type (or isn't present at all, e.g.
 // filtered out by the session/visibility filter) become roots.
 function buildTree(entries, links) {
   const byId = new Map(entries.map((e) => [e.id, e]));
+  // childrenOf.get(parentId) is keyed by child id, not a plain array — an
+  // entry that's linked to the same parent via two different links that
+  // both happen to be hierarchy relations (e.g. the auto-generated tree
+  // nesting from a Tangent import *and* a separate manual "connection"
+  // that reads the same, like "parte di") must still render as ONE tree
+  // row, not two. Rendering it twice from two links pointing at the same
+  // pair of ids looks exactly like a duplicate entry (same id — selecting
+  // either row highlights both), even though there's only one entry.
   const childrenOf = new Map();
   const hasParent = new Set();
   for (const l of links) {
-    if (!HIERARCHY_RELATIONS.has(l.relation)) continue;
+    if (!isHierarchyRelation(l.relation)) continue;
     if (!byId.has(l.from_id) || !byId.has(l.to_id)) continue;
-    if (!childrenOf.has(l.to_id)) childrenOf.set(l.to_id, []);
-    childrenOf.get(l.to_id).push(byId.get(l.from_id));
+    if (!childrenOf.has(l.to_id)) childrenOf.set(l.to_id, new Map());
+    childrenOf.get(l.to_id).set(l.from_id, byId.get(l.from_id));
     hasParent.add(l.from_id);
   }
-  for (const kids of childrenOf.values()) kids.sort((a, b) => a.name.localeCompare(b.name));
-  const roots = entries.filter((e) => !hasParent.has(e.id)).sort((a, b) => a.name.localeCompare(b.name));
-  return { roots, childrenOf };
+  const sortedChildrenOf = new Map();
+  for (const [parentId, kidsById] of childrenOf) {
+    sortedChildrenOf.set(parentId, [...kidsById.values()].sort(compareEntries));
+  }
+  const roots = entries.filter((e) => !hasParent.has(e.id)).sort(compareEntries);
+  return { roots, childrenOf: sortedChildrenOf };
 }
 
 const blank = (type) => ({ type, name: "", body: "", image_id: null, event_date: "", visible_to_players: false });
+
+// "!!private note!!" inside a body is a GM-only aside (see the editor's
+// hint under the body textarea) — never let one show up in a preview,
+// mirrors backend/src/gm-notes.js's stripGmNotes(). The server already
+// strips it from a non-GM API response too; this is what keeps the GM's
+// own hover-preview tooltip in the tree from spoiling it for themselves
+// at a glance while skimming.
+function stripGmNotes(text) {
+  return (text || "").replace(/!!([\s\S]*?)!!/g, "").replace(/\n{3,}/g, "\n\n").trim();
+}
 
 // A short preview of an entry, derived from its body on the spot — this
 // used to be a separately hand-maintained "summary" field that routinely
@@ -41,7 +78,7 @@ const blank = (type) => ({ type, name: "", body: "", image_id: null, event_date:
 // buggy auto-generator). Computing it fresh from `body` every render makes
 // staleness impossible: there's nothing stored to drift out of sync.
 function excerptOf(body) {
-  const withoutImages = (body || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  const withoutImages = stripGmNotes(body).replace(/!\[[^\]]*\]\([^)]*\)/g, "");
   const paragraphs = withoutImages.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   for (const para of paragraphs) {
     const plain = para
@@ -91,7 +128,7 @@ function TgnImport({ onImported }) {
   return (
     <div className="tgn-import">
       <label className="button-like">
-        {busy ? "Importing…" : "Import Tangent (.tgn) export…"}
+        {busy ? "Importing…" : "Import Goblin Notebook (.tgn) export…"}
         <input type="file" accept=".tgn" onChange={onFile} disabled={busy} hidden />
       </label>
       {error && <span className="pill bad">{error}</span>}
@@ -99,6 +136,40 @@ function TgnImport({ onImported }) {
         <span className="pill ok">
           +{result.entriesInserted} new entries, +{result.linksInserted} new links
           {" "}({result.entriesSeen - result.entriesInserted} already imported, left untouched)
+        </span>
+      )}
+    </div>
+  );
+}
+
+// One-shot pass: for every NPC with no default image yet, promote the
+// first inline picture already in its body (see POST
+// /campaign/promote-body-images) into that slot. Only ever fills gaps —
+// safe to run repeatedly.
+function PromoteBodyImagesTool({ onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api("/campaign/promote-body-images", { method: "POST" });
+      setResult(r);
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="row" style={{ alignItems: "center" }}>
+      <button className="link" onClick={run} disabled={busy}>
+        {busy ? "Scanning…" : "Set NPC images from body pictures…"}
+      </button>
+      {result && (
+        <span className="pill ok">
+          {result.updated} of {result.scanned} NPCs without an image got one
         </span>
       )}
     </div>
@@ -115,6 +186,10 @@ function DuplicatesTool({ onMerged }) {
   const [groups, setGroups] = useState(null);
   const [keepChoice, setKeepChoice] = useState({});
   const [busyKey, setBusyKey] = useState(null);
+  const [mergeAllBusy, setMergeAllBusy] = useState(false);
+  const [mergeAllMsg, setMergeAllMsg] = useState("");
+  const [mergeAllHadFailures, setMergeAllHadFailures] = useState(false);
+  const [error, setError] = useState("");
 
   const load = () => api("/campaign/duplicates").then((rows) => {
     setGroups(rows);
@@ -136,22 +211,83 @@ function DuplicatesTool({ onMerged }) {
     const keepId = keepChoice[key];
     const removeIds = group.ids.filter((id) => id !== keepId);
     setBusyKey(key);
+    setError("");
     try {
       await api("/campaign/duplicates/merge", { method: "POST", body: { keep_id: keepId, remove_ids: removeIds } });
       await load();
       onMerged();
+    } catch (err) {
+      setError(`Couldn't merge "${group.name}": ${err.message}`);
     } finally {
       setBusyKey(null);
     }
   };
 
+  const sameTypeCount = (groups || []).filter((g) => g.confidence === "name").length;
+
+  // "These really are two different things" — a faction and a quest that
+  // just happen to share a name, say. Remembered server-side (see
+  // POST /campaign/duplicates/dismiss) so it doesn't come back the next
+  // time the panel opens.
+  const dismiss = async (group) => {
+    const key = group.ids.join(",");
+    setBusyKey(key);
+    setError("");
+    try {
+      await api("/campaign/duplicates/dismiss", { method: "POST", body: { ids: group.ids } });
+      setGroups((cur) => cur.filter((g) => g.ids.join(",") !== key));
+    } catch (err) {
+      setError(`Couldn't dismiss "${group.name}": ${err.message}`);
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const mergeAll = async () => {
+    if (!confirm(`Merge all ${sameTypeCount} exact same-type duplicate groups? Each keeps its oldest copy and deletes the rest — this can't be undone.`)) return;
+    setMergeAllBusy(true);
+    setMergeAllMsg("");
+    setError("");
+    try {
+      const r = await api("/campaign/duplicates/merge-all", { method: "POST" });
+      const failMsg = r.failures?.length
+        ? ` ${r.failures.length} group${r.failures.length === 1 ? "" : "s"} failed: ${r.failures.map((f) => `"${f.name}" (${f.error})`).join("; ")}`
+        : "";
+      setMergeAllHadFailures(!!r.failures?.length);
+      setMergeAllMsg(`Merged ${r.groupsMerged} groups (${r.entriesMerged} duplicate ${r.entriesMerged === 1 ? "entry" : "entries"} removed).${failMsg}`);
+      await load();
+      onMerged();
+    } catch (err) {
+      setError(`Merge all failed: ${err.message}`);
+    } finally {
+      setMergeAllBusy(false);
+    }
+  };
+
+  // The empty/loading states are one line of text — showing them in the
+  // full bordered/padded panel (meant for a list of groups) shoves the
+  // whole list+reader layout down for no reason on the common case of
+  // "checked, nothing wrong." Those stay inline next to the toggle;
+  // only an actual result list gets the full panel treatment.
+  const hasContent = groups && groups.length > 0;
+
   return (
     <div className="tgn-import">
       <button className="link" onClick={toggle}>{open ? "✕ Close duplicates" : "Find duplicates"}</button>
-      {open && (
+      {open && groups === null && <span className="muted">Checking…</span>}
+      {open && groups?.length === 0 && <span className="pill ok">No duplicates found.</span>}
+      {open && error && !hasContent && <span className="pill bad">{error}</span>}
+      {open && hasContent && (
         <div className="duplicates-panel">
-          {groups === null && <p className="muted">Checking…</p>}
-          {groups?.length === 0 && <p className="muted">No duplicates found.</p>}
+          {error && <p className="pill bad">{error}</p>}
+          {sameTypeCount > 1 && (
+            <div className="row" style={{ marginBottom: 10 }}>
+              <button onClick={mergeAll} disabled={mergeAllBusy}>
+                {mergeAllBusy ? "Merging…" : `Merge all ${sameTypeCount} exact duplicates`}
+              </button>
+              {mergeAllMsg && <span className={`pill ${mergeAllHadFailures ? "bad" : "ok"}`}>{mergeAllMsg}</span>}
+            </div>
+          )}
           {groups?.map((g) => {
             const key = g.ids.join(",");
             return (
@@ -172,6 +308,11 @@ function DuplicatesTool({ onMerged }) {
                       keep #{id} ({g.id_types[i]}){i === 0 ? " (oldest)" : ""}
                     </label>
                   ))}
+                  {g.confidence === "cross-type" ? (
+                    <button className="link" onClick={() => dismiss(g)} disabled={busyKey === key}>
+                      {busyKey === key ? "…" : "✓ It's fine, these are different things"}
+                    </button>
+                  ) : null}
                   <button onClick={() => merge(g)} disabled={busyKey === key}>
                     {busyKey === key ? "Merging…" : `Merge (delete ${g.ids.length - 1})`}
                   </button>
@@ -185,9 +326,154 @@ function DuplicatesTool({ onMerged }) {
   );
 }
 
-function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEntry, activeId }) {
+// Splits a body on "!!...!!" pairs and renders the note segments in a
+// visibly distinct "GM only" box instead of feeding the literal "!!"
+// markers through the markdown renderer — the GM console is the only
+// place this ever runs (players never receive raw body text; the API
+// itself strips notes for non-GM requests, see backend/src/gm-notes.js),
+// so this is purely about making the marker's effect visible while
+// editing/reading, not a second enforcement layer.
+function MarkdownWithNotes({ body }) {
+  const text = body || "*Nothing written yet — click Edit to add some.*";
+  const parts = text.split(/(!![\s\S]*?!!)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = part.match(/^!!([\s\S]*)!!$/);
+        if (!m) return part ? <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>{part}</ReactMarkdown> : null;
+        return (
+          <div key={i} className="campaign-gm-note">
+            <span className="campaign-gm-note-label">GM only</span>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m[1]}</ReactMarkdown>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// A chapter/hub entry can easily collect dozens of incoming links (every
+// location "appare in" it, say) — one flat list makes the genuinely
+// distinct relationships (e.g. a single "member of" faction link) just as
+// hard to spot as the pile of same-relation entries. Grouped by
+// direction+relation, with any group past a handful collapsed behind a
+// "show all N" toggle instead of dumping the whole thing on-screen.
+const RELATED_GROUP_COLLAPSE_AT = 6;
+
+function RelatedEntries({ links, renderItem }) {
+  const [expanded, setExpanded] = useState(() => new Set());
+
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const l of links || []) {
+      const key = `${l.direction}::${l.relation || "related to"}`;
+      if (!map.has(key)) map.set(key, { key, direction: l.direction, relation: l.relation || "related to", items: [] });
+      map.get(key).items.push(l);
+    }
+    for (const g of map.values()) g.items.sort((a, b) => a.name.localeCompare(b.name));
+    return [...map.values()].sort((a, b) => b.items.length - a.items.length);
+  }, [links]);
+
+  const toggle = (key) => setExpanded((cur) => {
+    const next = new Set(cur);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  if (!groups.length) return <p className="muted">No links yet.</p>;
+
+  return (
+    <div className="campaign-links-groups">
+      {groups.map((g) => {
+        const isLong = g.items.length > RELATED_GROUP_COLLAPSE_AT;
+        const isOpen = !isLong || expanded.has(g.key);
+        const shown = isOpen ? g.items : g.items.slice(0, RELATED_GROUP_COLLAPSE_AT);
+        return (
+          <div key={g.key} className="campaign-links-group">
+            <div className="campaign-links-group-head">
+              <span>{g.direction === "out" ? "→" : "←"} {g.relation}</span>
+              <span className="pill">{g.items.length}</span>
+            </div>
+            <ul>{shown.map(renderItem)}</ul>
+            {isLong && (
+              <button className="link" onClick={() => toggle(g.key)}>
+                {isOpen ? "Show less" : `Show all ${g.items.length}`}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// The old "add a link" control was a flat <select> of every single
+// campaign entry — hundreds of them in a real campaign, in whatever order
+// the API happened to return, with nothing to narrow it down. Same
+// search-then-pick pattern already used by Sessions.jsx's EntryLinker:
+// type a few letters, click the match, then set the relation (with a
+// datalist of relations already used elsewhere in the campaign, so
+// wording — "member of" vs "membro di" — stays consistent instead of
+// drifting entry by entry).
+function LinkPicker({ allEntries, excludeId, relationSuggestions, onLink }) {
+  const [q, setQ] = useState("");
+  const [target, setTarget] = useState(null);
+  const [relation, setRelation] = useState("");
+
+  const matches = q.trim()
+    ? allEntries.filter((e) => e.id !== excludeId && e.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 20)
+    : [];
+
+  const link = () => {
+    if (!target) return;
+    onLink(target.id, relation);
+    setTarget(null);
+    setRelation("");
+  };
+
+  if (target) {
+    return (
+      <div className="row" style={{ flexWrap: "wrap" }}>
+        <span className="pill">{target.type}</span>
+        <strong>{target.name}</strong>
+        <input
+          list="campaign-relation-suggestions"
+          placeholder="relation (e.g. member of)"
+          value={relation}
+          onChange={(e) => setRelation(e.target.value)}
+          style={{ maxWidth: 200 }}
+          autoFocus
+        />
+        <datalist id="campaign-relation-suggestions">
+          {relationSuggestions.map((r) => <option key={r} value={r} />)}
+        </datalist>
+        <button onClick={link}>Link</button>
+        <button className="link" onClick={() => setTarget(null)}>change target</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <input placeholder="Search entry to link…" value={q} onChange={(e) => setQ(e.target.value)} />
+      {q.trim() && (
+        <ul className="sheet-list wizard-picker-list">
+          {matches.map((e) => (
+            <li key={e.id} className="sheet-card wizard-pick-card" onClick={() => { setTarget(e); setQ(""); }}>
+              <span className="pill">{e.type}</span> {e.name}
+            </li>
+          ))}
+          {matches.length === 0 && <li className="muted">No matches.</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEntry, activeId, siblings, onMove }) {
   const kids = childrenOf.get(entry.id) || [];
   const isCollapsed = collapsed.has(entry.id);
+  const idx = siblings.findIndex((s) => s.id === entry.id);
   return (
     <li>
       <div className={"campaign-tree-row" + (entry.id === activeId ? " active" : "")} style={{ paddingLeft: depth * 16 }}>
@@ -199,11 +485,17 @@ function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEn
         <button className="link" onClick={() => openEntry(entry)} title={excerptOf(entry.body)}>
           {entry.name} {entry.visible_to_players && <span className="pill ok">visible</span>}
         </button>
+        {onMove && (
+          <span className="campaign-tree-reorder">
+            <button disabled={idx <= 0} title="Move up" onClick={() => onMove(siblings, entry.id, -1)}>▲</button>
+            <button disabled={idx < 0 || idx >= siblings.length - 1} title="Move down" onClick={() => onMove(siblings, entry.id, 1)}>▼</button>
+          </span>
+        )}
       </div>
       {kids.length > 0 && !isCollapsed && (
         <ul>
           {kids.map((k) => (
-            <TreeNode key={k.id} entry={k} depth={depth + 1} childrenOf={childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={activeId} />
+            <TreeNode key={k.id} entry={k} depth={depth + 1} childrenOf={childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={activeId} siblings={kids} onMove={onMove} />
           ))}
         </ul>
       )}
@@ -211,7 +503,7 @@ function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEn
   );
 }
 
-export default function Campaign({ onOpenCharacter }) {
+export default function Campaign({ onOpenCharacter, focusEntryId, onFocusHandled }) {
   const [type, setType] = useState("event");
   const [entries, setEntries] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -222,9 +514,8 @@ export default function Campaign({ onOpenCharacter }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [q, setQ] = useState("");
   const [chapterFilter, setChapterFilter] = useState("");
-  const [linkTargetId, setLinkTargetId] = useState("");
-  const [relation, setRelation] = useState("");
   const { active, setFilterEnabled } = useActiveSession();
+  const relationSuggestions = useMemo(() => [...new Set(links.map((l) => l.relation).filter(Boolean))].sort(), [links]);
 
   const toggleCollapsed = (id) => setCollapsed((cur) => {
     const next = new Set(cur);
@@ -257,6 +548,22 @@ export default function Campaign({ onOpenCharacter }) {
     setViewMode(full.id ? "read" : "edit");
     resetAiDraft();
   };
+
+  // Jumping in from elsewhere (currently: Characters.jsx's "New passive
+  // NPC" — a lore-only People entry created without a statblock) — switch
+  // to that entry's own type tab first, or its row wouldn't even be in
+  // the currently-loaded list to open.
+  useEffect(() => {
+    if (focusEntryId == null) return;
+    (async () => {
+      const full = await api(`/campaign/${focusEntryId}`);
+      setType(full.type);
+      setEditing(full);
+      setViewMode("read");
+      resetAiDraft();
+      onFocusHandled?.();
+    })();
+  }, [focusEntryId]);
 
   const reloadEditing = async () => {
     if (editing?.id) setEditing(await api(`/campaign/${editing.id}`));
@@ -308,10 +615,8 @@ export default function Campaign({ onOpenCharacter }) {
     loadLinks();
   };
 
-  const addLink = async () => {
-    if (!linkTargetId) return;
-    await api(`/campaign/${editing.id}/links`, { method: "POST", body: { to_id: Number(linkTargetId), relation } });
-    setLinkTargetId(""); setRelation("");
+  const addLink = async (toId, rel) => {
+    await api(`/campaign/${editing.id}/links`, { method: "POST", body: { to_id: Number(toId), relation: rel } });
     reloadEditing();
     loadLinks();
   };
@@ -322,7 +627,43 @@ export default function Campaign({ onOpenCharacter }) {
     loadLinks();
   };
 
+  // Turns a Goblin Notebook-imported NPC entry (a name + prose, nothing
+  // stated) into a blank character sheet the GM can flesh out with actual
+  // stats — everything numeric defaults to 0/10 (see characters table), and
+  // the entry's own portrait/body carry over as a starting point. Only ever
+  // offered while no character already links back to this entry (see
+  // linked_character below) — converting twice would just create a second,
+  // disconnected sheet.
+  const convertToCharacter = async () => {
+    const portrait = images.find((m) => m.id === editing.image_id);
+    const created = await api("/characters", {
+      method: "POST",
+      body: {
+        name: editing.name,
+        notes: stripGmNotes(editing.body),
+        portrait_url: portrait?.url || "",
+        lore_entry_id: editing.id,
+      },
+    });
+    await reloadEditing();
+    onOpenCharacter?.(created.id);
+  };
+
   const refreshAll = () => { load(); api("/campaign").then(setAllEntries); loadLinks(); };
+
+  // Moving one entry within its sibling group assigns explicit sort_order
+  // to the WHOLE group (see compareEntries/POST /campaign/reorder) — the
+  // chosen order then sticks instead of drifting back to natural-sort the
+  // next time a sibling that hasn't been touched gets added.
+  const moveEntry = async (siblings, entryId, delta) => {
+    const ids = siblings.map((s) => s.id);
+    const idx = ids.indexOf(entryId);
+    const swapWith = idx + delta;
+    if (idx < 0 || swapWith < 0 || swapWith >= ids.length) return;
+    [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
+    await api("/campaign/reorder", { method: "POST", body: { ids } });
+    refreshAll();
+  };
 
   // Chapters an entry "appears in" — the same links tgn-import.js writes
   // from each Tangent object to the chapters (timeline entries, type
@@ -366,6 +707,7 @@ export default function Campaign({ onOpenCharacter }) {
 
       <div className="row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
         <TgnImport onImported={refreshAll} />
+        <PromoteBodyImagesTool onDone={refreshAll} />
         <DuplicatesTool onMerged={refreshAll} />
       </div>
 
@@ -388,7 +730,7 @@ export default function Campaign({ onOpenCharacter }) {
           )}
           <ul className="campaign-tree">
             {tree.roots.map((e) => (
-              <TreeNode key={e.id} entry={e} depth={0} childrenOf={tree.childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={editing?.id} />
+              <TreeNode key={e.id} entry={e} depth={0} childrenOf={tree.childrenOf} collapsed={collapsed} toggleCollapsed={toggleCollapsed} openEntry={openEntry} activeId={editing?.id} siblings={tree.roots} onMove={q.trim() ? null : moveEntry} />
             ))}
             {tree.roots.length === 0 && (
               <li className="muted">
@@ -419,7 +761,7 @@ export default function Campaign({ onOpenCharacter }) {
               <img className="campaign-reader-image" src={images.find((m) => m.id === editing.image_id).url} alt="" />
             )}
             <div className="campaign-markdown">
-              <ReactMarkdown>{editing.body || "*Nothing written yet — click Edit to add some.*"}</ReactMarkdown>
+              <MarkdownWithNotes body={editing.body} />
             </div>
 
             {editing.type === "npc" && onOpenCharacter && (
@@ -434,6 +776,9 @@ export default function Campaign({ onOpenCharacter }) {
                 ) : (
                   <p className="muted">
                     No linked statblock. Link one from the Characters tab if this person needs stats.
+                    {editing.external_id && (
+                      <> <button className="link" onClick={convertToCharacter}>Convert to character →</button></>
+                    )}
                   </p>
                 )}
               </div>
@@ -441,16 +786,15 @@ export default function Campaign({ onOpenCharacter }) {
 
             <div className="campaign-links">
               <h4>Related entries</h4>
-              <ul>
-                {(editing.links || []).map((l) => (
+              <RelatedEntries
+                links={editing.links}
+                renderItem={(l) => (
                   <li key={l.id}>
-                    {l.direction === "out" ? `→ ${l.relation || "related to"}` : `← ${l.relation || "related to"}`}{" "}
                     <span className="pill">{l.type}</span>{" "}
                     <button className="link" onClick={() => openEntry({ id: l.entry_id })}>{l.name}</button>
                   </li>
-                ))}
-                {(!editing.links || editing.links.length === 0) && <li className="muted">No links yet.</li>}
-              </ul>
+                )}
+              />
             </div>
           </div>
         )}
@@ -480,6 +824,9 @@ export default function Campaign({ onOpenCharacter }) {
               {images.map((m) => <option key={m.id} value={m.id}>{m.label || m.original_name}</option>)}
             </select>
             <textarea rows={8} placeholder="Details, stat block, lore text…" value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} />
+            <p className="muted" style={{ marginTop: -4 }}>
+              Wrap text in <code>!!like this!!</code> to keep it a GM-only note — hidden from players and the mood tablet, however this entry is shared.
+            </p>
             <label className="checkbox-inline">
               <input type="checkbox" checked={editing.visible_to_players} onChange={(e) => setEditing({ ...editing, visible_to_players: e.target.checked })} />
               Visible to players
@@ -508,26 +855,16 @@ export default function Campaign({ onOpenCharacter }) {
             {editing.id && (
               <div className="campaign-links">
                 <h4>Related entries</h4>
-                <ul>
-                  {(editing.links || []).map((l) => (
+                <RelatedEntries
+                  links={editing.links}
+                  renderItem={(l) => (
                     <li key={l.id}>
-                      {l.direction === "out" ? `→ ${l.relation || "related to"}` : `← ${l.relation || "related to"}`}{" "}
                       <span className="pill">{l.type}</span> {l.name}
                       <button className="link unlink-btn" onClick={() => removeLink(l.id)}>unlink</button>
                     </li>
-                  ))}
-                  {(!editing.links || editing.links.length === 0) && <li className="muted">No links yet.</li>}
-                </ul>
-                <div className="row">
-                  <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
-                    <option value="">Link to…</option>
-                    {allEntries.filter((e) => e.id !== editing.id).map((e) => (
-                      <option key={e.id} value={e.id}>{e.type}: {e.name}</option>
-                    ))}
-                  </select>
-                  <input placeholder="relation (e.g. member of)" value={relation} onChange={(e) => setRelation(e.target.value)} style={{ maxWidth: 160 }} />
-                  <button onClick={addLink} disabled={!linkTargetId}>Link</button>
-                </div>
+                  )}
+                />
+                <LinkPicker allEntries={allEntries} excludeId={editing.id} relationSuggestions={relationSuggestions} onLink={addLink} />
               </div>
             )}
 

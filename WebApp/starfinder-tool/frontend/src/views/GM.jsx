@@ -6,10 +6,12 @@ import SourcesConfig from "../components/SourcesConfig.jsx";
 import WealthLimitConfig from "../components/WealthLimitConfig.jsx";
 import MediaLibrary from "../components/MediaLibrary.jsx";
 import Campaign from "../components/Campaign.jsx";
+import Galaxy from "../components/Galaxy.jsx";
 import Characters from "../components/Characters.jsx";
 import Sessions from "../components/Sessions.jsx";
 import { useAuth } from "../auth.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
+import { MusicPlayerProvider, useMusicPlayer } from "../lib/musicPlayer.jsx";
 
 /*
  * Mini tracker protocol (placeholder — adjust to real PCB firmware):
@@ -73,10 +75,63 @@ const TABS = [
   { key: "scene", label: "Scene & Mood" },
   { key: "media", label: "Media Library" },
   { key: "campaign", label: "Campaign" },
+  { key: "galaxy", label: "Galaxy" },
   { key: "characters", label: "Characters" },
   { key: "sessions", label: "Sessions" },
   { key: "sources", label: "Sources" },
 ];
+
+// The tracker/sync status and sign-out used to live in a full-width header
+// bar of their own — permanently taking up vertical space for things a GM
+// checks rarely (connect the tracker once per session) or glances at only
+// when something's wrong. Folded into this on-demand modal instead, opened
+// from a small gear button in the tab row.
+function SettingsModal({ onClose, wsConnected, tracker, username, logout }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Settings</h3>
+          <button className="link" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span>Sync</span>
+            <span className={wsConnected ? "pill ok" : "pill bad"}>{wsConnected ? "live" : "down"}</span>
+          </div>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span>Mini tracker</span>
+            <span className={tracker.status === "connected" ? "pill ok" : "pill"}>{tracker.status}</span>
+          </div>
+          <div className="row">
+            {tracker.status === "connected"
+              ? <button onClick={tracker.disconnect}>Disconnect tracker</button>
+              : <button onClick={tracker.connect}>Connect tracker</button>}
+          </div>
+          <div className="modal-footer-row">
+            <span className="muted">Signed in as {username}</span>
+            <button className="link" onClick={logout}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Compact, only takes up topbar space while something's actually playing —
+// persists across tabs because it (and the playback engine behind it) live
+// above the tab switch, see lib/musicPlayer.jsx.
+function MiniPlayer() {
+  const { current, playing, togglePlay, stop } = useMusicPlayer();
+  if (!current) return null;
+  return (
+    <div className="mini-player" title={current.label || current.original_name || "Track"}>
+      <button className="icon-button" onClick={togglePlay}>{playing ? "⏸" : "▶"}</button>
+      <span className="mini-player-label">{current.label || current.original_name || "Track"}</span>
+      <button className="icon-button" onClick={stop} title="Stop">✕</button>
+    </div>
+  );
+}
 
 function BattleMapTab({ session, sessions, loadSessions, loadSession, createSession, selectedToken, setSelectedToken, onCellClick }) {
   const [newLabel, setNewLabel] = useState("");
@@ -172,6 +227,8 @@ export default function GM() {
   const [selectedToken, setSelectedToken] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [focusCharacterId, setFocusCharacterId] = useState(null);
+  const [focusEntryId, setFocusEntryId] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
   const sessionRef = useRef(null);
   sessionRef.current = session;
 
@@ -218,25 +275,34 @@ export default function GM() {
   };
 
   return (
+    <MusicPlayerProvider>
     <div className="gm">
-      <header>
+      <nav className="gm-topbar">
         <h2>GM Console</h2>
-        <span className={wsConnected ? "pill ok" : "pill bad"}>{wsConnected ? "sync live" : "sync down"}</span>
-        <span className={tracker.status === "connected" ? "pill ok" : "pill"}>tracker: {tracker.status}</span>
-        {tracker.status === "connected"
-          ? <button onClick={tracker.disconnect}>Disconnect tracker</button>
-          : <button onClick={tracker.connect}>Connect tracker</button>}
-        <span className="muted" style={{ marginLeft: "auto" }}>{user?.username}</span>
-        <button className="link" onClick={logout}>Sign out</button>
-      </header>
-
-      <nav className="gm-tabs">
-        {TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
+        <div className="gm-tabs">
+          {TABS.map((t) => (
+            <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <MiniPlayer />
+        <button
+          className={`icon-button${!wsConnected ? " icon-button-alert" : ""}`}
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+        >⚙</button>
       </nav>
+
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          wsConnected={wsConnected}
+          tracker={tracker}
+          username={user?.username}
+          logout={logout}
+        />
+      )}
 
       <div className="gm-tab-content">
         {tab === "battlemap" && (
@@ -250,10 +316,21 @@ export default function GM() {
         {tab === "scene" && <ScenePanel session={session} characters={characters} />}
         {tab === "media" && <MediaLibrary />}
         {tab === "campaign" && (
-          <Campaign onOpenCharacter={(id) => { setFocusCharacterId(id); setTab("characters"); }} />
+          <Campaign
+            onOpenCharacter={(id) => { setFocusCharacterId(id); setTab("characters"); }}
+            focusEntryId={focusEntryId}
+            onFocusHandled={() => setFocusEntryId(null)}
+          />
+        )}
+        {tab === "galaxy" && (
+          <Galaxy onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }} />
         )}
         {tab === "characters" && (
-          <Characters focusCharacterId={focusCharacterId} onFocusHandled={() => setFocusCharacterId(null)} />
+          <Characters
+            focusCharacterId={focusCharacterId}
+            onFocusHandled={() => setFocusCharacterId(null)}
+            onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }}
+          />
         )}
         {tab === "sessions" && <Sessions />}
         {tab === "sources" && (
@@ -264,5 +341,6 @@ export default function GM() {
         )}
       </div>
     </div>
+    </MusicPlayerProvider>
   );
 }

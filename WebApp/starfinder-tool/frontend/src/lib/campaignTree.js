@@ -7,13 +7,25 @@
 // link with one of these exact labels gets the same treatment.
 export const HIERARCHY_RELATIONS = new Set(["si trova in", "parte di", "sotto-quest di", "sotto-capitolo di"]);
 
+// A GM typing a relation by hand (the Related Entries search-and-link
+// picker) has no reason to match this Set's exact casing — "Si Trova In"
+// reads identically to a person, but a raw Set.has() would silently
+// refuse to treat it as tree structure, leaving the entry stuck at the
+// root with no visible explanation (the link itself still shows up fine
+// in Related Entries, since that display doesn't care about hierarchy at
+// all — only the tree view does). Trim + lowercase before matching so
+// wording variance in capitalization never causes that.
+export function isHierarchyRelation(relation) {
+  return HIERARCHY_RELATIONS.has((relation || "").trim().toLowerCase());
+}
+
 // parentId -> [childId, ...], built from every hierarchy-relation link
 // regardless of type (tgn-import.js only ever nests same-type entries, so
 // this never needs a type filter to stay correct).
 export function buildChildrenIndex(links) {
   const childrenOf = new Map();
   for (const l of links) {
-    if (!HIERARCHY_RELATIONS.has(l.relation)) continue;
+    if (!isHierarchyRelation(l.relation)) continue;
     if (!childrenOf.has(l.to_id)) childrenOf.set(l.to_id, []);
     childrenOf.get(l.to_id).push(l.from_id);
   }

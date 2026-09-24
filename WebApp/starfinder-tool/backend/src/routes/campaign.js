@@ -4,6 +4,7 @@ import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 import { askOllamaJson } from "../../scripts/lib/ollama-client.js";
 import { parseTgn, importTgnIntoDb, bodyExcerpt } from "../tgn-import.js";
+import { stripGmNotes } from "../gm-notes.js";
 
 // Same local Ollama setup already used by scripts/audit-normalized.js
 // (Docs/04-data-pipeline-aon.md) — a GM-facing "AI drafts a wiki entry from
@@ -69,6 +70,10 @@ r.get("/", requireAuth, async (req, res) => {
   if (req.user.role !== "gm") conditions.push("visible_to_players = true");
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const { rows } = await pool.query(`SELECT * FROM campaign_entries ${where} ORDER BY name`, params);
+  // A "!!private note!!" inside body is a GM-only aside — strip it from
+  // any non-GM response at the API layer itself (not just in the reader
+  // UI), since a logged-in player can call this endpoint directly.
+  if (req.user.role !== "gm") for (const row of rows) row.body = stripGmNotes(row.body);
   res.json(rows);
 });
 
@@ -99,65 +104,171 @@ r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
   try {
     parsed = parseTgn(req.file.buffer.toString("utf8"));
   } catch (err) {
-    return res.status(400).json({ error: `Could not parse .tgn file: ${err.message}` });
+    return res.status(400).json({ error: `Could not parse Goblin Notebook file: ${err.message}` });
   }
   const result = await importTgnIntoDb(pool, parsed);
   res.json(result);
 });
+
+// A NPC entry's body often carries an inline reference picture straight
+// from the original import — a plain markdown image the GM (or Tangent)
+// dropped into the text, not anything uploaded through this app. This is
+// a ONE-WAY promotion: for every NPC with no image_id set yet, pull the
+// first markdown image URL out of its body and set that as the entry's
+// own default image (creating a link-based portrait media row for it, or
+// reusing one that already points at the same url). Deliberately never
+// touches an entry that already has an image — this only fills gaps, it
+// never overwrites an image a GM picked by hand. Distinct on purpose from
+// a character's portrait_url (the tablet's own png, uploaded separately)
+// — this is the "what a player sees clicking through on their phone"
+// reference picture, not the transparent tablet art.
+const BODY_IMAGE_RE = /!\[[^\]]*\]\(([^)\s]+)\)/;
+r.post("/promote-body-images", requireGM, async (req, res) => {
+  const { rows: npcs } = await pool.query(
+    "SELECT id, name, body FROM campaign_entries WHERE type='npc' AND image_id IS NULL"
+  );
+  let updated = 0;
+  for (const n of npcs) {
+    const m = BODY_IMAGE_RE.exec(n.body || "");
+    if (!m) continue;
+    const url = m[1];
+    const { rows: existing } = await pool.query("SELECT id FROM media WHERE category='portrait' AND url=$1", [url]);
+    let mediaId = existing[0]?.id;
+    if (!mediaId) {
+      const { rows: inserted } = await pool.query(
+        "INSERT INTO media (category, url, label) VALUES ('portrait', $1, $2) RETURNING id",
+        [url, n.name]
+      );
+      mediaId = inserted[0].id;
+    }
+    await pool.query("UPDATE campaign_entries SET image_id=$1 WHERE id=$2", [mediaId, n.id]);
+    updated++;
+  }
+  res.json({ scanned: npcs.length, updated });
+});
+
+// A handful of Cyrillic/Greek letters that render pixel-for-pixel
+// identical to a Latin one at normal text sizes ("Gammon Industries" typed
+// twice, one of them with a stray Cyrillic а instead of Latin a, reads as
+// "the same name" to a GM and to lower(btrim()) alike, but is a different
+// codepoint — NFKC normalization does NOT fold these, since they're
+// genuinely distinct letters in different scripts, not compatibility
+// variants of the same one). Only covers the common single-letter
+// look-alikes, not a full Unicode-confusables table — enough for the
+// realistic case of an accidental script switch while typing/pasting, not
+// meant to catch deliberate spoofing.
+const CONFUSABLES = {
+  а: "a", е: "e", о: "o", р: "p", с: "c", у: "y", х: "x", к: "k", м: "m", т: "t", н: "h", в: "b", і: "i", ѕ: "s", ј: "j",
+  А: "a", Е: "e", О: "o", Р: "p", С: "c", У: "y", Х: "x", К: "k", М: "m", Т: "t", Н: "h", В: "b", І: "i", Ѕ: "s", Ј: "j",
+  α: "a", ο: "o", ρ: "p", ι: "i", υ: "y", Α: "a", Ο: "o", Ρ: "p", Ι: "i", Υ: "y",
+};
+
+// Folds away everything that makes two names *look* identical to a GM but
+// wouldn't group under SQL's lower(btrim()): not just surrounding
+// whitespace, but internal double-spaces, zero-width/invisible/formatting
+// characters (easy to end up with when pasting into or exporting from
+// Tangent), diacritics (NFKD + stripping combining marks — "café" vs
+// "cafe"), the single-letter script look-alikes above, and characters
+// that only differ by Unicode normalization form (NFKC folds full-width/
+// compatibility variants together). Done in JS rather than SQL because
+// Postgres has no built-in Unicode normalization without an extension,
+// and this only ever runs over the duplicates-tool's request, never a hot
+// path.
+function normalizeEntryName(name) {
+  return (name || "")
+    .normalize("NFKC")
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // combining diacritical marks, post-NFKD
+    .replace(/[​-‏‪-‮⁠-⁤﻿­]/g, "") // zero-width/format/BOM/soft-hyphen
+    .replace(/[Ѐ-ӿͰ-Ͽ]/g, (ch) => CONFUSABLES[ch] || ch) // Cyrillic/Greek look-alikes
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+// Two tiers: same type + normalized name is almost certainly the same
+// thing re-created in Tangent between exports — safe to suggest merging
+// outright. Same name but a *different* type (e.g. an entry moved
+// between Tangent columns and re-exported, ending up both as the old
+// type and the new one) is flagged separately and lower-confidence,
+// since two unrelated concepts sharing a name (a faction and a quest
+// both called after it) is also plausible — the GM decides, this just
+// surfaces the possibility instead of silently missing it.
+// Shared by GET /duplicates (which shows both tiers) and POST
+// /duplicates/merge-all (which only ever auto-merges the same-type tier —
+// cross-type always needs a human call).
+async function findDuplicateGroups(pool) {
+  const { rows: entries } = await pool.query(
+    "SELECT id, type, name, created_at FROM campaign_entries ORDER BY id"
+  );
+  const sameTypeGroups = new Map(); // `${type}::${normalized}` -> entries[]
+  const crossTypeGroups = new Map(); // normalized -> entries[]
+  for (const e of entries) {
+    const norm = normalizeEntryName(e.name);
+    if (!norm) continue;
+    const sameKey = `${e.type}::${norm}`;
+    if (!sameTypeGroups.has(sameKey)) sameTypeGroups.set(sameKey, []);
+    sameTypeGroups.get(sameKey).push(e);
+    if (!crossTypeGroups.has(norm)) crossTypeGroups.set(norm, []);
+    crossTypeGroups.get(norm).push(e);
+  }
+  const sameType = [...sameTypeGroups.values()].filter((g) => g.length > 1);
+  const crossType = [...crossTypeGroups.values()].filter((g) => g.length > 1 && new Set(g.map((e) => e.type)).size > 1);
+  return { sameType, crossType };
+}
 
 // Same (type, name) appearing more than once — typically because a GM
 // re-created (rather than edited) something in Tangent between exports,
 // which gives it a fresh internal id there and so imports as a brand new
 // entry here instead of updating the old one (import is keyed on that id,
 // external_id — see tgn-import.js). Grouped for the merge tool below.
-// Grouped by normalized name (case/surrounding-whitespace folded away),
-// not an exact string match — hand-typed Tangent content routinely has
-// two entries that read identically ("Aether-Vane Aesthetics" vs
-// "aether-vane aesthetics " with a trailing space) but wouldn't group
-// under a byte-exact comparison, which is exactly the case that matters
-// most here (a GM staring at what's obviously the same name twice).
 r.get("/duplicates", requireGM, async (req, res) => {
-  // Two tiers: same type + normalized name is almost certainly the same
-  // thing re-created in Tangent between exports — safe to suggest merging
-  // outright. Same name but a *different* type (e.g. an entry moved
-  // between Tangent columns and re-exported, ending up both as the old
-  // type and the new one) is flagged separately and lower-confidence,
-  // since two unrelated concepts sharing a name (a faction and a quest
-  // both called after it) is also plausible — the GM decides, this just
-  // surfaces the possibility instead of silently missing it.
-  const { rows: sameType } = await pool.query(`
-    SELECT type, (array_agg(name ORDER BY id))[1] AS name,
-           array_agg(DISTINCT name) AS name_variants,
-           array_agg(id ORDER BY id) AS ids, array_agg(type ORDER BY id) AS id_types,
-           array_agg(created_at ORDER BY id) AS created_ats, 'name' AS confidence
-    FROM campaign_entries
-    GROUP BY type, lower(btrim(name))
-    HAVING count(*) > 1
-  `);
-  const { rows: crossType } = await pool.query(`
-    SELECT NULL AS type, (array_agg(name ORDER BY id))[1] AS name,
-           array_agg(DISTINCT name) AS name_variants,
-           array_agg(id ORDER BY id) AS ids, array_agg(type ORDER BY id) AS id_types,
-           array_agg(created_at ORDER BY id) AS created_ats, 'cross-type' AS confidence
-    FROM campaign_entries
-    GROUP BY lower(btrim(name))
-    HAVING count(DISTINCT type) > 1
-  `);
-  const rows = [...sameType, ...crossType].sort((a, b) => a.name.localeCompare(b.name));
+  const { sameType, crossType } = await findDuplicateGroups(pool);
+  const { rows: dismissedRows } = await pool.query("SELECT entry_ids FROM campaign_duplicate_dismissals");
+  const dismissed = new Set(dismissedRows.map((r) => r.entry_ids.slice().sort((a, b) => a - b).join(",")));
+
+  const toRow = (group, confidence, type) => ({
+    type: type ?? null,
+    name: group[0].name,
+    name_variants: [...new Set(group.map((e) => e.name))],
+    ids: group.map((e) => e.id),
+    id_types: group.map((e) => e.type),
+    created_ats: group.map((e) => e.created_at),
+    confidence,
+  });
+  const rows = [
+    ...sameType.map((g) => toRow(g, "name", g[0].type)),
+    // A cross-type group the GM has already confirmed is two genuinely
+    // different things (see POST /duplicates/dismiss) is filtered out here
+    // rather than just hidden client-side, so it stays gone across page
+    // loads and other GM sessions too.
+    ...crossType
+      .filter((g) => !dismissed.has(g.map((e) => e.id).sort((a, b) => a - b).join(",")))
+      .map((g) => toRow(g, "cross-type")),
+  ].sort((a, b) => a.name.localeCompare(b.name));
   res.json(rows);
+});
+
+// Marks a cross-type group as "reviewed, these are two different things" —
+// see the comment on campaign_duplicate_dismissals (migrations/014) for how
+// this is keyed and why it naturally un-dismisses itself if the group's
+// membership ever changes.
+r.post("/duplicates/dismiss", requireGM, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isFinite) : [];
+  if (ids.length < 2) return res.status(400).json({ error: "ids (2+) required" });
+  const sorted = [...ids].sort((a, b) => a - b);
+  await pool.query(
+    "INSERT INTO campaign_duplicate_dismissals (entry_ids) VALUES ($1) ON CONFLICT (entry_ids) DO NOTHING",
+    [sorted]
+  );
+  res.status(201).json({ dismissed: sorted });
 });
 
 // Merges `remove_ids` into `keep_id`: every link (campaign_links, and
 // game session lore links) pointing at a removed entry is re-pointed at
 // the kept one instead of just vanishing, then the removed rows are
-// deleted. Never guesses which one to keep — that's the GM's call in the
-// duplicates UI.
-r.post("/duplicates/merge", requireGM, async (req, res) => {
-  const keepId = Number(req.body?.keep_id);
-  const removeIds = Array.isArray(req.body?.remove_ids) ? req.body.remove_ids.map(Number).filter(Number.isFinite) : [];
-  if (!Number.isFinite(keepId) || !removeIds.length) return res.status(400).json({ error: "keep_id and remove_ids required" });
-  if (removeIds.includes(keepId)) return res.status(400).json({ error: "keep_id cannot also be in remove_ids" });
-
+// deleted.
+async function mergeEntries(pool, keepId, removeIds) {
   for (const removeId of removeIds) {
     // campaign_links: re-point both directions, dropping any that would
     // collide with a link the kept entry already has (from_id, to_id,
@@ -187,8 +298,46 @@ r.post("/duplicates/merge", requireGM, async (req, res) => {
 
     await pool.query("DELETE FROM campaign_entries WHERE id=$1", [removeId]);
   }
+}
 
+// Never guesses which one to keep — that's the GM's call in the duplicates UI.
+r.post("/duplicates/merge", requireGM, async (req, res) => {
+  const keepId = Number(req.body?.keep_id);
+  const removeIds = Array.isArray(req.body?.remove_ids) ? req.body.remove_ids.map(Number).filter(Number.isFinite) : [];
+  if (!Number.isFinite(keepId) || !removeIds.length) return res.status(400).json({ error: "keep_id and remove_ids required" });
+  if (removeIds.includes(keepId)) return res.status(400).json({ error: "keep_id cannot also be in remove_ids" });
+  await mergeEntries(pool, keepId, removeIds);
   res.json({ merged: removeIds.length, keep_id: keepId });
+});
+
+// One-click cleanup for the (common, after a few re-imports) case of many
+// same-type/same-name duplicate pairs piling up — going through the
+// duplicates panel one group at a time doesn't scale once there are
+// a dozen+ of them. Only ever touches the same-type tier (keeping the
+// oldest, i.e. lowest id, of each group) — cross-type matches always stay
+// manual, since two different kinds of thing sharing a name is a real
+// judgment call, not a re-import artifact.
+r.post("/duplicates/merge-all", requireGM, async (req, res) => {
+  const { sameType } = await findDuplicateGroups(pool);
+  let groupsMerged = 0;
+  let entriesMerged = 0;
+  // Each group merges independently — one group hitting a DB error (e.g. a
+  // link conflict the pairwise merge logic doesn't expect) must not abort
+  // every group queued after it, and must not fail *silently* either: the
+  // response lists exactly which groups didn't go through and why, instead
+  // of the GM just seeing some still there with no explanation.
+  const failures = [];
+  for (const group of sameType) {
+    const [keep, ...rest] = group; // already ordered by id ascending
+    try {
+      await mergeEntries(pool, keep.id, rest.map((e) => e.id));
+      groupsMerged++;
+      entriesMerged += rest.length;
+    } catch (err) {
+      failures.push({ name: keep.name, type: keep.type, ids: group.map((e) => e.id), error: err.message });
+    }
+  }
+  res.json({ groupsMerged, entriesMerged, failures });
 });
 
 r.get("/:id", requireAuth, async (req, res) => {
@@ -196,6 +345,7 @@ r.get("/:id", requireAuth, async (req, res) => {
   const entry = rows[0];
   if (!entry) return res.status(404).json({ error: "not found" });
   if (req.user.role !== "gm" && !entry.visible_to_players) return res.status(403).json({ error: "not visible" });
+  if (req.user.role !== "gm") entry.body = stripGmNotes(entry.body);
   res.json(await withLinks(entry));
 });
 
@@ -212,7 +362,7 @@ r.post("/", requireGM, async (req, res) => {
 
 r.patch("/:id", requireGM, async (req, res) => {
   const b = req.body ?? {};
-  const cols = ["type", "name", "body", "image_id", "event_date", "visible_to_players"].filter((f) => b[f] !== undefined);
+  const cols = ["type", "name", "body", "image_id", "event_date", "visible_to_players", "sort_order", "galaxy_ref"].filter((f) => b[f] !== undefined);
   if (!cols.length) return res.status(400).json({ error: "no fields" });
   const sets = cols.map((f, i) => `${f}=$${i + 1}`).join(",");
   const { rows } = await pool.query(
@@ -225,6 +375,19 @@ r.patch("/:id", requireGM, async (req, res) => {
 
 r.delete("/:id", requireGM, async (req, res) => {
   await pool.query("DELETE FROM campaign_entries WHERE id=$1", [req.params.id]);
+  res.status(204).end();
+});
+
+// Sets an explicit position for a whole sibling group (same parent in the
+// tree, or same type at the root) in one call — the frontend sends the
+// full sibling list in its new order, index becomes sort_order. Cheaper
+// and less error-prone than N individual PATCH calls, and it's how a
+// still-unordered (sort_order NULL) sibling gets folded into the explicit
+// order the moment a GM drags/moves anything in that group.
+r.post("/reorder", requireGM, async (req, res) => {
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: "ids required" });
+  await Promise.all(ids.map((id, i) => pool.query("UPDATE campaign_entries SET sort_order=$1 WHERE id=$2", [i, id])));
   res.status(204).end();
 });
 

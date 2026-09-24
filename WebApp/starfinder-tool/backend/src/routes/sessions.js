@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { broadcast } from "../ws.js";
 import { requireGM } from "../auth.js";
+import { withUrl } from "./media.js";
 
 // Session planning — a GM-facing container tying together which lore
 // (campaign_entries), media, and prebuilt battle encounters (battle_sessions)
@@ -26,7 +27,7 @@ async function loadFull(id) {
       [id]
     ),
     pool.query(
-      `SELECT m.id, m.category, m.filename, m.original_name, m.label
+      `SELECT m.*
        FROM game_session_media sm JOIN media m ON m.id = sm.media_id
        WHERE sm.session_id = $1 ORDER BY m.category, m.label`,
       [id]
@@ -42,7 +43,7 @@ async function loadFull(id) {
   return {
     ...session,
     entries: entries.rows,
-    media: media.rows.map((m) => ({ ...m, url: `/api/media/files/${m.category}/${m.filename}` })),
+    media: media.rows.map(withUrl),
     encounters: encounters.rows,
   };
 }

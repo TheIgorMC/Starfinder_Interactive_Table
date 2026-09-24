@@ -1,4 +1,5 @@
 import { load as loadYaml } from "js-yaml";
+import { stripGmNotes } from "./gm-notes.js";
 
 // Parses a Tangent (.tgn) campaign export — a YAML file with a
 // `meta.columns` schema (Tangent's per-campaign type config: LOCATION /
@@ -70,7 +71,10 @@ function cleanBlurb(blurb, name, idToName) {
 // needed (here, for the AI-draft context index) makes that whole class of
 // bug impossible: there's nothing to go stale or get out of sync.
 export function bodyExcerpt(cleanedBody) {
-  const withoutImages = (cleanedBody || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  // An excerpt is always safe to show a player (it's what the mood
+  // tablet's idle homescreen pulls from) — a GM's "!!private note!!"
+  // never survives into one, however deep in the body it sits.
+  const withoutImages = stripGmNotes(cleanedBody).replace(/!\[[^\]]*\]\([^)]*\)/g, "");
   const paragraphs = withoutImages.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   for (const para of paragraphs) {
     const plain = para

@@ -24,11 +24,14 @@ export default function ScenePanel({ session, characters }) {
   const [caption, setCaption] = useState("");
   const [tabletLoop, setTabletLoop] = useState(false);
   const [chapters, setChapters] = useState([]);
+  const [idlePreview, setIdlePreview] = useState(null);
   const { active } = useActiveSession();
 
-  useEffect(() => { api("/scene/state").then(setScene); }, []);
+  const loadIdlePreview = () => api("/scene/tablet/chapter").then(setIdlePreview).catch(() => setIdlePreview(null));
+
+  useEffect(() => { api("/scene/state").then(setScene); loadIdlePreview(); }, []);
   useWs((msg) => {
-    if (msg.type === "scene:channel" || msg.type === "scene:mood") api("/scene/state").then(setScene);
+    if (msg.type === "scene:channel" || msg.type === "scene:mood") { api("/scene/state").then(setScene); loadIdlePreview(); }
   });
   // The tablet's idle homescreen picks one campaign entry (usually the
   // current chapter, but any entry works) — see /api/scene/tablet/chapter.
@@ -191,9 +194,15 @@ export default function ScenePanel({ session, characters }) {
           )}
           {scene.tablet.mode === "idle" && (
             <div className="scene-preview-idle">
-              {scene.tablet.chapterEntryId
-                ? <strong>{chapters.find((c) => c.id === scene.tablet.chapterEntryId)?.name || "…"}</strong>
-                : <span className="muted">Mood name only</span>}
+              {idlePreview ? (
+                <>
+                  {idlePreview.imageUrl && <img src={idlePreview.imageUrl} alt="" />}
+                  {idlePreview.type && <span className="scene-preview-mood-name">{idlePreview.type}</span>}
+                  <strong>{idlePreview.name}</strong>
+                </>
+              ) : (
+                <span className="muted">Mood name only</span>
+              )}
               <span className="scene-preview-mood-name">{scene.mood.name || "custom"}</span>
             </div>
           )}

@@ -286,7 +286,7 @@ function OwnerPicker({ character, owner, players, onChanged }) {
   );
 }
 
-export default function Characters({ focusCharacterId, onFocusHandled }) {
+export default function Characters({ focusCharacterId, onFocusHandled, onOpenCampaignEntry }) {
   const [characters, setCharacters] = useState([]);
   const [players, setPlayers] = useState([]);
   const [viewingChar, setViewingChar] = useState(null);
@@ -311,6 +311,16 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
     const c = await api("/characters", { method: "POST", body: { name: "New NPC" } });
     await loadCharacters();
     openCharacter(c);
+  };
+
+  // Not every NPC needs a statblock — most never fight. This skips the
+  // characters table entirely and creates a lore-only People entry
+  // instead (campaign_entries type='npc', same as Campaign's own "+ New
+  // People"), then jumps over to it so the GM can start writing it up
+  // right away instead of hunting for it in the Campaign tab afterward.
+  const newPassiveNpc = async () => {
+    const e = await api("/campaign", { method: "POST", body: { type: "npc", name: "New NPC" } });
+    onOpenCampaignEntry?.(e.id);
   };
 
   const linkedCharacterIds = new Set(players.filter((p) => p.character_id != null).map((p) => p.character_id));
@@ -341,7 +351,10 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
 
       <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginTop: 16 }}>
         <h3 style={{ margin: 0 }}>NPCs</h3>
-        <button className="link" onClick={newNpc}>+ New NPC</button>
+        <span className="row" style={{ gap: 14 }}>
+          <button className="link" onClick={newNpc} title="Creates a full stat sheet — HP, abilities, etc.">+ New NPC (statted)</button>
+          <button className="link" onClick={newPassiveNpc} title="Creates a lore-only People entry, no statblock">+ New passive NPC…</button>
+        </span>
       </div>
       <ul className="campaign-pc-list">
         {npcs.map((c) => (
@@ -366,8 +379,19 @@ export default function Characters({ focusCharacterId, onFocusHandled }) {
               players={players}
               onChanged={() => { reload(); openCharacter(viewingChar); }}
             />
+            <LoreLinkPicker character={viewingChar} onLinked={() => openCharacter(viewingChar)} />
             {!linkedCharacterIds.has(viewingChar.id) && (
-              <LoreLinkPicker character={viewingChar} onLinked={() => openCharacter(viewingChar)} />
+              <button
+                className="link"
+                onClick={async () => {
+                  if (!window.confirm(`Delete "${viewingChar.name}"? This can't be undone.`)) return;
+                  await api(`/characters/${viewingChar.id}`, { method: "DELETE" });
+                  setViewingChar(null);
+                  reload();
+                }}
+              >
+                Delete NPC
+              </button>
             )}
           </div>
           <CharacterSheet key={viewingChar.id} character={viewingChar} patch={patchCharacter} />

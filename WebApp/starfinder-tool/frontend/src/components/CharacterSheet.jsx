@@ -109,6 +109,24 @@ export default function CharacterSheet({ character, patch }) {
   // previous call's change instead of composing with it.
   const updateItems = (idToChanges) => patchEquipment(equipment.map((it) => (idToChanges.has(it.id) ? { ...it, ...idToChanges.get(it.id) } : it)));
 
+  // A pack with nothing left in its reserve (capacity - used <= 0) and no
+  // spare packs (quantity <= 0) is permanently useless — nothing can ever
+  // refill it again, so it's just a dead 0/0 row cluttering the list.
+  // Applied only from the actions that can actually cause depletion (the
+  // pack/spares "consume" steppers, and Reload) — never from a generic
+  // updateItem/updateItems call — so editing some unrelated field on an
+  // ammo item a GM just hasn't configured numbers for yet can't silently
+  // vanish it.
+  const isDepletedAmmo = (it) => it.type === "Ammunition" && (it.capacity ?? 0) - (it.used ?? 0) <= 0 && (it.quantity ?? 0) <= 0;
+  const updateItemPruned = (id, changes) => {
+    const next = equipment.map((it) => (it.id === id ? { ...it, ...changes } : it));
+    patchEquipment(next.filter((it) => it.id !== id || !isDepletedAmmo(it)));
+  };
+  const updateItemsPruned = (idToChanges) => {
+    const next = equipment.map((it) => (idToChanges.has(it.id) ? { ...it, ...idToChanges.get(it.id) } : it));
+    patchEquipment(next.filter((it) => !idToChanges.has(it.id) || !isDepletedAmmo(it)));
+  };
+
   // SF1e bulk rule: items lighter than 1 Bulk ("L") don't add up fractionally —
   // every 10 light items together count as 1 Bulk, any remainder is dropped.
   // Summing the raw fractional values instead (e.g. 8 light items -> 0.8)
@@ -129,19 +147,72 @@ export default function CharacterSheet({ character, patch }) {
 
   const equippedWeapons = equipment.filter((it) => it.type === "Weapon" && it.isEquipped);
   const ammoItems = equipment.filter((it) => it.type === "Ammunition");
+  // Two ammo rows with the same name and capacity aren't necessarily a
+  // duplicate — a loaded battery and a spare battery are both real,
+  // independently-tracked items (that's the whole point of "Reload"
+  // swapping between them). What actually needs distinguishing them in the
+  // UI is which weapon, if any, currently has each one loaded.
+  const weaponByAmmoId = new Map();
+  for (const w of equipment.filter((it) => it.type === "Weapon")) {
+    for (const a of linkedAmmo(w, equipment)) weaponByAmmoId.set(a.id, w.name);
+  }
+
+  // Ammo model: a pack (capacity/used) is a reserve pool — e.g. a
+  // high-capacity battery holds 40 charges total. The weapon has its OWN
+  // magazine, separately tracked as `loadedCharges` on the weapon item
+  // (undefined = assumed full, matching a freshly-imported/never-fired
+  // weapon). Fire only ever drains the weapon's magazine. Reload is the
+  // only thing that touches a pack: it tops the magazine back up to full,
+  // drawing that amount out of the linked pack's remaining pool — and if
+  // the current pack doesn't have enough left, opens a fresh one from its
+  // `quantity` of spares (discarding whatever was left in the old one, same
+  // as swapping batteries at the table).
+  const magazineSize = (weapon, packs) => weapon.capacity || packs[0]?.capacity || 0;
 
   const fireWeapon = (weapon) => {
-    const ammo = linkedAmmo(weapon, equipment).filter((a) => (a.used ?? 0) < (a.capacity ?? 0));
-    if (!ammo.length) return;
-    const target = ammo[0];
-    updateItem(target.id, { used: Math.min(target.capacity ?? 0, (target.used ?? 0) + (weapon.usage || 1)) });
+    const packs = linkedAmmo(weapon, equipment);
+    const magSize = magazineSize(weapon, packs);
+    const loaded = weapon.loadedCharges ?? magSize;
+    if (loaded <= 0) return;
+    updateItem(weapon.id, { loadedCharges: Math.max(0, loaded - (weapon.usage || 1)) });
   };
   const reloadWeapon = (weapon) => {
-    const changes = new Map(linkedAmmo(weapon, equipment).map((a) => [a.id, { used: 0 }]));
-    if (changes.size) updateItems(changes);
+    const packs = linkedAmmo(weapon, equipment);
+    const magSize = magazineSize(weapon, packs);
+    if (!packs.length || !magSize) return;
+    let need = magSize;
+    const changes = new Map();
+    for (const pack of packs) {
+      if (need <= 0) break;
+      let used = pack.used ?? 0;
+      let quantity = pack.quantity ?? 0;
+      let remaining = (pack.capacity ?? 0) - used;
+      if (remaining <= 0 && quantity > 0) {
+        // this pack is spent — open a fresh one from the spares
+        used = 0;
+        quantity -= 1;
+        remaining = pack.capacity ?? 0;
+      }
+      const draw = Math.min(need, remaining);
+      if (draw > 0) { used += draw; need -= draw; }
+      changes.set(pack.id, { used, quantity });
+    }
+    // Whatever couldn't be drawn (ran out of packs entirely) just leaves
+    // the magazine short of full instead of silently pretending it reloaded.
+    changes.set(weapon.id, { loadedCharges: magSize - need });
+    updateItemsPruned(changes);
   };
 
   const spells = normalizeSpells(char.spells);
+  // No dedicated "is a caster" flag exists on a character — infer it from
+  // the same data the Spells tab itself would show: an actual
+  // spellcasting class (Mystic/Technomancer/Witchwarper, core SF1e's
+  // casters) on the sheet, or spell data already present (a multiclass/
+  // archetype caster, or a GM-authored homebrew NPC that doesn't use one
+  // of those three class names). A blank non-caster never has either.
+  const CASTER_CLASSES = new Set(["mystic", "technomancer", "witchwarper"]);
+  const isCaster = spells.classes.length > 0 || spells.additional.length > 0 || CASTER_CLASSES.has((char.class || "").trim().toLowerCase());
+  const visibleTabs = TABS.filter((t) => t.key !== "spells" || isCaster);
   const restAll = () => patch({
     spells: { ...spells, classes: spells.classes.map((c) => ({ ...c, spellsUsed: (c.spellsPerDay || []).map(() => 0) })) },
   });
@@ -187,7 +258,7 @@ export default function CharacterSheet({ character, patch }) {
       </header>
 
       <nav className="sheet-tabs">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </nav>
@@ -312,16 +383,16 @@ export default function CharacterSheet({ character, patch }) {
               <ul className="sheet-list">
                 {equippedWeapons.map((w) => {
                   const ammo = linkedAmmo(w, equipment);
-                  const remaining = ammo.reduce((sum, a) => sum + ((a.capacity ?? 0) - (a.used ?? 0)), 0);
-                  const capacityTotal = ammo.reduce((sum, a) => sum + (a.capacity ?? 0), 0);
+                  const magSize = magazineSize(w, ammo);
+                  const loaded = w.loadedCharges ?? magSize;
                   return (
                     <li key={w.id} className="sheet-card">
                       <strong>{w.name}</strong> <span className="muted">{itemSubtitle(w)}</span>
                       {ammo.length > 0 && (
                         <div className="row">
-                          <span className="muted">Ammo: {remaining}/{capacityTotal}</span>
-                          <button onClick={() => fireWeapon(w)} disabled={remaining <= 0}>Fire</button>
-                          <button onClick={() => reloadWeapon(w)}>Reload</button>
+                          <span className="muted">Loaded: {loaded}/{magSize}</span>
+                          <button onClick={() => fireWeapon(w)} disabled={loaded <= 0}>Fire</button>
+                          <button onClick={() => reloadWeapon(w)} disabled={loaded >= magSize}>Reload</button>
                         </div>
                       )}
                     </li>
@@ -335,14 +406,32 @@ export default function CharacterSheet({ character, patch }) {
             <>
               <h3>Ammunition</h3>
               <ul className="sheet-list">
-                {ammoItems.map((a) => (
-                  <li key={a.id} className="row">
-                    <span>{a.name}</span>
-                    <span className="muted">{itemSubtitle(a)}</span>
-                    <button onClick={() => updateItem(a.id, { used: Math.max(0, (a.used || 0) - 1) })}>−</button>
-                    <button onClick={() => updateItem(a.id, { used: Math.min(a.capacity ?? 0, (a.used || 0) + 1) })}>+</button>
-                  </li>
-                ))}
+                {ammoItems.map((a) => {
+                  const reloadsFor = weaponByAmmoId.get(a.id);
+                  return (
+                    <li key={a.id} className="sheet-card ammo-card">
+                      <div className="ammo-card-info">
+                        <strong>{a.name}</strong>
+                        <span className="muted">
+                          {itemSubtitle(a)}
+                          {reloadsFor ? ` · reload source for ${reloadsFor}` : " · unlinked"}
+                        </span>
+                      </div>
+                      <div className="ammo-card-steppers">
+                        <div className="ammo-card-stepper">
+                          <span className="muted">pack</span>
+                          <button onClick={() => updateItemPruned(a.id, { used: Math.min(a.capacity ?? 0, (a.used || 0) + 1) })}>−</button>
+                          <button onClick={() => updateItem(a.id, { used: Math.max(0, (a.used || 0) - 1) })}>+</button>
+                        </div>
+                        <div className="ammo-card-stepper">
+                          <span className="muted">spares ({a.quantity ?? 0})</span>
+                          <button onClick={() => updateItemPruned(a.id, { quantity: Math.max(0, (a.quantity || 0) - 1) })}>−</button>
+                          <button onClick={() => updateItem(a.id, { quantity: (a.quantity || 0) + 1 })}>+</button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
