@@ -503,7 +503,7 @@ function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEn
   );
 }
 
-export default function Campaign({ onOpenCharacter }) {
+export default function Campaign({ onOpenCharacter, focusEntryId, onFocusHandled }) {
   const [type, setType] = useState("event");
   const [entries, setEntries] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -548,6 +548,22 @@ export default function Campaign({ onOpenCharacter }) {
     setViewMode(full.id ? "read" : "edit");
     resetAiDraft();
   };
+
+  // Jumping in from elsewhere (currently: Characters.jsx's "New passive
+  // NPC" — a lore-only People entry created without a statblock) — switch
+  // to that entry's own type tab first, or its row wouldn't even be in
+  // the currently-loaded list to open.
+  useEffect(() => {
+    if (focusEntryId == null) return;
+    (async () => {
+      const full = await api(`/campaign/${focusEntryId}`);
+      setType(full.type);
+      setEditing(full);
+      setViewMode("read");
+      resetAiDraft();
+      onFocusHandled?.();
+    })();
+  }, [focusEntryId]);
 
   const reloadEditing = async () => {
     if (editing?.id) setEditing(await api(`/campaign/${editing.id}`));

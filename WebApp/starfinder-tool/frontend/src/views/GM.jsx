@@ -225,6 +225,7 @@ export default function GM() {
   const [selectedToken, setSelectedToken] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [focusCharacterId, setFocusCharacterId] = useState(null);
+  const [focusEntryId, setFocusEntryId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const sessionRef = useRef(null);
   sessionRef.current = session;
@@ -313,10 +314,18 @@ export default function GM() {
         {tab === "scene" && <ScenePanel session={session} characters={characters} />}
         {tab === "media" && <MediaLibrary />}
         {tab === "campaign" && (
-          <Campaign onOpenCharacter={(id) => { setFocusCharacterId(id); setTab("characters"); }} />
+          <Campaign
+            onOpenCharacter={(id) => { setFocusCharacterId(id); setTab("characters"); }}
+            focusEntryId={focusEntryId}
+            onFocusHandled={() => setFocusEntryId(null)}
+          />
         )}
         {tab === "characters" && (
-          <Characters focusCharacterId={focusCharacterId} onFocusHandled={() => setFocusCharacterId(null)} />
+          <Characters
+            focusCharacterId={focusCharacterId}
+            onFocusHandled={() => setFocusCharacterId(null)}
+            onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }}
+          />
         )}
         {tab === "sessions" && <Sessions />}
         {tab === "sources" && (

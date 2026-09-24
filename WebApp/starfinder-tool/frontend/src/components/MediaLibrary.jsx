@@ -53,23 +53,35 @@ function nameMatchScore(a, b) {
   const union = new Set([...wa, ...wb]).size;
   return union ? overlap / union : 0;
 }
-function bestCharacterMatch(filename, characters) {
+// A portrait might belong to a statted character (PC or NPC, in the
+// `characters` table — gets portrait_url, the tablet's own art) just as
+// easily as a lore-only "People" wiki entry that never got a statblock
+// (campaign_entries type='npc' — gets image_id, the Campaign reader's
+// picture). Both are fair targets, so both are candidates.
+function bestTargetMatch(filename, candidates) {
   const norm = normalizeForMatch(filename);
   let best = null, bestScore = 0;
-  for (const c of characters) {
+  for (const c of candidates) {
     const score = nameMatchScore(norm, normalizeForMatch(c.name));
     if (score > bestScore) { bestScore = score; best = c; }
   }
   return bestScore >= 0.3 ? best : null;
 }
 
-// Upload many portrait files at once, then propose a character match per
-// file from its filename — a GM correction/skip is one dropdown away
-// rather than a whole separate upload-then-attach round trip per image.
+// Upload many portrait files at once, then propose a match per file from
+// its filename, against characters AND lore-only People entries alike —
+// a GM correction/skip is one dropdown away rather than a whole separate
+// upload-then-attach round trip per image.
 function BulkPortraitImport({ characters, onDone }) {
   const [busy, setBusy] = useState(false);
+  const [loreEntries, setLoreEntries] = useState([]);
   const [proposals, setProposals] = useState(null);
   const [error, setError] = useState("");
+
+  const candidates = useMemo(() => [
+    ...characters.map((c) => ({ key: `character:${c.id}`, kind: "character", id: c.id, name: c.name })),
+    ...loreEntries.map((e) => ({ key: `lore:${e.id}`, kind: "lore", id: e.id, name: e.name })),
+  ], [characters, loreEntries]);
 
   const onFiles = async (e) => {
     const files = [...(e.target.files || [])];
@@ -78,9 +90,15 @@ function BulkPortraitImport({ characters, onDone }) {
     setBusy(true);
     setError("");
     try {
+      const lore = await api("/campaign?type=npc").catch(() => []);
+      setLoreEntries(lore);
+      const allCandidates = [
+        ...characters.map((c) => ({ key: `character:${c.id}`, kind: "character", id: c.id, name: c.name })),
+        ...lore.map((e) => ({ key: `lore:${e.id}`, kind: "lore", id: e.id, name: e.name })),
+      ];
       const uploaded = [];
       for (const file of files) uploaded.push(await upload("portrait", file, ""));
-      setProposals(uploaded.map((media) => ({ media, characterId: bestCharacterMatch(media.original_name, characters)?.id || "" })));
+      setProposals(uploaded.map((media) => ({ media, targetKey: bestTargetMatch(media.original_name, allCandidates)?.key || "" })));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -92,9 +110,13 @@ function BulkPortraitImport({ characters, onDone }) {
     setBusy(true);
     try {
       await Promise.all(
-        proposals.filter((p) => p.characterId).map((p) =>
-          api(`/characters/${p.characterId}`, { method: "PATCH", body: { portrait_url: p.media.url } })
-        )
+        proposals.filter((p) => p.targetKey).map((p) => {
+          const target = candidates.find((c) => c.key === p.targetKey);
+          if (!target) return null;
+          return target.kind === "character"
+            ? api(`/characters/${target.id}`, { method: "PATCH", body: { portrait_url: p.media.url } })
+            : api(`/campaign/${target.id}`, { method: "PATCH", body: { image_id: p.media.id } });
+        })
       );
       setProposals(null);
       onDone();
@@ -107,7 +129,7 @@ function BulkPortraitImport({ characters, onDone }) {
     return (
       <div className="row" style={{ alignItems: "center" }}>
         <label className="button-like">
-          {busy ? "Uploading…" : "Bulk import & match to characters…"}
+          {busy ? "Uploading…" : "Bulk import & match…"}
           <input type="file" accept="image/*" multiple onChange={onFiles} disabled={busy} hidden />
         </label>
         {error && <span className="pill bad">{error}</span>}
@@ -117,18 +139,27 @@ function BulkPortraitImport({ characters, onDone }) {
 
   return (
     <div className="bulk-portrait-review">
-      <h4>Match each upload to a character</h4>
+      <h4>Match each upload to a character or a People entry</h4>
       <ul className="sheet-list">
         {proposals.map((p, i) => (
           <li key={p.media.id} className="row" style={{ alignItems: "center", gap: 10 }}>
             <img src={p.media.url} alt="" className="bulk-portrait-thumb" />
             <span className="muted" style={{ minWidth: 180 }}>{p.media.original_name}</span>
             <select
-              value={p.characterId}
-              onChange={(e) => setProposals((cur) => cur.map((x, j) => (j === i ? { ...x, characterId: e.target.value } : x)))}
+              value={p.targetKey}
+              onChange={(e) => setProposals((cur) => cur.map((x, j) => (j === i ? { ...x, targetKey: e.target.value } : x)))}
             >
               <option value="">— skip —</option>
-              {characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {characters.length > 0 && (
+                <optgroup label="Characters (statted — tablet portrait)">
+                  {characters.map((c) => <option key={`character:${c.id}`} value={`character:${c.id}`}>{c.name}</option>)}
+                </optgroup>
+              )}
+              {loreEntries.length > 0 && (
+                <optgroup label="People (lore only — Campaign image)">
+                  {loreEntries.map((e) => <option key={`lore:${e.id}`} value={`lore:${e.id}`}>{e.name}</option>)}
+                </optgroup>
+              )}
             </select>
           </li>
         ))}
