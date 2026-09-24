@@ -3,7 +3,7 @@ import { createRng, weightedPick } from "./rng.js";
 import { generateSystemName } from "./names.js";
 import { GRID_SIZE, sampleBilinear } from "./grid.js";
 import { slugify } from "./slug.js";
-import { pointInPolygon } from "./geometry.js";
+import { pointInPolygon, centroid } from "./geometry.js";
 import { generateBodies } from "./planetGen.js";
 import { POPULATION_BANDS } from "./populationBands.js";
 import { STAR_TYPES } from "./starTypes.js";
@@ -31,6 +31,30 @@ const FOCUS_TRADE = {
   cultural: { export: ["art", "media"], import: ["luxury goods", "pilgrims"] },
 };
 const DEFAULT_TRADE = { export: ["general goods"], import: ["general goods"] };
+
+// §8's core-proximity colonization bias — "the core has the most
+// colonization, of course." A GM's sector named/slugged "Core" (or with
+// "core" anywhere in its name) is used as the literal reference point if
+// one exists; otherwise the galaxy bounds' own geometric center stands in
+// (sectors are typically drawn with a natural core near the map's middle
+// anyway, so this degrades gracefully for a galaxy with no sector actually
+// named that). Computed once per generation pass, not stored on the
+// project — only the resulting `status` roll it feeds into is persisted.
+function coreCenterOf(project) {
+  const coreSector = project.sectors.find((s) => s.slug === "core" || /core/i.test(s.name));
+  if (coreSector) return centroid(coreSector.points);
+  return { x: project.bounds.width / 2, y: project.bounds.height / 2 };
+}
+
+// 1 at the core center, fading to 0 at the corner farthest from it (half
+// the bounds diagonal) — planetGen.js's rollColonization turns this into a
+// colonization-chance multiplier, never letting it hit a hard 0.
+function coreProximityFor(position, coreCenter, bounds) {
+  const maxDist = Math.hypot(bounds.width, bounds.height) / 2;
+  if (maxDist <= 0) return 1;
+  const dist = Math.hypot(position.x - coreCenter.x, position.y - coreCenter.y);
+  return Math.max(0, Math.min(1, 1 - dist / maxDist));
+}
 
 function uniqueSlug(base, usedSlugs) {
   if (!usedSlugs.has(base)) return base;
@@ -100,6 +124,7 @@ function assignImportance(systems, popBias, rng, maxSpacing, lockedMask) {
 export function generateSystems(project, options = {}) {
   const { minSpacing = 20, maxSpacing = 70 } = options;
   const rng = createRng(`${project.seed}:systems`);
+  const coreCenter = coreCenterOf(project);
   const populationGrid = project.fields.population;
   const exportGrid = project.fields.export;
   const importGrid = project.fields.import;
@@ -207,7 +232,11 @@ export function generateSystems(project, options = {}) {
       // §8 planet generation — a system-scoped rng (not the shared `rng`
       // above) so rerolling one system's bodies later doesn't reshuffle
       // every other system's Poisson placement/detail rolls downstream.
-      system.bodies = generateBodies(createRng(`${project.seed}:bodies:${slug}`), system);
+      system.bodies = generateBodies(
+        createRng(`${project.seed}:bodies:${slug}`),
+        system,
+        coreProximityFor(system.position, coreCenter, project.bounds),
+      );
       systems.push(system);
       popBias.push(bandIndex / (POPULATION_BANDS.length - 1));
       lockedMask.push(false);
@@ -278,7 +307,7 @@ export function placeSystemAt(project, x, y) {
     hyperlanes: [],
     bodies: [],
   };
-  system.bodies = generateBodies(rng, system);
+  system.bodies = generateBodies(rng, system, coreProximityFor({ x, y }, coreCenterOf(project), project.bounds));
   return system;
 }
 
@@ -412,7 +441,17 @@ export function redistributeSystems(project, options = {}) {
 // to re-roll an existing galaxy's bodies onto the corrected model without
 // touching system placement, names, or any other rolled data.
 export function regeneratePlanets(project) {
+  const coreCenter = coreCenterOf(project);
   return project.systems.map((s) =>
-    s.locked ? s : { ...s, bodies: generateBodies(createRng(`${project.seed}:bodies:${s.slug}`), s) },
+    s.locked
+      ? s
+      : {
+          ...s,
+          bodies: generateBodies(
+            createRng(`${project.seed}:bodies:${s.slug}`),
+            s,
+            coreProximityFor(s.position, coreCenter, project.bounds),
+          ),
+        },
   );
 }

@@ -320,14 +320,25 @@ function rollHabitable(rng, kind, orbitAU, zones, remnant) {
   return false;
 }
 
-function rollColonization(rng, body, system) {
+// `coreProximity` (0 = galaxy edge, 1 = at the core, default 0.5 neutral for
+// any caller that doesn't have a position to derive it from) suppresses
+// *colonization* specifically — a GM asked for the core to read as old,
+// settled space and the frontier to stay sparse even where a world is
+// perfectly habitable. coreFactor bottoms out at 0.3 rather than 0, so a
+// frontier world still has *some* chance (worlds do get colonized out
+// there, just rarely) instead of a hard cutoff. Resource extraction is
+// untouched by this — mining the frontier for what it's worth, without
+// anyone actually living there, is the classic frontier economy, not
+// something that should also get suppressed.
+function rollColonization(rng, body, system, coreProximity = 0.5) {
   const bandIndex = Math.max(0, POPULATION_BANDS.findIndex((b) => b.value === system.population));
   if (system.stationOnly) {
     if (body.resourceRich && rng() < 0.3) return "extraction";
     return "untouched";
   }
   if (body.habitable) {
-    const chance = 0.12 + bandIndex * 0.15;
+    const coreFactor = 0.3 + 0.7 * Math.max(0, Math.min(1, coreProximity));
+    const chance = (0.12 + bandIndex * 0.15) * coreFactor;
     if (rng() < chance) return "colonized";
     if (body.resourceRich && rng() < 0.5) return "extraction";
     return "untouched";
@@ -349,7 +360,7 @@ function rollPopulation(rng, system) {
   return COLONIZED_BANDS[Math.min(maxIndex, roll)].value;
 }
 
-function rollPrimary(rng, system, zones, remnant, starMass, index) {
+function rollPrimary(rng, system, zones, remnant, starMass, index, coreProximity) {
   const orbitAU = zones.orbits[index];
   const kind = pickKind(rng, orbitAU, zones, remnant);
   const habitable = rollHabitable(rng, kind, orbitAU, zones, remnant);
@@ -375,7 +386,7 @@ function rollPrimary(rng, system, zones, remnant, starMass, index) {
     population: null,
     tags: remnant ? ["irradiated"] : [],
   };
-  body.status = rollColonization(rng, { habitable, resourceRich }, system);
+  body.status = rollColonization(rng, { habitable, resourceRich }, system, coreProximity);
   if (body.status === "colonized") body.population = rollPopulation(rng, system);
   if (body.status === "extraction") body.tags = [...body.tags, "automated-or-minimal-crew"];
   return body;
@@ -471,7 +482,10 @@ function rollStation(rng, host, system, siblingCount) {
 // worked for resources. `rng` is the caller's — pass a system-scoped rng
 // (e.g. createRng(`${seed}:bodies:${system.slug}`)) so regenerating just
 // one system's bodies doesn't reshuffle any other system's roll.
-export function generateBodies(rng, system) {
+// `coreProximity` (0-1, 0.5 default) is the system's own distance-from-the-
+// core score computed by the caller (systemGen.js, which has the sector/
+// bounds data to derive it) — see rollColonization for what it does.
+export function generateBodies(rng, system, coreProximity = 0.5) {
   const profile = getStarProfile(system.starType);
   const remnant = !!profile.remnant;
   const z = starZones(profile);
@@ -482,7 +496,7 @@ export function generateBodies(rng, system) {
   let stationsPlaced = 0;
 
   for (let i = 0; i < count; i++) {
-    const primary = rollPrimary(rng, system, z, remnant, profile.mass, i);
+    const primary = rollPrimary(rng, system, z, remnant, profile.mass, i, coreProximity);
     bodies.push(primary);
 
     const moons = rollMoons(rng, primary, z, remnant);
@@ -492,7 +506,7 @@ export function generateBodies(rng, system) {
       // colonized on top of that), rather than every moon defaulting to
       // untouched regardless of what's happening on its parent.
       const resourceRich = moon.resources.length > 0;
-      moon.status = rollColonization(rng, { habitable: moon.habitable, resourceRich }, system);
+      moon.status = rollColonization(rng, { habitable: moon.habitable, resourceRich }, system, coreProximity);
       if (moon.status === "colonized") moon.population = rollPopulation(rng, system);
       if (moon.status === "extraction") moon.tags = ["automated-or-minimal-crew"];
       bodies.push(moon);

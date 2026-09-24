@@ -653,6 +653,21 @@ Still explicitly deferred, called out so the model above doesn't box it out:
   galaxy pass and the future surface pass, rather than duplicating the
   Poisson-disc + Delaunay + density-sampling logic twice.
 
+**Colonization is now also biased by distance from the galactic core** — "the
+core has the most colonization, of course." `systemGen.js` computes a
+`coreProximity` (1 at the core, fading to 0 at the far corner of the bounds)
+per system, using a sector literally named/slugged "core" as the reference
+point if one exists, else the galaxy bounds' own center. `rollColonization`
+turns this into a multiplier on the *colonization* chance only (0.3x at the
+edge up to 1x at the core — never a hard zero, so frontier colonies still
+happen, just rarely); resource extraction is untouched, since mining the
+frontier without anyone living there is the frontier's whole economic
+reason to exist. Verified: a synthetic sweep (fixed population band,
+varying only coreProximity, 4,000 trials each) showed colonization climbing
+from 12% at the edge to 56-57% at the core; a real 375-system galaxy showed
+the Core sector's habitable worlds colonizing while every other sector's
+stayed at or near 0% in the same regeneration pass.
+
 ### 8b. Ships & fleet economy (delivered out of order — not originally numbered in this doc)
 
 A layer on top of the above modeling galaxy *traffic*, not just territory:
