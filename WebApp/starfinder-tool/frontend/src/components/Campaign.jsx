@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../api.js";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
-import { HIERARCHY_RELATIONS, buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
+import { isHierarchyRelation, buildChildrenIndex, descendantIds } from "../lib/campaignTree.js";
 
 const TYPES = [
   { key: "event", label: "Events" },
@@ -46,7 +46,7 @@ function buildTree(entries, links) {
   const childrenOf = new Map();
   const hasParent = new Set();
   for (const l of links) {
-    if (!HIERARCHY_RELATIONS.has(l.relation)) continue;
+    if (!isHierarchyRelation(l.relation)) continue;
     if (!byId.has(l.from_id) || !byId.has(l.to_id)) continue;
     if (!childrenOf.has(l.to_id)) childrenOf.set(l.to_id, new Map());
     childrenOf.get(l.to_id).set(l.from_id, byId.get(l.from_id));
@@ -453,8 +453,8 @@ function TreeNode({ entry, depth, childrenOf, collapsed, toggleCollapsed, openEn
         </button>
         {onMove && (
           <span className="campaign-tree-reorder">
-            <button className="link" disabled={idx <= 0} title="Move up" onClick={() => onMove(siblings, entry.id, -1)}>▲</button>
-            <button className="link" disabled={idx < 0 || idx >= siblings.length - 1} title="Move down" onClick={() => onMove(siblings, entry.id, 1)}>▼</button>
+            <button disabled={idx <= 0} title="Move up" onClick={() => onMove(siblings, entry.id, -1)}>▲</button>
+            <button disabled={idx < 0 || idx >= siblings.length - 1} title="Move down" onClick={() => onMove(siblings, entry.id, 1)}>▼</button>
           </span>
         )}
       </div>

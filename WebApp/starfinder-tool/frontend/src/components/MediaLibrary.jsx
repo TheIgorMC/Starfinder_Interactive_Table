@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
 import { useMusicPlayer } from "../lib/musicPlayer.jsx";
+import { youtubeId } from "../lib/youtube.js";
 
 const CATEGORIES = [
   { key: "map", label: "Maps" },
@@ -29,6 +30,33 @@ const isVideo = (m) => /\.(mp4|webm|mov|m4v)$/i.test(m.filename || m.url || "");
 
 const UNFILED = "\0unfiled";
 
+const formatDuration = (secs) => {
+  const s = Math.round(secs);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+};
+
+// Reads a track's length client-side (an <audio preload="metadata"> reads
+// just the header, not the whole file) instead of anything server-side —
+// no ffprobe/transcoding step needed for an uploaded file or a direct
+// audio URL. Not attempted for a YouTube link: an <audio> element can't
+// play a video page URL at all, and the (already-integrated) YouTube
+// IFrame Player API only exposes getDuration() once that video is loaded
+// into the shared player, not for every row in a list up front.
+function useTrackDuration(m) {
+  const [duration, setDuration] = useState(null);
+  useEffect(() => {
+    setDuration(null);
+    if (!m.url || (!m.filename && youtubeId(m.url))) return;
+    const audio = new Audio();
+    audio.preload = "metadata";
+    audio.addEventListener("loadedmetadata", () => setDuration(audio.duration));
+    audio.src = m.url;
+    return () => { audio.removeAttribute("src"); audio.load(); };
+  }, [m.url, m.filename]);
+  return duration;
+}
+
 // One compact row per track — with "decine o centinaia" of them, the old
 // card grid (one ~260px box per track) was the wrong shape entirely.
 // Playback lives in the shared MusicPlayerProvider (mounted once in
@@ -42,6 +70,7 @@ function TrackRow({ m, onToggleLoop, onDelete, onAddTag, onRemoveTag, onEditFold
   const isCurrent = player.current?.id === m.id;
   const [addingTag, setAddingTag] = useState(false);
   const [newTag, setNewTag] = useState("");
+  const duration = useTrackDuration(m);
 
   const commitTag = () => {
     if (newTag.trim()) onAddTag(m, newTag.trim());
@@ -59,6 +88,7 @@ function TrackRow({ m, onToggleLoop, onDelete, onAddTag, onRemoveTag, onEditFold
         {isCurrent && player.playing ? "⏸" : "▶"}
       </button>
       <span className="track-row-label" title={m.label || m.original_name || m.url}>{m.label || m.original_name || m.url}</span>
+      {duration != null && <span className="track-row-duration muted">{formatDuration(duration)}</span>}
 
       <select
         className="track-row-folder"
