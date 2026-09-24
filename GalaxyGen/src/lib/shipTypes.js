@@ -10,7 +10,9 @@
 // this layer exists to make "how many ships, what kind, whose" a solvable
 // generation problem across a galaxy with hundreds of systems, not to replace
 // the Starship Operations Manual.
-export const SIZE_CATEGORIES = ["Tiny", "Small", "Medium", "Large", "Huge", "Gargantuan", "Colossal"];
+// Supercolossal is SF1e's own top frame size; no generated hull uses it — it
+// exists for hand-authored one-of-a-kind ships (city-ships, megastructures).
+export const SIZE_CATEGORIES = ["Tiny", "Small", "Medium", "Large", "Huge", "Gargantuan", "Colossal", "Supercolossal"];
 export const MANEUVERABILITY_CLASSES = ["clumsy", "average", "good", "perfect"];
 
 // role: which of the five fleet economies (cargo/tourism/diplomacy/private/
@@ -44,6 +46,12 @@ export const HULL_CLASSES = [
   { value: "personal cruiser", role: "private", sizeCategory: "Medium", maneuverability: "average", crew: [2, 6], cargoTons: [10, 40], speedHexes: [6, 9], combatRating: [2, 8] },
   { value: "armed private cutter", role: "private", sizeCategory: "Small", maneuverability: "good", crew: [2, 5], cargoTons: [5, 20], speedHexes: [8, 12], combatRating: [8, 18] },
 
+  // Research
+  { value: "survey probe", role: "research", sizeCategory: "Tiny", maneuverability: "good", crew: [1, 2], cargoTons: [0, 3], speedHexes: [10, 14], combatRating: [0, 3] },
+  { value: "survey cutter", role: "research", sizeCategory: "Small", maneuverability: "good", crew: [3, 8], cargoTons: [5, 25], speedHexes: [8, 12], combatRating: [2, 8] },
+  { value: "science vessel", role: "research", sizeCategory: "Medium", maneuverability: "average", crew: [8, 24], cargoTons: [20, 80], speedHexes: [6, 9], combatRating: [4, 12] },
+  { value: "deep-survey ark", role: "research", sizeCategory: "Huge", maneuverability: "clumsy", crew: [40, 120], cargoTons: [150, 600], speedHexes: [3, 6], combatRating: [8, 20] },
+
   // Military
   { value: "picket scout", role: "military", sizeCategory: "Tiny", maneuverability: "perfect", crew: [1, 3], cargoTons: [0, 3], speedHexes: [11, 15], combatRating: [10, 22] },
   { value: "gunship", role: "military", sizeCategory: "Small", maneuverability: "good", crew: [3, 7], cargoTons: [2, 10], speedHexes: [9, 13], combatRating: [20, 38] },
@@ -54,7 +62,7 @@ export const HULL_CLASSES = [
   { value: "dreadnought", role: "military", sizeCategory: "Colossal", maneuverability: "clumsy", crew: [70, 160], cargoTons: [100, 300], speedHexes: [2, 4], combatRating: [80, 100] },
 ];
 
-export const SHIP_ROLES = ["cargo", "tourism", "diplomacy", "private", "military"];
+export const SHIP_ROLES = ["cargo", "tourism", "diplomacy", "private", "research", "military"];
 
 // Quality tier nudges a manufacturer's models above/below the hull's own
 // baseline range (economy trims toward the low end and costs less; premium
@@ -83,6 +91,8 @@ export const SHIP_MANUFACTURERS = [
   { value: "Threnn Diplomatic Works", specialty: "diplomacy", tier: "standard" },
   { value: "Ironwood Motorworks", specialty: "private", tier: "standard" },
   { value: "Corvane Independent Yards", specialty: "private", tier: "economy" },
+  { value: "Tessera Survey Systems", specialty: "research", tier: "premium" },
+  { value: "Kalor Expeditionary Yards", specialty: "research", tier: "standard" },
   { value: "Vantage Aerospace", specialty: "military", tier: "premium" },
   { value: "Obsidia Heavy Industries", specialty: "military", tier: "standard" },
   { value: "Drexel Arms Consortium", specialty: "military", tier: "economy" },
@@ -93,8 +103,9 @@ export const SHIP_MANUFACTURERS = [
 // pulls its fleet from, and which sector focuses tend to spawn that kind.
 export const COMPANY_KINDS = [
   { value: "cargo-line", role: "cargo", foci: ["mining", "industry", "logistics", "agriculture"] },
-  { value: "tourism-operator", role: "tourism", foci: ["residential", "cultural", "medical"] },
+  { value: "tourism-operator", role: "tourism", foci: ["residential", "cultural"] },
   { value: "diplomatic-courier", role: "diplomacy", foci: ["administrative"] },
-  { value: "private-charter", role: "private", foci: ["frontier", "research"] },
+  { value: "private-charter", role: "private", foci: ["frontier"] },
+  { value: "research-expedition", role: "research", foci: ["research", "medical"] },
   { value: "military-contractor", role: "military", foci: ["military"] },
 ];

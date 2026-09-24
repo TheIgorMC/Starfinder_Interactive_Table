@@ -46,8 +46,10 @@ function pick(rng, list) {
 export function generateShipModels(project) {
   const rng = createRng(`${project.seed}:shipmodels`);
   const count = Math.max(16, Math.min(40, Math.round((project.sectors.length || 1) * 2.5)));
+  // Hand-authored custom hulls (city-ships etc.) are never regenerated away.
+  const customs = (project.shipModels || []).filter((m) => m.custom);
   const usedNames = new Set();
-  const usedSlugs = new Set();
+  const usedSlugs = new Set(customs.map((m) => m.slug));
   const models = [];
 
   for (let i = 0; i < count; i++) {
@@ -79,7 +81,7 @@ export function generateShipModels(project) {
     });
   }
 
-  return models;
+  return [...models, ...customs];
 }
 
 function companyScaleFor(system) {

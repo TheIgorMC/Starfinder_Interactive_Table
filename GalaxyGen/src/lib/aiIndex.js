@@ -105,9 +105,11 @@ function shipModelRow(model) {
   return {
     ref: `ship_model:${model.slug}`,
     name: model.name,
-    tags: [model.role, model.hullClass, model.costTier],
+    tags: [model.role, model.hullClass, model.costTier, ...(model.custom ? ["custom"] : [])],
     summary: `${model.sizeCategory} ${model.hullClass} (${model.role}), by ${model.manufacturer}.`,
     stats: {
+      custom: !!model.custom,
+      population: model.population ?? null,
       role: model.role,
       size_category: model.sizeCategory,
       combat_rating: model.combatRating,

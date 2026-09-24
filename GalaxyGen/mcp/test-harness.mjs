@@ -93,6 +93,15 @@ if (orgs.length !== 1) throw new Error("create_organization failed");
 
 const models = await call("generate_ship_models", {});
 if (!models || models.modelCount < 16) throw new Error("generate_ship_models produced too few models");
+await call("create_custom_ship_model", {
+  name: "Harness Ark", hullClass: "city-ship", role: "research", sizeCategory: "Supercolossal",
+  crew: 1000, cargoTons: 100000, speedHexes: 1, combatRating: 20, population: 5000000,
+});
+await call("generate_ship_models", {});
+const allModels = await call("list_ship_models", {});
+if (!allModels.some((m) => m.slug === "harness-ark")) throw new Error("custom model was wiped by regeneration");
+const researchModels = await call("list_ship_models", { role: "research" });
+if (researchModels.length < 2) throw new Error("no research models generated");
 const modelList = await call("list_ship_models", { role: "cargo" });
 if (!modelList.length) throw new Error("no cargo ship models generated");
 

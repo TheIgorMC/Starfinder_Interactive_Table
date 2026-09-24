@@ -222,8 +222,13 @@ export function shipModelToEntry(model) {
     type: "ship_model",
     name: model.name,
     summary: `${model.sizeCategory} ${model.hullClass} (${model.role}), by ${model.manufacturer}.`,
-    tags: [model.role, model.hullClass, model.costTier],
+    tags: [model.role, model.hullClass, model.costTier, ...(model.custom ? ["custom"] : [])],
     data: {
+      // Hand-authored one-of-a-kind hulls only (city-ships etc.); null on
+      // every generated catalog model.
+      custom: !!model.custom,
+      population: model.population ?? null,
+      notes: model.notes ?? null,
       manufacturer: model.manufacturer,
       hull_class: model.hullClass,
       role: model.role,

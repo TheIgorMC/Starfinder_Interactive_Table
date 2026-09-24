@@ -189,6 +189,7 @@ const COMPANY_SUFFIXES = {
   tourism: ["Voyages", "Excursions", "Cruise Line", "Getaways", "Charter Tours"],
   diplomacy: ["Envoy Service", "Diplomatic Transit", "Courier Guild", "Legation Lines"],
   private: ["Charter Services", "Air & Void", "Private Fleet", "Custom Yachts"],
+  research: ["Survey Institute", "Expeditionary Society", "Deep Survey Corps", "Research Consortium"],
   military: ["Security Contractors", "Defense Works", "Armaments & Escort", "Militia Fleet"],
 };
 

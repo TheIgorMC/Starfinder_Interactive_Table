@@ -1037,12 +1037,13 @@ function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose })
   );
 }
 
-const COMPANY_KIND_VALUES = ["cargo-line", "tourism-operator", "diplomatic-courier", "private-charter", "military-contractor"];
+const COMPANY_KIND_VALUES = ["cargo-line", "tourism-operator", "diplomatic-courier", "private-charter", "research-expedition", "military-contractor"];
 const COMPANY_ROLE_BY_KIND = {
   "cargo-line": "cargo",
   "tourism-operator": "tourism",
   "diplomatic-courier": "diplomacy",
   "private-charter": "private",
+  "research-expedition": "research",
   "military-contractor": "military",
 };
 const COMPANY_SCALES = ["small", "regional", "major"];

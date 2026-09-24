@@ -47,6 +47,37 @@ export function register(server) {
   );
 
   server.tool(
+    "create_custom_ship_model",
+    "Hand-author a one-of-a-kind ship model (a city-ship, megastructure, unique flagship) that doesn't fit the generated hull catalog — any stats, any SF1e size category up to Supercolossal, optional inhabitant population and free-text notes. Marked custom:true; generate_ship_models regenerates only the procedural models and leaves custom ones untouched.",
+    {
+      name: z.string(),
+      hullClass: z.string().describe("Free text, e.g. 'city-ship'."),
+      role: z.enum(SHIP_ROLES),
+      sizeCategory: z.enum(["Tiny", "Small", "Medium", "Large", "Huge", "Gargantuan", "Colossal", "Supercolossal"]),
+      maneuverability: z.enum(["clumsy", "average", "good", "perfect"]).default("clumsy"),
+      crew: z.number().int().nonnegative(),
+      cargoTons: z.number().nonnegative(),
+      speedHexes: z.number().nonnegative(),
+      combatRating: z.number().min(0).max(100),
+      manufacturer: z.string().default("Unique"),
+      costTier: z.string().default("unique"),
+      population: z.number().int().nonnegative().optional().describe("Resident inhabitants, if it's a habitat-ship."),
+      notes: z.string().optional(),
+    },
+    tool((args) => {
+      const project = state.requireProject();
+      const model = {
+        id: crypto.randomUUID(),
+        slug: uniqueSlug(args.name, project.shipModels),
+        ...args,
+        custom: true,
+      };
+      state.setProject({ ...project, shipModels: [...project.shipModels, model] });
+      return model;
+    }),
+  );
+
+  server.tool(
     "generate_ship_models",
     "(Re)generates the galaxy-wide ship-model catalog (a fixed-size reference table of manufacturer+hull combinations, scaled to sector count — see mcp/README or GalaxyGen/README for the hull/manufacturer vocabulary). Replaces the whole catalog. Companies reference models by slug, so regenerating after companies already exist leaves their fleets pointing at stale slugs until generate_companies is also re-run.",
     {},

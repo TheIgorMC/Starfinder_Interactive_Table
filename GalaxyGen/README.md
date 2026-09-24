@@ -641,6 +641,18 @@ each with a recommendation and a clear tradeoff):
   (`affiliationOptions` in `SectorList.jsx`); an unaffiliated actor reads as
   fully private/independent.
 
+**Research role and custom ships (follow-up)**: `research` became a sixth
+ship role (survey probe / survey cutter / science vessel / deep-survey ark
+hulls, two research-specialty manufacturers, a `research-expedition`
+company kind biased toward research/medical sectors). Hand-authored
+**custom ship models** (`custom: true` — e.g. a city-ship) can carry any stats,
+the SF1e-top `Supercolossal` size, an inhabitant `population`, and free-text
+`notes`; `generateShipModels` leaves custom models untouched on regeneration.
+First user: "Gemini", an independent commercial/scientific city-ship
+(2.2 billion inhabitants, hangar space for dozens of the largest haulers)
+captained by the actor Primarch Killis Yurevich. Custom models are created via
+the MCP `create_custom_ship_model` tool; there's no browser form for them yet.
+
 **UI**: a new top-level **Companies** tab (`App.jsx`/`Toolbar.jsx`/
 `SectorList.jsx`) — a company card (name, kind/scale, parent faction, home
 system/sector, fleet list, notable-ships list) alongside a persistent
