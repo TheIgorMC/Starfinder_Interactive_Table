@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { SECTOR_FOCI } from "../lib/project.js";
+import { SHIP_ROLES, SIZE_CATEGORIES, MANEUVERABILITY_CLASSES } from "../lib/shipTypes.js";
 import { generateBodies } from "../lib/planetGen.js";
 import { createRng } from "../lib/rng.js";
 
@@ -102,6 +103,8 @@ export default function SectorList({
   onCreateCompany,
   onUpdateCompany,
   onDeleteCompany,
+  onCreateShipModel,
+  onDeleteShipModel,
   events,
   onPreviewEvent,
   onCommitEvent,
@@ -368,6 +371,24 @@ export default function SectorList({
               );
             })}
           </ul>
+
+          <h4 style={{ marginTop: 18, marginBottom: 6 }}>Custom ship models</h4>
+          <NewShipModelForm onCreate={onCreateShipModel} />
+          <ul className="gg-sector-list">
+            {shipModels.filter((m) => m.custom).map((m) => (
+              <li key={m.id}>
+                <span className="gg-sector-select" style={{ cursor: "default" }} title={m.notes || ""}>
+                  {m.name} — {m.sizeCategory} {m.hullClass}{m.population ? ` · ${m.population.toLocaleString()} inhabitants` : ""}
+                </span>
+                <button className="gg-danger" onClick={() => onDeleteShipModel(m.id)} title="Delete custom model">
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">
+            {shipModels.filter((m) => !m.custom).length} generated models in the catalog (not listed here).
+          </p>
         </>
       )}
 
@@ -1130,6 +1151,77 @@ function NewCompanyForm({ factions, sectors, systems, onCreate }) {
           }}
         >
           Create company
+        </button>
+        <button className="gg-danger" onClick={() => setShow(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// One-of-a-kind hulls (city-ships, megastructures) that don't fit the generated
+// catalog — attach one to a company's fleet/notable ships via the MCP tools
+// (add_fleet_entry / add_notable_ship) or by editing the project file.
+function NewShipModelForm({ onCreate }) {
+  const [show, setShow] = useState(false);
+  const blank = { name: "", hullClass: "city-ship", role: "cargo", sizeCategory: "Supercolossal", maneuverability: "clumsy", crew: 1000, cargoTons: 100000, speedHexes: 1, combatRating: 20, population: 0, notes: "" };
+  const [f, setF] = useState(blank);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const num = (k) => (e) => set(k, Math.max(0, Number(e.target.value)));
+
+  if (!show) {
+    return (
+      <button style={{ width: "100%", marginBottom: 8 }} onClick={() => setShow(true)}>
+        + New custom ship model
+      </button>
+    );
+  }
+  return (
+    <div className="gg-new-form">
+      <label className="small muted">Name</label>
+      <input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Gemini" autoFocus />
+      <label className="small muted">Hull class (free text)</label>
+      <input value={f.hullClass} onChange={(e) => set("hullClass", e.target.value)} />
+      <label className="small muted">Role</label>
+      <select value={f.role} onChange={(e) => set("role", e.target.value)}>
+        {SHIP_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+      </select>
+      <label className="small muted">Size category</label>
+      <select value={f.sizeCategory} onChange={(e) => set("sizeCategory", e.target.value)}>
+        {SIZE_CATEGORIES.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <label className="small muted">Maneuverability</label>
+      <select value={f.maneuverability} onChange={(e) => set("maneuverability", e.target.value)}>
+        {MANEUVERABILITY_CLASSES.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <label className="small muted">Crew</label>
+      <input type="number" min="0" value={f.crew} onChange={num("crew")} />
+      <label className="small muted">Cargo (tons)</label>
+      <input type="number" min="0" value={f.cargoTons} onChange={num("cargoTons")} />
+      <label className="small muted">Speed (hexes)</label>
+      <input type="number" min="0" value={f.speedHexes} onChange={num("speedHexes")} />
+      <label className="small muted">Combat rating ({f.combatRating})</label>
+      <input type="range" min="0" max="100" value={f.combatRating} onChange={num("combatRating")} />
+      <label className="small muted">Inhabitants (habitat-ships; 0 = none)</label>
+      <input type="number" min="0" value={f.population} onChange={num("population")} />
+      <label className="small muted">Notes</label>
+      <input value={f.notes} onChange={(e) => set("notes", e.target.value)} />
+      <div className="gg-tool-row">
+        <button
+          disabled={!f.name.trim()}
+          onClick={() => {
+            onCreate({
+              ...f,
+              name: f.name.trim(),
+              manufacturer: "Unique",
+              costTier: "unique",
+              population: f.population || undefined,
+              notes: f.notes.trim() || undefined,
+            });
+            setF(blank);
+            setShow(false);
+          }}
+        >
+          Create model
         </button>
         <button className="gg-danger" onClick={() => setShow(false)}>Cancel</button>
       </div>

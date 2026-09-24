@@ -718,6 +718,33 @@ export default function App() {
     });
   }, []);
 
+  // Hand-authored one-of-a-kind ship models (city-ships etc.) — `custom: true`
+  // is what keeps them through "Generate ship models".
+  const handleCreateShipModel = useCallback((fields) => {
+    setProject((p) => ({
+      ...p,
+      shipModels: [
+        ...p.shipModels,
+        { id: crypto.randomUUID(), slug: uniqueSlug(slugify(fields.name), p.shipModels), ...fields, custom: true },
+      ],
+    }));
+  }, []);
+
+  const handleDeleteShipModel = useCallback(
+    (id) => {
+      const model = project.shipModels.find((m) => m.id === id);
+      if (!model) return;
+      const users = project.companies.filter(
+        (c) => c.fleet.some((f) => f.modelSlug === model.slug) || c.notableShips.some((s) => s.modelSlug === model.slug),
+      );
+      if (users.length > 0 && !window.confirm(`${users.map((c) => c.name).join(", ")} still use "${model.name}" — delete anyway? Their fleets will show a missing model.`)) {
+        return;
+      }
+      setProject((p) => ({ ...p, shipModels: p.shipModels.filter((m) => m.id !== id) }));
+    },
+    [project.shipModels, project.companies],
+  );
+
   const handleUpdateCompany = useCallback((id, patch) => {
     setProject((p) => ({ ...p, companies: p.companies.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
   }, []);
@@ -1057,6 +1084,8 @@ export default function App() {
           onCreateCompany={handleCreateCompany}
           onUpdateCompany={handleUpdateCompany}
           onDeleteCompany={handleDeleteCompany}
+          onCreateShipModel={handleCreateShipModel}
+          onDeleteShipModel={handleDeleteShipModel}
           events={project.events}
           onPreviewEvent={handlePreviewEvent}
           onCommitEvent={handleCommitEvent}
