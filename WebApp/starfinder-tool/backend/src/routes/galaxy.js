@@ -123,4 +123,28 @@ r.get("/links", requireAuth, async (req, res) => {
   res.json(rows);
 });
 
+// Compact geometry for the map view — positions/polygons/edges only, not
+// full entity detail (the index endpoint already covers browsing). Small
+// enough for a 375-system galaxy to ship in one response.
+r.get("/map", requireAuth, async (req, res) => {
+  const project = await currentProject();
+  if (!project) return res.json(null);
+  const d = project.data;
+  res.json({
+    bounds: d.bounds,
+    systems: (d.systems || []).map((s) => ({
+      ref: `system:${s.slug}`,
+      name: s.name,
+      x: s.position?.x,
+      y: s.position?.y,
+      sector: s.sector,
+      important: s.important || 0,
+      owner: s.control?.owner || null,
+    })),
+    sectors: (d.sectors || []).map((s) => ({ ref: `sector:${s.slug}`, name: s.name, focus: s.focus, points: s.points })),
+    hyperlanes: (d.hyperlanes || []).map((h) => ({ a: h.aSlug, b: h.bSlug, risk: h.risk })),
+    factions: (d.factions || []).map((f) => ({ ref: `faction:${f.slug}`, name: f.name, color: f.color })),
+  });
+});
+
 export default r;

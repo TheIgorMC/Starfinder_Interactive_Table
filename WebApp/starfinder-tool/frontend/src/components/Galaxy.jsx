@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 
 // GalaxyGen project browser (Docs/10-galaxy-mapgen.md) — a read-only view
@@ -10,9 +10,7 @@ import { api } from "../api.js";
 // "Suggest links" tool below. Nothing here ever writes into the imported
 // project itself.
 
-// Same normalize/score approach as MediaLibrary.jsx's bulk portrait
-// matcher — small enough, and specific enough to each caller's candidate
-// shape, that sharing a module isn't worth it yet.
+// Same normalize approach as MediaLibrary.jsx's bulk portrait matcher.
 function normalizeForMatch(s) {
   return (s || "")
     .normalize("NFKD").replace(/[̀-ͯ]/g, "")
@@ -22,15 +20,23 @@ function normalizeForMatch(s) {
     .replace(/\s+/g, " ")
     .trim();
 }
+// Word-overlap (Jaccard) only — no whole-string "contains" shortcut. A
+// galaxy full of "<Name>'s Drift"/"<Name> Drift" systems will all share the
+// generic word "Drift" with an unrelated lore entry literally named
+// "Drift"; a containment shortcut scored that 0.8 and matched every one of
+// them onto the same single entry. Plain word overlap scores that ~0.5,
+// under the (raised) 0.6 threshold below, while still rewarding an exact
+// or near-exact name match.
 function nameMatchScore(a, b) {
   if (!a || !b) return 0;
   if (a === b) return 1;
-  if (a.includes(b) || b.includes(a)) return 0.8;
-  const wa = new Set(a.split(" ")), wb = new Set(b.split(" "));
-  const overlap = [...wa].filter((w) => wb.has(w)).length;
-  const union = new Set([...wa, ...wb]).size;
+  const wa = a.split(" ").filter(Boolean), wb = b.split(" ").filter(Boolean);
+  const sa = new Set(wa), sb = new Set(wb);
+  const overlap = [...sa].filter((w) => sb.has(w)).length;
+  const union = new Set([...sa, ...sb]).size;
   return union ? overlap / union : 0;
 }
+const MATCH_THRESHOLD = 0.6;
 
 // Which campaign_entries types are plausible targets for each galaxy kind
 // — narrows the link picker instead of showing every lore entry.
@@ -176,56 +182,73 @@ function EntityRow({ item, linkedEntry, entries, onOpenCampaignEntry, onLinked }
 }
 
 // Proposes a lore entry for every unlinked galaxy entity whose name closely
-// matches an unlinked lore entry of a plausible type — the GM reviews and
-// applies, exactly like the bulk portrait matcher. Never invents new lore
-// entries; only offers to link ones that already exist.
-function SuggestLinksTool({ index, entries, linksByRef, onApplied }) {
-  const [proposals, setProposals] = useState(null);
+// matches an unlinked lore entry of a plausible type. Each proposal is a
+// checkbox the GM can uncheck individually rather than an all-or-nothing
+// batch — "Link selected" only applies the checked rows. Greedy-assigned
+// (highest score first, each lore entry used at most once) so two galaxy
+// entities can never both be proposed against the same single-valued
+// lore entry.
+function computeProposals(index, entries, linksByRef) {
+  const unlinkedEntries = entries.filter((e) => !e.galaxy_ref);
+  const all = [];
+  for (const item of index) {
+    if (linksByRef[item.ref]) continue;
+    const allowedTypes = KIND_ENTRY_TYPES[item.kind] || [];
+    const norm = normalizeForMatch(item.name);
+    for (const c of unlinkedEntries) {
+      if (!allowedTypes.includes(c.type)) continue;
+      const score = nameMatchScore(norm, normalizeForMatch(c.name));
+      if (score >= MATCH_THRESHOLD) all.push({ item, entryId: c.id, entryName: c.name, score });
+    }
+  }
+  all.sort((a, b) => b.score - a.score);
+  const usedItems = new Set(), usedEntries = new Set();
+  const proposals = [];
+  for (const p of all) {
+    if (usedItems.has(p.item.ref) || usedEntries.has(p.entryId)) continue;
+    usedItems.add(p.item.ref);
+    usedEntries.add(p.entryId);
+    proposals.push(p);
+  }
+  return proposals;
+}
+
+function SuggestLinksPanel({ proposals, onClose, onApplied }) {
+  const [checked, setChecked] = useState(() => new Set(proposals.map((_, i) => i)));
   const [busy, setBusy] = useState(false);
 
-  const compute = () => {
-    const unlinkedEntries = entries.filter((e) => !e.galaxy_ref);
-    const props = [];
-    for (const item of index) {
-      if (linksByRef[item.ref]) continue;
-      const allowedTypes = KIND_ENTRY_TYPES[item.kind] || [];
-      const candidates = unlinkedEntries.filter((e) => allowedTypes.includes(e.type));
-      const norm = normalizeForMatch(item.name);
-      let best = null, bestScore = 0;
-      for (const c of candidates) {
-        const score = nameMatchScore(norm, normalizeForMatch(c.name));
-        if (score > bestScore) { bestScore = score; best = c; }
-      }
-      if (best && bestScore >= 0.5) props.push({ item, entryId: best.id, entryName: best.name, score: bestScore });
-    }
-    props.sort((a, b) => b.score - a.score);
-    setProposals(props);
-  };
+  const toggle = (i) => setChecked((prev) => {
+    const next = new Set(prev);
+    next.has(i) ? next.delete(i) : next.add(i);
+    return next;
+  });
 
   const apply = async () => {
+    const chosen = proposals.filter((_, i) => checked.has(i));
+    if (!chosen.length) return;
     setBusy(true);
     try {
-      await Promise.all(proposals.map((p) => api(`/campaign/${p.entryId}`, { method: "PATCH", body: { galaxy_ref: p.item.ref } })));
-      setProposals(null);
+      await Promise.all(chosen.map((p) => api(`/campaign/${p.entryId}`, { method: "PATCH", body: { galaxy_ref: p.item.ref } })));
       onApplied();
     } finally {
       setBusy(false);
     }
   };
 
-  if (!proposals) {
-    return <button onClick={compute}>Suggest links (name match)…</button>;
-  }
   return (
     <div className="galaxy-suggest">
       {proposals.length === 0 ? (
-        <div className="muted">No confident name matches found.</div>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <span className="muted">No confident name matches found.</span>
+          <button className="link" onClick={onClose}>close</button>
+        </div>
       ) : (
         <>
           <table>
             <tbody>
-              {proposals.map((p) => (
+              {proposals.map((p, i) => (
                 <tr key={p.item.ref}>
+                  <td><input type="checkbox" checked={checked.has(i)} onChange={() => toggle(i)} /></td>
                   <td>{KIND_LABELS[p.item.kind]} <strong>{p.item.name}</strong></td>
                   <td>→</td>
                   <td>{p.entryName}</td>
@@ -235,10 +258,123 @@ function SuggestLinksTool({ index, entries, linksByRef, onApplied }) {
             </tbody>
           </table>
           <div className="row">
-            <button onClick={apply} disabled={busy}>Link all {proposals.length}</button>
-            <button className="link" onClick={() => setProposals(null)}>cancel</button>
+            <button onClick={apply} disabled={busy || !checked.size}>Link selected ({checked.size})</button>
+            <button className="link" onClick={onClose}>cancel</button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// Faction-colored system dots on a pan/zoom canvas, sector polygons as
+// faint outlines, hyperlanes as thin lines — same drawing primitives
+// GalaxyGen itself uses (Docs/10-galaxy-mapgen.md §2-3), restyled to this
+// app's own look rather than borrowing GalaxyGen's toolbar/UI chrome.
+function MapView({ onOpenCampaignEntry }) {
+  const [map, setMap] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
+  const svgRef = useRef(null);
+  const dragRef = useRef(null);
+
+  useEffect(() => {
+    api("/galaxy/map").then(setMap).catch(() => setMap(null));
+    api("/campaign").then(setEntries).catch(() => setEntries([]));
+    api("/galaxy/links").then(setLinks).catch(() => setLinks([]));
+  }, []);
+
+  const linksByRef = useMemo(() => Object.fromEntries(links.map((l) => [l.galaxy_ref, l])), [links]);
+  const entriesById = useMemo(() => Object.fromEntries(entries.map((e) => [e.id, e])), [entries]);
+  const factionColor = useMemo(() => Object.fromEntries((map?.factions || []).map((f) => [f.ref.slice(8), f.color])), [map]);
+  const posBySlug = useMemo(() => {
+    const out = {};
+    for (const s of map?.systems || []) out[s.ref.slice(7)] = s;
+    return out;
+  }, [map]);
+
+  if (!map) return <div className="muted">Loading map…</div>;
+
+  const w = map.bounds?.width || 1000, h = map.bounds?.height || 1000;
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setView((v) => ({ ...v, scale: Math.min(8, Math.max(0.5, v.scale * factor)) }));
+  };
+  const onPointerDown = (e) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: view.x, origY: view.y };
+  };
+  const onPointerMove = (e) => {
+    if (!dragRef.current) return;
+    const dx = (e.clientX - dragRef.current.startX) / view.scale;
+    const dy = (e.clientY - dragRef.current.startY) / view.scale;
+    setView((v) => ({ ...v, x: dragRef.current.origX - dx, y: dragRef.current.origY - dy }));
+  };
+  const onPointerUp = () => { dragRef.current = null; };
+
+  const vw = w / view.scale, vh = h / view.scale;
+  const viewBox = `${view.x} ${view.y} ${vw} ${vh}`;
+
+  const selectedEntry = selected && linksByRef[selected.ref] ? entriesById[linksByRef[selected.ref].id] : null;
+
+  return (
+    <div className="galaxy-map">
+      <svg
+        ref={svgRef}
+        viewBox={viewBox}
+        className="galaxy-map-svg"
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      >
+        {map.sectors.map((s) => (
+          <polygon key={s.ref} points={s.points.map((p) => p.join(",")).join(" ")} className="galaxy-map-sector" />
+        ))}
+        {map.hyperlanes.map((hl, i) => {
+          const a = posBySlug[hl.a], b = posBySlug[hl.b];
+          if (!a || !b) return null;
+          return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="galaxy-map-lane" />;
+        })}
+        {map.systems.map((s) => (
+          <circle
+            key={s.ref}
+            cx={s.x} cy={s.y}
+            r={2 + s.important * 5}
+            fill={s.owner ? factionColor[s.owner] || "var(--accent)" : "var(--text-muted)"}
+            className={`galaxy-map-system${selected?.ref === s.ref ? " selected" : ""}`}
+            onClick={() => setSelected({ ...s, kind: "system" })}
+          >
+            <title>{s.name}</title>
+          </circle>
+        ))}
+      </svg>
+      <div className="galaxy-map-legend">
+        {map.factions.map((f) => (
+          <span key={f.ref} className="row" style={{ gap: 5 }}>
+            <span className="galaxy-map-swatch" style={{ background: f.color }} />
+            {f.name}
+          </span>
+        ))}
+      </div>
+      {selected && (
+        <div className="galaxy-map-info">
+          <strong>{selected.name}</strong>
+          {selected.sector && <span className="muted small"> · sector {selected.sector}</span>}
+          <div style={{ marginTop: 6 }}>
+            <LinkCell
+              item={selected}
+              linkedEntry={selectedEntry}
+              entries={entries}
+              onOpenCampaignEntry={onOpenCampaignEntry}
+              onLinked={() => { api("/campaign").then(setEntries); api("/galaxy/links").then(setLinks); }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -252,6 +388,8 @@ export default function Galaxy({ onOpenCampaignEntry }) {
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
   const [showBackground, setShowBackground] = useState(false);
+  const [view, setView] = useState("list");
+  const [proposals, setProposals] = useState(null);
 
   const load = () => {
     api("/galaxy").then(setProject).catch(() => setProject(null));
@@ -288,31 +426,56 @@ export default function Galaxy({ onOpenCampaignEntry }) {
     <div className="galaxy-view">
       <h2>Galaxy</h2>
       <ImportPanel project={project} onImported={load} />
-      <div className="row" style={{ margin: "10px 0", gap: 10, flexWrap: "wrap" }}>
-        <input placeholder="Search…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
-          <option value="all">All kinds</option>
-          {Object.keys(KIND_LABELS).map((k) => <option key={k} value={k}>{KIND_LABELS[k]}s</option>)}
-        </select>
-        <label className="row" style={{ gap: 4 }}>
-          <input type="checkbox" checked={showBackground} onChange={(e) => setShowBackground(e.target.checked)} />
-          show background actors
-        </label>
-        <SuggestLinksTool index={index} entries={entries} linksByRef={linksByRef} onApplied={load} />
+      <div className="tab-row">
+        <button className={view === "list" ? "active" : ""} onClick={() => setView("list")}>List</button>
+        <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}>Map</button>
       </div>
-      <div className="galaxy-list">
-        {visible.map((item) => (
-          <EntityRow
-            key={item.ref}
-            item={item}
-            linkedEntry={linksByRef[item.ref] ? entriesById[linksByRef[item.ref].id] || linksByRef[item.ref] : null}
-            entries={entries}
-            onOpenCampaignEntry={onOpenCampaignEntry}
-            onLinked={load}
-          />
-        ))}
-        {visible.length === 0 && <div className="muted">No entities match.</div>}
-      </div>
+
+      {view === "map" ? (
+        <MapView onOpenCampaignEntry={onOpenCampaignEntry} />
+      ) : (
+        <>
+          <div className="row galaxy-toolbar">
+            <input placeholder="Search…" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
+              <option value="all">All kinds</option>
+              {Object.keys(KIND_LABELS).map((k) => <option key={k} value={k}>{KIND_LABELS[k]}s</option>)}
+            </select>
+            <label className="row" style={{ gap: 4 }}>
+              <input type="checkbox" checked={showBackground} onChange={(e) => setShowBackground(e.target.checked)} />
+              show background actors
+            </label>
+            <button
+              className="link"
+              onClick={() => setProposals(computeProposals(index, entries, linksByRef))}
+            >
+              Suggest links (name match)…
+            </button>
+          </div>
+
+          {proposals && (
+            <SuggestLinksPanel
+              proposals={proposals}
+              onClose={() => setProposals(null)}
+              onApplied={() => { setProposals(null); load(); }}
+            />
+          )}
+
+          <div className="galaxy-list">
+            {visible.map((item) => (
+              <EntityRow
+                key={item.ref}
+                item={item}
+                linkedEntry={linksByRef[item.ref] ? entriesById[linksByRef[item.ref].id] || linksByRef[item.ref] : null}
+                entries={entries}
+                onOpenCampaignEntry={onOpenCampaignEntry}
+                onLinked={load}
+              />
+            ))}
+            {visible.length === 0 && <div className="muted">No entities match.</div>}
+          </div>
+        </>
+      )}
     </div>
   );
 }
