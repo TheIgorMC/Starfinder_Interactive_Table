@@ -651,7 +651,7 @@ the SF1e-top `Supercolossal` size, an inhabitant `population`, and free-text
 First user: "Gemini", an independent commercial/scientific city-ship
 (2.2 billion inhabitants, hangar space for dozens of the largest haulers)
 captained by the actor Primarch Killis Yurevich. Custom models are created via
-the MCP `create_custom_ship_model` tool; there's no browser form for them yet.
+the MCP `create_custom_ship_model` tool; or the "New custom ship model" form on the Companies tab.
 
 **UI**: a new top-level **Companies** tab (`App.jsx`/`Toolbar.jsx`/
 `SectorList.jsx`) — a company card (name, kind/scale, parent faction, home
