@@ -14,7 +14,11 @@ const TOOLS = [
 // Split out of one long-scrolling sidebar (Tool/Field/Brush/Generate/
 // Hyperlanes/Factions/Background actors/Layers/Status/Project/AI index all
 // stacked at once) into panels behind the app's top-level tab bar — each
-// one shows only what's relevant to what the GM is doing right now.
+// one shows only what's relevant to what the GM is doing right now. Every
+// section below is a native <details>, not a plain <section> — a GM
+// flagged the panel as "the looooong stack of stuff" once Fleets/Companies
+// joined the pile, so each one collapses independently (Tool/Field open by
+// default since they're used constantly; Layers defaults closed).
 export function DrawPanel({
   tool,
   setTool,
@@ -34,8 +38,8 @@ export function DrawPanel({
 }) {
   return (
     <>
-      <section>
-        <h3>Tool</h3>
+      <details className="gg-section" open>
+        <summary>Tool</summary>
         <div className="gg-tool-row">
           {TOOLS.map((t) => (
             <button
@@ -60,10 +64,10 @@ export function DrawPanel({
           {tool === "select" && "Click a system, faction seed, or a sector to select it (systems, then factions, take priority when close together)."}
           {tool === "pan" && "Left-drag to pan. (Middle-drag pans in any tool.)"}
         </p>
-      </section>
+      </details>
 
-      <section>
-        <h3>Field</h3>
+      <details className="gg-section" open>
+        <summary>Field</summary>
         <select value={activeField} onChange={(e) => setActiveField(e.target.value)}>
           {FIELD_DEFS.map((f) => (
             <option key={f.key} value={f.key}>{f.label}</option>
@@ -77,11 +81,11 @@ export function DrawPanel({
           />
           Show field heatmap
         </label>
-      </section>
+      </details>
 
       {tool === "brush" && (
-        <section>
-          <h3>Brush</h3>
+        <details className="gg-section" open>
+          <summary>Brush</summary>
           <label className="small muted">Radius ({brush.radius.toFixed(0)} units)</label>
           <input
             type="range"
@@ -111,11 +115,11 @@ export function DrawPanel({
           {!selectedSectorId && (
             <p className="muted small">Select a sector first to enable constraining.</p>
           )}
-        </section>
+        </details>
       )}
 
-      <section>
-        <h3>Layers</h3>
+      <details className="gg-section">
+        <summary>Layers</summary>
         <label className="gg-checkbox">
           <input type="checkbox" checked={showSectors} onChange={(e) => setShowSectors(e.target.checked)} />
           Show sector boundaries
@@ -124,7 +128,7 @@ export function DrawPanel({
           <input type="checkbox" checked={showFactions} onChange={(e) => setShowFactions(e.target.checked)} />
           Show faction territory
         </label>
-      </section>
+      </details>
     </>
   );
 }
@@ -150,8 +154,8 @@ export function GeneratePanel({
 }) {
   return (
     <>
-      <section>
-        <h3>Systems</h3>
+      <details className="gg-section" open>
+        <summary>Systems</summary>
         <label className="small muted">Min spacing ({spacing.min} units)</label>
         <input
           type="range"
@@ -183,10 +187,10 @@ export function GeneratePanel({
         >
           Redistribute positions
         </button>
-      </section>
+      </details>
 
-      <section>
-        <h3>Planets</h3>
+      <details className="gg-section">
+        <summary>Planets</summary>
         <p className="small muted">
           Rerolls every unlocked system's bodies (planets, moons, belts,
           stations) in place — positions, names, and every other rolled
@@ -195,10 +199,10 @@ export function GeneratePanel({
         <button disabled={systemCount === 0} onClick={onGeneratePlanets}>
           Generate planets
         </button>
-      </section>
+      </details>
 
-      <section>
-        <h3>Hyperlanes</h3>
+      <details className="gg-section">
+        <summary>Hyperlanes</summary>
         <p className="small muted">
           Delaunay + Gabriel-graph pruning between systems, thickened in
           areas where the Hyperlane density field is painted high, with a
@@ -208,10 +212,10 @@ export function GeneratePanel({
           Generate hyperlanes
         </button>
         <p className="small muted">{hyperlaneCount} hyperlane{hyperlaneCount === 1 ? "" : "s"}.</p>
-      </section>
+      </details>
 
-      <section>
-        <h3>Factions</h3>
+      <details className="gg-section">
+        <summary>Factions</summary>
         <p className="small muted">
           Place major faction seeds with the Faction tool (Draw tab), then
           generate to auto-seed small border factions in any low-coverage
@@ -222,10 +226,10 @@ export function GeneratePanel({
           Generate factions
         </button>
         <p className="small muted">{factionCount} faction{factionCount === 1 ? "" : "s"}.</p>
-      </section>
+      </details>
 
-      <section>
-        <h3>Background actors</h3>
+      <details className="gg-section">
+        <summary>Background actors</summary>
         <p className="small muted">
           Auto-seeds cheap background people (§6.1) — density scales with
           each system's population and any faction contest there. Run this
@@ -238,10 +242,10 @@ export function GeneratePanel({
         <p className="small muted">
           {backgroundActorCount} background actor{backgroundActorCount === 1 ? "" : "s"}.
         </p>
-      </section>
+      </details>
 
-      <section>
-        <h3>Fleets</h3>
+      <details className="gg-section">
+        <summary>Fleets</summary>
         <p className="small muted">
           Ship models are a galaxy-wide catalog (manufacturer + hull), not
           placed per-system — generate this first. Companies (cargo lines,
@@ -259,7 +263,7 @@ export function GeneratePanel({
         <p className="small muted">
           {shipModelCount} ship model{shipModelCount === 1 ? "" : "s"} · {companyCount} compan{companyCount === 1 ? "y" : "ies"}.
         </p>
-      </section>
+      </details>
     </>
   );
 }
@@ -283,8 +287,8 @@ export function ProjectPanel({
 
   return (
     <>
-      <section className="gg-status">
-        <h3>Status</h3>
+      <details className="gg-section gg-status" open>
+        <summary>Status</summary>
         <p className="small muted">Seed: {project.seed}</p>
         <p className="small muted">
           Bounds: {project.bounds.width} × {project.bounds.height}
@@ -294,10 +298,10 @@ export function ProjectPanel({
             ? `Cursor: (${hoverInfo.wx.toFixed(0)}, ${hoverInfo.wy.toFixed(0)}) — ${activeField}: ${hoverInfo.value.toFixed(2)}`
             : "Cursor: —"}
         </p>
-      </section>
+      </details>
 
-      <section>
-        <h3>Project</h3>
+      <details className="gg-section" open>
+        <summary>Project</summary>
         <div className="gg-tool-row">
           <button onClick={() => setShowNewForm((s) => !s)}>New</button>
           <button onClick={onDownloadProject}>Save .json</button>
@@ -336,10 +340,10 @@ export function ProjectPanel({
           Export SDF
         </button>
         {exportStatus && <p className="small muted">{exportStatus}</p>}
-      </section>
+      </details>
 
-      <section>
-        <h3>AI index</h3>
+      <details className="gg-section">
+        <summary>AI index</summary>
         <p className="small muted">
           A compact per-entity summary (name, tags, rough stats — no full
           records) for an LLM's broad/coherence pass (§9.3) to reason over
@@ -348,7 +352,7 @@ export function ProjectPanel({
           to paste straight into a chat today.
         </p>
         <button onClick={onDownloadIndex}>Download AI index</button>
-      </section>
+      </details>
     </>
   );
 }

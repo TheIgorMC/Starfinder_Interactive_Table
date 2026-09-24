@@ -81,7 +81,7 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
   right: -4px;
 }
 
-.gg-panel section, .gg-panel > h3 { margin-bottom: 18px; }
+.gg-panel section, .gg-panel > h3, .gg-panel .gg-section { margin-bottom: 18px; }
 .gg-panel h3 {
   font-size: 11px;
   text-transform: uppercase;
@@ -89,6 +89,20 @@ input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; }
   color: #7c8894;
   margin: 0 0 8px;
 }
+/* Every Draw/Generate/Project-panel section is a <details> now (a GM
+   flagged the panel as one long stacked list once Fleets/Companies joined
+   it) — each collapses independently instead of always showing everything
+   at once. `summary` gets the same look the old plain <h3> heading had. */
+.gg-panel .gg-section > summary {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7c8894;
+  cursor: pointer;
+  user-select: none;
+}
+.gg-panel .gg-section[open] > summary { margin-bottom: 8px; }
+.gg-panel .gg-section > summary::marker { color: #4a5560; }
 
 .gg-tool-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .gg-tool-row button { flex: 1 1 auto; }
