@@ -421,6 +421,13 @@ export default function SectorList({
 
 function SystemCard({ system, actors, onClose, onUpdate }) {
   const localActors = actors.filter((a) => a.location === system.slug);
+  // Selections persist across tabs on purpose (a system/faction/actor/org/
+  // company you picked earlier stays visible while you work elsewhere) —
+  // but that means several of these cards can be stacked at once. A local
+  // collapse toggle lets a GM shrink whichever ones aren't the current
+  // focus down to one line, without losing the selection outright (that's
+  // what Close is for).
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <div className="gg-new-form">
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -430,71 +437,78 @@ function SystemCard({ system, actors, onClose, onUpdate }) {
           style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
           title="Rename this system — handy for hand-curating a specific system rather than leaving it procedurally named"
         />
-        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+        <button onClick={() => setCollapsed((c) => !c)} title={collapsed ? "Expand this card" : "Collapse this card to one line"}>
+          {collapsed ? "Expand" : "Collapse"}
+        </button>
+        <button onClick={onClose} title="Close this card — deselects it, doesn't delete anything">Close</button>
       </div>
-      <label className="gg-checkbox">
-        <input
-          type="checkbox"
-          checked={!!system.locked}
-          onChange={(e) => onUpdate(system.id, { locked: e.target.checked })}
-        />
-        Locked (survives "Generate systems" — position, name, everything
-        stays put; new systems just fill in around it)
-      </label>
-      <label className="small muted">
-        Importance ({(Number(system.important) || 0).toFixed(2)}) — higher
-        shows its label at a lower zoom; 1.00 always shows it
-      </label>
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.05"
-        value={Number(system.important) || 0}
-        onChange={(e) => onUpdate(system.id, { important: Number(e.target.value), locked: true })}
-      />
-      <button
-        style={{ width: "100%", marginBottom: 8 }}
-        onClick={() => onUpdate(system.id, { important: 1, locked: true })}
-      >
-        Mark as landmark (1.00)
-      </button>
-      <p className="small muted">
-        {system.starType} · {system.population}
-        {system.stationOnly ? " · station/outpost, no colony" : ""}
-      </p>
-      <p className="small muted">Sector: {system.sector}</p>
-      <p className="small muted">Dominion security: {system.security.dominion.toFixed(2)}</p>
-      {system.control && (
-        <p className="small muted">
-          Control:{" "}
-          {system.control.owner
-            ? system.control.owner === "dominion"
-              ? "Dominion (uncontested)"
-              : system.control.owner
-            : system.control.contestedBy.length > 0
-              ? `contested — ${system.control.contestedBy.map((c) => `${c.faction} ${(c.share * 100).toFixed(0)}%`).join(", ")}`
-              : "unclaimed"}
-        </p>
+      {!collapsed && (
+        <>
+          <label className="gg-checkbox">
+            <input
+              type="checkbox"
+              checked={!!system.locked}
+              onChange={(e) => onUpdate(system.id, { locked: e.target.checked })}
+            />
+            Locked (survives "Generate systems" — position, name, everything
+            stays put; new systems just fill in around it)
+          </label>
+          <label className="small muted">
+            Importance ({(Number(system.important) || 0).toFixed(2)}) — higher
+            shows its label at a lower zoom; 1.00 always shows it
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={Number(system.important) || 0}
+            onChange={(e) => onUpdate(system.id, { important: Number(e.target.value), locked: true })}
+          />
+          <button
+            style={{ width: "100%", marginBottom: 8 }}
+            onClick={() => onUpdate(system.id, { important: 1, locked: true })}
+          >
+            Mark as landmark (1.00)
+          </button>
+          <p className="small muted">
+            {system.starType} · {system.population}
+            {system.stationOnly ? " · station/outpost, no colony" : ""}
+          </p>
+          <p className="small muted">Sector: {system.sector}</p>
+          <p className="small muted">Dominion security: {system.security.dominion.toFixed(2)}</p>
+          {system.control && (
+            <p className="small muted">
+              Control:{" "}
+              {system.control.owner
+                ? system.control.owner === "dominion"
+                  ? "Dominion (uncontested)"
+                  : system.control.owner
+                : system.control.contestedBy.length > 0
+                  ? `contested — ${system.control.contestedBy.map((c) => `${c.faction} ${(c.share * 100).toFixed(0)}%`).join(", ")}`
+                  : "unclaimed"}
+            </p>
+          )}
+          {system.security.faction != null && (
+            <p className="small muted">Faction security: {system.security.faction.toFixed(2)}</p>
+          )}
+          {system.warChance != null && (
+            <p className="small muted">War chance: {(system.warChance * 100).toFixed(0)}%</p>
+          )}
+          <p className="small muted">Export: {system.export.join(", ")}</p>
+          <p className="small muted">Import: {system.import.join(", ")}</p>
+          <p className="small muted">
+            Hyperlanes: {system.hyperlanes.length > 0 ? system.hyperlanes.join(", ") : "none yet"}
+          </p>
+          <BodiesSection system={system} onUpdate={onUpdate} />
+          {localActors.length > 0 && (
+            <p className="small muted">
+              Actors here: {localActors.map((a) => a.name).join(", ")}
+            </p>
+          )}
+          {system.note && <p className="small muted">{system.note}</p>}
+        </>
       )}
-      {system.security.faction != null && (
-        <p className="small muted">Faction security: {system.security.faction.toFixed(2)}</p>
-      )}
-      {system.warChance != null && (
-        <p className="small muted">War chance: {(system.warChance * 100).toFixed(0)}%</p>
-      )}
-      <p className="small muted">Export: {system.export.join(", ")}</p>
-      <p className="small muted">Import: {system.import.join(", ")}</p>
-      <p className="small muted">
-        Hyperlanes: {system.hyperlanes.length > 0 ? system.hyperlanes.join(", ") : "none yet"}
-      </p>
-      <BodiesSection system={system} onUpdate={onUpdate} />
-      {localActors.length > 0 && (
-        <p className="small muted">
-          Actors here: {localActors.map((a) => a.name).join(", ")}
-        </p>
-      )}
-      {system.note && <p className="small muted">{system.note}</p>}
     </div>
   );
 }
@@ -533,6 +547,7 @@ function BodiesSection({ system, onUpdate }) {
 
 function FactionCard({ faction, factions, onUpdate, onClose }) {
   const [newCrime, setNewCrime] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
   const toleratedCrimes = faction.toleratedCrimes || [];
   const relationships = faction.relationships || {};
   const others = factions.filter((f) => f.id !== faction.id);
@@ -541,8 +556,13 @@ function FactionCard({ faction, factions, onUpdate, onClose }) {
     <div className="gg-new-form">
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <strong>{faction.name}</strong>
-        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+        <button onClick={() => setCollapsed((c) => !c)} title={collapsed ? "Expand this card" : "Collapse this card to one line"}>
+          {collapsed ? "Expand" : "Collapse"}
+        </button>
+        <button onClick={onClose} title="Close this card — deselects it, doesn't delete anything">Close</button>
       </div>
+      {!collapsed && (
+      <>
       <p className="small muted">
         {faction.government}{faction.origin === "generated" ? " · auto-seeded border faction" : ""}
       </p>
@@ -640,6 +660,8 @@ function FactionCard({ faction, factions, onUpdate, onClose }) {
           </div>
         );
       })}
+      </>
+      )}
     </div>
   );
 }
@@ -825,6 +847,7 @@ function NewActorForm({ factions, organizations, companies, systems, onCreate })
 
 function ActorCard({ actor, factions, organizations, companies, systems, onUpdate, onClose }) {
   const locationSystem = systems.find((s) => s.slug === actor.location);
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <div className="gg-new-form">
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -833,8 +856,13 @@ function ActorCard({ actor, factions, organizations, companies, systems, onUpdat
           onChange={(e) => onUpdate(actor.id, { name: e.target.value })}
           style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
         />
-        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+        <button onClick={() => setCollapsed((c) => !c)} title={collapsed ? "Expand this card" : "Collapse this card to one line"}>
+          {collapsed ? "Expand" : "Collapse"}
+        </button>
+        <button onClick={onClose} title="Close this card — deselects it, doesn't delete anything">Close</button>
       </div>
+      {!collapsed && (
+      <>
       <p className="small muted">
         {actor.kind} · {actor.role}{actor.origin === "generated" ? " · background" : ""}
       </p>
@@ -905,6 +933,8 @@ function ActorCard({ actor, factions, organizations, companies, systems, onUpdat
           </div>
         );
       })}
+      </>
+      )}
     </div>
   );
 }
@@ -998,6 +1028,7 @@ function NewOrgForm({ factions, sectors, systems, onCreate }) {
 
 function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose }) {
   const members = actors.filter((a) => a.affiliation === `party:${org.slug}`);
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <div className="gg-new-form">
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -1006,8 +1037,13 @@ function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose })
           onChange={(e) => onUpdate(org.id, { name: e.target.value })}
           style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
         />
-        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+        <button onClick={() => setCollapsed((c) => !c)} title={collapsed ? "Expand this card" : "Collapse this card to one line"}>
+          {collapsed ? "Expand" : "Collapse"}
+        </button>
+        <button onClick={onClose} title="Close this card — deselects it, doesn't delete anything">Close</button>
       </div>
+      {!collapsed && (
+      <>
       <p className="small muted">{org.ideology}</p>
       <label className="small muted">Parent faction</label>
       <select value={org.parentFaction} onChange={(e) => onUpdate(org.id, { parentFaction: e.target.value })}>
@@ -1054,6 +1090,8 @@ function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose })
           ? members.map((a) => a.name).join(", ")
           : "none yet — set an actor's affiliation to this organization"}
       </p>
+      </>
+      )}
     </div>
   );
 }
@@ -1232,6 +1270,7 @@ function NewShipModelForm({ onCreate }) {
 function CompanyCard({ company, shipModels, factions, systems, sectors, onUpdate, onClose }) {
   const modelsBySlug = new Map(shipModels.map((m) => [m.slug, m]));
   const fleetTotal = company.fleet.reduce((n, f) => n + f.count, 0);
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <div className="gg-new-form">
       <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -1240,8 +1279,13 @@ function CompanyCard({ company, shipModels, factions, systems, sectors, onUpdate
           onChange={(e) => onUpdate(company.id, { name: e.target.value })}
           style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
         />
-        <button className="gg-danger" onClick={onClose} title="Deselect">×</button>
+        <button onClick={() => setCollapsed((c) => !c)} title={collapsed ? "Expand this card" : "Collapse this card to one line"}>
+          {collapsed ? "Expand" : "Collapse"}
+        </button>
+        <button onClick={onClose} title="Close this card — deselects it, doesn't delete anything">Close</button>
       </div>
+      {!collapsed && (
+      <>
       <p className="small muted">
         {company.kind} · {company.scale}{company.origin === "generated" ? " · auto-seeded" : ""}
       </p>
@@ -1296,6 +1340,8 @@ function CompanyCard({ company, shipModels, factions, systems, sectors, onUpdate
           );
         })}
       </ul>
+      </>
+      )}
     </div>
   );
 }
