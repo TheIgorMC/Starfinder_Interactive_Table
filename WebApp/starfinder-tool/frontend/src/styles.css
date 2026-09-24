@@ -297,6 +297,10 @@ input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; margin: 0
 .media-item-label { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-item-actions { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
 
+.bulk-portrait-review { margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); }
+.bulk-portrait-review h4 { margin: 0 0 8px; font: 600 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
+.bulk-portrait-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; background: #06070f; flex: none; }
+
 /* Music/SFX — a file-explorer-style folder sidebar + a compact one-row-
    per-track list (the old card grid, ~260px per track, stopped making
    sense past a handful of tracks). Drag a track row onto a sidebar folder

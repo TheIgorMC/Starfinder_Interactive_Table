@@ -110,6 +110,43 @@ r.post("/import-tgn", requireGM, uploadTgn.single("file"), async (req, res) => {
   res.json(result);
 });
 
+// A NPC entry's body often carries an inline reference picture straight
+// from the original import — a plain markdown image the GM (or Tangent)
+// dropped into the text, not anything uploaded through this app. This is
+// a ONE-WAY promotion: for every NPC with no image_id set yet, pull the
+// first markdown image URL out of its body and set that as the entry's
+// own default image (creating a link-based portrait media row for it, or
+// reusing one that already points at the same url). Deliberately never
+// touches an entry that already has an image — this only fills gaps, it
+// never overwrites an image a GM picked by hand. Distinct on purpose from
+// a character's portrait_url (the tablet's own png, uploaded separately)
+// — this is the "what a player sees clicking through on their phone"
+// reference picture, not the transparent tablet art.
+const BODY_IMAGE_RE = /!\[[^\]]*\]\(([^)\s]+)\)/;
+r.post("/promote-body-images", requireGM, async (req, res) => {
+  const { rows: npcs } = await pool.query(
+    "SELECT id, name, body FROM campaign_entries WHERE type='npc' AND image_id IS NULL"
+  );
+  let updated = 0;
+  for (const n of npcs) {
+    const m = BODY_IMAGE_RE.exec(n.body || "");
+    if (!m) continue;
+    const url = m[1];
+    const { rows: existing } = await pool.query("SELECT id FROM media WHERE category='portrait' AND url=$1", [url]);
+    let mediaId = existing[0]?.id;
+    if (!mediaId) {
+      const { rows: inserted } = await pool.query(
+        "INSERT INTO media (category, url, label) VALUES ('portrait', $1, $2) RETURNING id",
+        [url, n.name]
+      );
+      mediaId = inserted[0].id;
+    }
+    await pool.query("UPDATE campaign_entries SET image_id=$1 WHERE id=$2", [mediaId, n.id]);
+    updated++;
+  }
+  res.json({ scanned: npcs.length, updated });
+});
+
 // A handful of Cyrillic/Greek letters that render pixel-for-pixel
 // identical to a Latin one at normal text sizes ("Gammon Industries" typed
 // twice, one of them with a stray Cyrillic а instead of Latin a, reads as

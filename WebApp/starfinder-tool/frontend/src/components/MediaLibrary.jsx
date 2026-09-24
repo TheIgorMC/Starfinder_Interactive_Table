@@ -28,6 +28,119 @@ async function upload(category, file, label) {
 
 const isVideo = (m) => /\.(mp4|webm|mov|m4v)$/i.test(m.filename || m.url || "");
 
+// "kaeth_vor_final_v2.png" vs character name "Kaeth Vor" — strip the
+// extension/punctuation/versioning noise a real batch of portrait exports
+// always carries, then score by how much of one normalized string the
+// other covers (word-overlap), not just exact equality. Good enough for
+// "propose a match, let the GM confirm/correct it" — never auto-applies
+// anything on its own.
+function normalizeForMatch(s) {
+  return (s || "")
+    .normalize("NFKD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/[_\-]+/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function nameMatchScore(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.8;
+  const wa = new Set(a.split(" ")), wb = new Set(b.split(" "));
+  const overlap = [...wa].filter((w) => wb.has(w)).length;
+  const union = new Set([...wa, ...wb]).size;
+  return union ? overlap / union : 0;
+}
+function bestCharacterMatch(filename, characters) {
+  const norm = normalizeForMatch(filename);
+  let best = null, bestScore = 0;
+  for (const c of characters) {
+    const score = nameMatchScore(norm, normalizeForMatch(c.name));
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return bestScore >= 0.3 ? best : null;
+}
+
+// Upload many portrait files at once, then propose a character match per
+// file from its filename — a GM correction/skip is one dropdown away
+// rather than a whole separate upload-then-attach round trip per image.
+function BulkPortraitImport({ characters, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [proposals, setProposals] = useState(null);
+  const [error, setError] = useState("");
+
+  const onFiles = async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = "";
+    if (!files.length) return;
+    setBusy(true);
+    setError("");
+    try {
+      const uploaded = [];
+      for (const file of files) uploaded.push(await upload("portrait", file, ""));
+      setProposals(uploaded.map((media) => ({ media, characterId: bestCharacterMatch(media.original_name, characters)?.id || "" })));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const apply = async () => {
+    setBusy(true);
+    try {
+      await Promise.all(
+        proposals.filter((p) => p.characterId).map((p) =>
+          api(`/characters/${p.characterId}`, { method: "PATCH", body: { portrait_url: p.media.url } })
+        )
+      );
+      setProposals(null);
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!proposals) {
+    return (
+      <div className="row" style={{ alignItems: "center" }}>
+        <label className="button-like">
+          {busy ? "Uploading…" : "Bulk import & match to characters…"}
+          <input type="file" accept="image/*" multiple onChange={onFiles} disabled={busy} hidden />
+        </label>
+        {error && <span className="pill bad">{error}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bulk-portrait-review">
+      <h4>Match each upload to a character</h4>
+      <ul className="sheet-list">
+        {proposals.map((p, i) => (
+          <li key={p.media.id} className="row" style={{ alignItems: "center", gap: 10 }}>
+            <img src={p.media.url} alt="" className="bulk-portrait-thumb" />
+            <span className="muted" style={{ minWidth: 180 }}>{p.media.original_name}</span>
+            <select
+              value={p.characterId}
+              onChange={(e) => setProposals((cur) => cur.map((x, j) => (j === i ? { ...x, characterId: e.target.value } : x)))}
+            >
+              <option value="">— skip —</option>
+              {characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </li>
+        ))}
+      </ul>
+      <div className="row">
+        <button onClick={apply} disabled={busy}>Apply</button>
+        <button className="link" onClick={() => setProposals(null)} disabled={busy}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 const UNFILED = "\0unfiled";
 
 const formatDuration = (secs) => {
@@ -202,8 +315,9 @@ export default function MediaLibrary() {
   const player = useMusicPlayer();
 
   const load = () => api(`/media?category=${category}`).then(setItems).catch(() => setItems([]));
+  const loadCharacters = () => api("/characters").then(setCharacters).catch(() => {});
   useEffect(() => { load(); setFolderFilter(""); setTagFilter(""); }, [category]);
-  useEffect(() => { if (category === "portrait") api("/characters").then(setCharacters).catch(() => {}); }, [category]);
+  useEffect(() => { if (category === "portrait") loadCharacters(); }, [category]);
 
   const onFile = async (e) => {
     const file = e.target.files?.[0];
@@ -331,6 +445,10 @@ export default function MediaLibrary() {
         )}
         {error && <span className="pill bad">{error}</span>}
       </div>
+
+      {category === "portrait" && (
+        <BulkPortraitImport characters={characters} onDone={() => { load(); loadCharacters(); }} />
+      )}
 
       {AUDIO_CATEGORIES.has(category) ? (
         <div className="track-explorer">

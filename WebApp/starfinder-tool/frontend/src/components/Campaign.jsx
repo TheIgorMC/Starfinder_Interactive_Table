@@ -142,6 +142,40 @@ function TgnImport({ onImported }) {
   );
 }
 
+// One-shot pass: for every NPC with no default image yet, promote the
+// first inline picture already in its body (see POST
+// /campaign/promote-body-images) into that slot. Only ever fills gaps —
+// safe to run repeatedly.
+function PromoteBodyImagesTool({ onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api("/campaign/promote-body-images", { method: "POST" });
+      setResult(r);
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="row" style={{ alignItems: "center" }}>
+      <button className="link" onClick={run} disabled={busy}>
+        {busy ? "Scanning…" : "Set NPC images from body pictures…"}
+      </button>
+      {result && (
+        <span className="pill ok">
+          {result.updated} of {result.scanned} NPCs without an image got one
+        </span>
+      )}
+    </div>
+  );
+}
+
 // Groups of same-type/same-name entries — usually from re-creating
 // (rather than editing) something in Tangent between exports, which gives
 // it a fresh id there and so imports as a new duplicate entry instead of
@@ -657,6 +691,7 @@ export default function Campaign({ onOpenCharacter }) {
 
       <div className="row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
         <TgnImport onImported={refreshAll} />
+        <PromoteBodyImagesTool onDone={refreshAll} />
         <DuplicatesTool onMerged={refreshAll} />
       </div>
 
