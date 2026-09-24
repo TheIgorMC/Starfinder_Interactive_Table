@@ -876,3 +876,20 @@ button.danger:hover { background: var(--danger-fill); border-color: var(--danger
   .review-layout { grid-template-columns: 1fr; }
   .review-editors { grid-template-columns: 1fr; }
 }
+
+.galaxy-view { display: flex; flex-direction: column; gap: 10px; }
+.galaxy-import, .galaxy-suggest {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 12px; background: var(--panel);
+}
+.galaxy-suggest table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+.galaxy-suggest td { padding: 3px 8px 3px 0; }
+.galaxy-list { display: flex; flex-direction: column; gap: 2px; max-height: 70vh; overflow-y: auto; }
+.galaxy-row {
+  display: grid; grid-template-columns: 110px 1fr 160px auto; align-items: center;
+  gap: 10px; padding: 6px 8px; border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border);
+}
+.galaxy-row:hover { background: var(--panel-strong); }
+.galaxy-row-kind { font: 600 10.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+.galaxy-row-name { font-weight: 600; }

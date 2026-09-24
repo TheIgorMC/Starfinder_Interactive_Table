@@ -14,6 +14,7 @@ import media from "./routes/media.js";
 import campaign from "./routes/campaign.js";
 import sessions from "./routes/sessions.js";
 import review from "./routes/review.js";
+import galaxy from "./routes/galaxy.js";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -31,6 +32,7 @@ app.use("/api/media", media);
 app.use("/api/campaign", campaign);
 app.use("/api/sessions", sessions);
 app.use("/api/review", review);
+app.use("/api/galaxy", galaxy);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

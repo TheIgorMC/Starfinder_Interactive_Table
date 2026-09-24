@@ -6,6 +6,7 @@ import SourcesConfig from "../components/SourcesConfig.jsx";
 import WealthLimitConfig from "../components/WealthLimitConfig.jsx";
 import MediaLibrary from "../components/MediaLibrary.jsx";
 import Campaign from "../components/Campaign.jsx";
+import Galaxy from "../components/Galaxy.jsx";
 import Characters from "../components/Characters.jsx";
 import Sessions from "../components/Sessions.jsx";
 import { useAuth } from "../auth.jsx";
@@ -74,6 +75,7 @@ const TABS = [
   { key: "scene", label: "Scene & Mood" },
   { key: "media", label: "Media Library" },
   { key: "campaign", label: "Campaign" },
+  { key: "galaxy", label: "Galaxy" },
   { key: "characters", label: "Characters" },
   { key: "sessions", label: "Sessions" },
   { key: "sources", label: "Sources" },
@@ -319,6 +321,9 @@ export default function GM() {
             focusEntryId={focusEntryId}
             onFocusHandled={() => setFocusEntryId(null)}
           />
+        )}
+        {tab === "galaxy" && (
+          <Galaxy onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }} />
         )}
         {tab === "characters" && (
           <Characters

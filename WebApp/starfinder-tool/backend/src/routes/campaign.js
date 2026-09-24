@@ -362,7 +362,7 @@ r.post("/", requireGM, async (req, res) => {
 
 r.patch("/:id", requireGM, async (req, res) => {
   const b = req.body ?? {};
-  const cols = ["type", "name", "body", "image_id", "event_date", "visible_to_players", "sort_order"].filter((f) => b[f] !== undefined);
+  const cols = ["type", "name", "body", "image_id", "event_date", "visible_to_players", "sort_order", "galaxy_ref"].filter((f) => b[f] !== undefined);
   if (!cols.length) return res.status(400).json({ error: "no fields" });
   const sets = cols.map((f, i) => `${f}=$${i + 1}`).join(",");
   const { rows } = await pool.query(
