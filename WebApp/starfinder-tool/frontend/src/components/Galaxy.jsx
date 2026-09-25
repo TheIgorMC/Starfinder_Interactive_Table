@@ -91,10 +91,13 @@ function ImportPanel({ project, onImported }) {
               {Object.entries(project.counts).map(([k, n]) => `${n} ${k}`).join(" · ")}
             </div>
           </div>
-          <label className="button-like">
-            {busy ? "Importing…" : "Re-import…"}
-            <input type="file" accept=".json,application/json" onChange={onFile} disabled={busy} hidden />
-          </label>
+          <span className="row" style={{ gap: 8 }}>
+            <a className="button-like" href="/api/galaxy/export" download>Download…</a>
+            <label className="button-like">
+              {busy ? "Importing…" : "Re-import…"}
+              <input type="file" accept=".json,application/json" onChange={onFile} disabled={busy} hidden />
+            </label>
+          </span>
         </div>
       ) : (
         <label className="button-like">

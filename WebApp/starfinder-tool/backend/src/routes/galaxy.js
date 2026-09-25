@@ -57,6 +57,19 @@ r.get("/", requireAuth, async (req, res) => {
   });
 });
 
+// The exact project JSON as it was last imported, for the GM to pull down,
+// edit in GalaxyGen (or by hand) and re-import — a round trip, not a
+// partial export. Filename mirrors the stored name so re-uploading the
+// same file is obvious.
+r.get("/export", requireAuth, async (req, res) => {
+  const project = await currentProject();
+  if (!project) return res.status(404).json({ error: "no galaxy project imported" });
+  const filename = `${project.name.replace(/[^a-z0-9_-]+/gi, "_")}.json`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", "application/json");
+  res.send(JSON.stringify(project.data));
+});
+
 r.post("/import", requireGM, uploadJson.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "no file" });
   let data;
