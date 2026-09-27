@@ -5,6 +5,7 @@ import SectorList from "./components/SectorList.jsx";
 import AIPanel from "./components/AIPanel.jsx";
 import OrreryView from "./components/OrreryView.jsx";
 import CityEditor from "./components/CityEditor.jsx";
+import GeneratorStub from "./components/GeneratorStub.jsx";
 import { createDefaultProject, normalizeProject, FIELD_DEFS } from "./lib/project.js";
 import { GRID_SIZE, paintGrid } from "./lib/grid.js";
 import { pointInPolygon } from "./lib/geometry.js";
@@ -43,6 +44,8 @@ const TABS = [
   { key: "generate", label: "Generate" },
   { key: "orrery", label: "Orrery" },
   { key: "cities", label: "Cities" },
+  { key: "cityGen", label: "City Gen" },
+  { key: "stationGen", label: "Station Gen" },
   { key: "sectors", label: "Sectors" },
   { key: "factions", label: "Factions" },
   { key: "actors", label: "Actors" },
@@ -1032,6 +1035,8 @@ export default function App() {
               onUpdateSystem={handleUpdateSystem}
             />
           )}
+          {activeTab === "cityGen" && <GeneratorStub kind="city" />}
+          {activeTab === "stationGen" && <GeneratorStub kind="station" />}
           {activeTab === "ai" && (
             <AIPanel
               settings={aiSettings}

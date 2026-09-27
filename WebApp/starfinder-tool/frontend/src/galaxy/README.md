@@ -24,3 +24,8 @@ Hidden districts are stripped server-side for players.
 
 `settlement.js` is shared verbatim with `GalaxyGen/src/lib/settlement.js`
 (the city layout editor) — keep the two copies identical.
+
+Settlement styles (`settlementStyle()` in `settlement.js`, see
+`Docs/15-settlement-generators.md`): only `outpost` (domes / floating
+platforms) is final. `city` and `station` render with the same layout
+flagged "provisional" until their GalaxyGen generators exist.

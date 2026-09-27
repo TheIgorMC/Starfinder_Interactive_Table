@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SettlementView, DISTRICT_TYPES, SETTLEMENT_TRANSIT } from "../lib/settlement.js";
+import { SettlementView, DISTRICT_TYPES, SETTLEMENT_TRANSIT, SETTLEMENT_STYLES, settlementStyle } from "../lib/settlement.js";
 import { slugify } from "../lib/slug.js";
 
 // City layout editor — authors a body's surface `sites` and each site's
@@ -160,6 +160,11 @@ export default function CityEditor({ systems, selectedSystem, onSelectSystem, on
                   <select value={site.kind || "city"} onChange={(e) => writeSite({ kind: e.target.value })}>{SITE_KINDS.map((k) => <option key={k}>{k}</option>)}</select>
                 </div>
               </div>
+              <label className="small muted">Layout style</label>
+              <select value={site.style || ""} onChange={(e) => writeSite({ style: e.target.value || undefined })}>
+                <option value="">auto ({SETTLEMENT_STYLES[settlementStyle(toViewBody(body), { id: site.slug, def: { ...site, style: undefined } })].n.toLowerCase()})</option>
+                {Object.entries(SETTLEMENT_STYLES).map(([k, v]) => <option key={k} value={k}>{v.n.toLowerCase()}{v.final ? "" : " (provisional — generator not built yet)"}</option>)}
+              </select>
               <label className="small muted">Slug (viewer URL id)</label>
               <input defaultValue={site.slug} key={site.slug} onBlur={(e) => e.target.value !== site.slug && setSlug(e.target.value)} />
               <label className="small muted">Description (shown under the name)</label>

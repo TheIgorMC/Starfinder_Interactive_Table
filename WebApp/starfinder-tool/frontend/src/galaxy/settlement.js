@@ -53,6 +53,24 @@ function allocModes(kind, n, r, allowed) {
   for (let i = out.length - 1; i > 0; i--) { const j = (r() * (i + 1)) | 0; [out[i], out[j]] = [out[j], out[i]]; }
   return out;
 }
+// Settlement styles (Docs/15-settlement-generators.md). Only `outpost` has
+// its real design here (domes / floating platforms). `city` and `station`
+// will get their own procedural generators (GalaxyGen City Gen / Station
+// Gen); until then they reuse this layout and render as "provisional".
+export const SETTLEMENT_STYLES = {
+  outpost: { n: "Outpost", final: true },
+  city: { n: "City", final: false },
+  station: { n: "Station", final: false },
+};
+export function settlementStyle(body, site) {
+  const def = site.def || null;
+  if (def && SETTLEMENT_STYLES[def.style]) return def.style;
+  if (body.k === "orbital station") return "station";
+  if ((body.t || []).includes("ecumenopolis")) return "city";
+  if (def && ["city", "government"].includes(def.kind)) return "city";
+  if (!def && site.id === "cap") return "city";
+  return "outpost";
+}
 const pinned = (d) => typeof d.x === "number" && typeof d.y === "number";
 
 // body: { s: slug, k: kind, t?: tags } · site: { id, type, def? } where def
@@ -146,7 +164,7 @@ export function layoutSettlement(body, site) {
   });
   const tr = rng(hash(body.s)), feat = [];
   for (let i = 0; i < 70; i++) feat.push({ x: (tr() - 0.5) * 2400, y: (tr() - 0.5) * 1800, r: 8 + Math.pow(tr(), 2.2) * 110, a: tr() * 6.28, s: tr() });
-  return { ds, edges, feat, gas, isX, ecu: (body.t || []).includes("ecumenopolis"), kind };
+  return { ds, edges, feat, gas, isX, ecu: (body.t || []).includes("ecumenopolis"), kind, style: settlementStyle(body, site) };
 }
 
 function localPoint(cv, e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
@@ -300,7 +318,9 @@ export class SettlementView {
       c.fillStyle = "rgba(120,255,160,.55)"; for (let q = 0; q < 6; q++) c.fillRect(p[0] - R * 0.4 + q * R * 0.16, p[1] - 3, R * 0.1, 6);
       return;
     }
-    const r = rng(d.seed), open = L.kind === "terrestrial world" && !L.isX;
+    // style dispatch: outposts are always domes (platforms on gas giants);
+    // city/station use the provisional generic look until their generators land
+    const r = rng(d.seed), open = L.style !== "outpost" && L.kind === "terrestrial world" && !L.isX;
     if (p[0] < -R - 40 || p[0] > W + R + 40 || p[1] < -R - 40 || p[1] > H + R + 40) return;
     if (L.gas) { // floating platform
       c.fillStyle = "rgba(8,10,14,.92)"; c.beginPath(); c.arc(p[0], p[1], R, 0, 7); c.fill();

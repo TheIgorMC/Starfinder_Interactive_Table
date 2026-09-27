@@ -25,6 +25,13 @@ identical): drag a district to pin it where the concept sketch has it
 Hidden districts never shift the visible layout, so players (who never
 receive them) see the same city as the GM.
 
+That dome layout is only the final design for **small outposts**. Real
+cities and orbital stations will get their own procedural generators — the
+**City Gen** and **Station Gen** tabs are placeholders for them for now
+(`src/lib/cityGen.js`, `src/lib/stationGen.js` are stubs); each site has a
+"Layout style" (auto / outpost / city / station). See
+`../Docs/15-settlement-generators.md`.
+
 **Phase 1** — canvas, density fields, sectors:
 - Pan/zoom 2D canvas over the galaxy bounds
 - Sector polygon drawing tool (click to place vertices, name + assign a
