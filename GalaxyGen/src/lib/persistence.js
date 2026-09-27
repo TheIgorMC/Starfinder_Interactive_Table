@@ -140,6 +140,9 @@ export function systemToEntry(system) {
         services: b.services ?? null,
         goods_handled: b.goodsHandled ?? null,
         tags: b.tags,
+        // Authored surface sites + city layouts (CityEditor.jsx) — rendered
+        // by the SIT galaxy viewer's planet/settlement views.
+        sites: b.sites ?? null,
       })),
       ...(system.note ? { note: system.note } : {}),
     },

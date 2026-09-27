@@ -13,6 +13,18 @@ in the Dockge stack. Stack decisions are independent of `../MapCreator`
 
 ## Status: Phase 6 underway (client-side AI integration), plus planet/body generation delivered out of order (§13 of the design doc)
 
+**City layouts + ARTS look (2026-09)** — the editor now uses the same
+"galactic cartography" palette/typography as the SIT web app's galaxy
+viewer (`../WebApp/starfinder-tool/frontend/src/galaxy/`), and a **Cities**
+tab authors each body's surface `sites` (name, lat/lon, transit modes,
+transit note) and their districts (type, hidden/GM-only + host, SIT ref).
+The layout preview is the viewer's own settlement renderer
+(`src/lib/settlement.js`, a verbatim copy of the web app's — keep them
+identical): drag a district to pin it where the concept sketch has it
+(stored as `x`/`y` on the district), "Auto-layout" unpins everything.
+Hidden districts never shift the visible layout, so players (who never
+receive them) see the same city as the GM.
+
 **Phase 1** — canvas, density fields, sectors:
 - Pan/zoom 2D canvas over the galaxy bounds
 - Sector polygon drawing tool (click to place vertices, name + assign a

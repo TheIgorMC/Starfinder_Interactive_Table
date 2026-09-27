@@ -4,6 +4,7 @@ import { DrawPanel, GeneratePanel, ProjectPanel } from "./components/Toolbar.jsx
 import SectorList from "./components/SectorList.jsx";
 import AIPanel from "./components/AIPanel.jsx";
 import OrreryView from "./components/OrreryView.jsx";
+import CityEditor from "./components/CityEditor.jsx";
 import { createDefaultProject, normalizeProject, FIELD_DEFS } from "./lib/project.js";
 import { GRID_SIZE, paintGrid } from "./lib/grid.js";
 import { pointInPolygon } from "./lib/geometry.js";
@@ -41,6 +42,7 @@ const TABS = [
   { key: "draw", label: "Draw" },
   { key: "generate", label: "Generate" },
   { key: "orrery", label: "Orrery" },
+  { key: "cities", label: "Cities" },
   { key: "sectors", label: "Sectors" },
   { key: "factions", label: "Factions" },
   { key: "actors", label: "Actors" },
@@ -891,8 +893,15 @@ export default function App() {
   return (
     <div className="galaxygen-app">
       <header className="gg-header">
-        <h1>Galaxy MapGen</h1>
-        <span className="muted small">Phase 6 — AI integration</span>
+        <svg width="30" height="30" viewBox="0 0 34 34" fill="none" stroke="#ff9a3c" strokeWidth="1.4" aria-hidden>
+          <circle cx="17" cy="17" r="15" strokeOpacity=".45" />
+          <ellipse cx="17" cy="17" rx="15" ry="5.5" transform="rotate(-28 17 17)" />
+          <circle cx="17" cy="17" r="3" fill="#ff9a3c" />
+        </svg>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <h1>GALAXY MAPGEN</h1>
+          <span className="gg-sub">Galactic cartography editor · seed {project.seed}</span>
+        </div>
       </header>
       <nav className="gg-tabbar">
         {TABS.map((t) => (
@@ -901,7 +910,8 @@ export default function App() {
           </button>
         ))}
       </nav>
-      <div className="gg-body" style={{ gridTemplateColumns: `1fr 6px ${rightWidth}px` }}>
+      {/* the city editor needs room for its layout preview */}
+      <div className="gg-body" style={{ gridTemplateColumns: `1fr 6px ${activeTab === "cities" ? Math.max(rightWidth, 440) : rightWidth}px` }}>
         <GalaxyCanvas
           project={project}
           tool={tool}
@@ -1007,6 +1017,20 @@ export default function App() {
                 </>
               )}
             </>
+          )}
+          {activeTab === "cities" && (
+            <CityEditor
+              systems={project.systems}
+              selectedSystem={selectedSystem}
+              onSelectSystem={(id) => {
+                setSelectedSystemId(id);
+                setSelectedSectorId(null);
+                setSelectedFactionId(null);
+                setSelectedActorId(null);
+                setSelectedOrgId(null);
+              }}
+              onUpdateSystem={handleUpdateSystem}
+            />
           )}
           {activeTab === "ai" && (
             <AIPanel
