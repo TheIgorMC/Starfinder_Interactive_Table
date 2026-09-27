@@ -48,28 +48,109 @@ GM-curated subset of character summaries — never full sheets or notes).
 
 ## Media library
 
-Maps, mood-screen images, token art, and character portraits, uploaded from
-the GM console's **Media Library** tab. Files land under the same
-`uploads/` volume already mounted at `/app/uploads` (i.e.
-`/mnt/data_ssd/nas_share/SIT/uploads/{map,mood,token,portrait}/` on the
-Pi) — no extra volume or setup needed. Uploaded images are served publicly
+Maps, mood-screen images, token art, character portraits, and music/SFX
+(files or links — see "Music & SFX" below), uploaded from the GM console's
+**Media Library** tab. Files land under the same `uploads/` volume already
+mounted at `/app/uploads` (i.e.
+`/mnt/data_ssd/nas_share/SIT/uploads/{map,mood,token,portrait,music,sfx}/`
+on the Pi, subfolders created automatically on first upload to a category)
+— no extra volume or setup needed. Uploaded images are served publicly
 (no login) since the projector/tablet displaying them have none either;
 nothing sensitive lives there.
 
 ## Campaign system
 
 The GM console's **Campaign** tab is a small in-house wiki: events,
-locations, NPCs, factions, and objects, each with a name/summary/body,
-an optional image (from the media library, not required — plenty of lore
-entries are just text), and freeform relationships to other entries (e.g.
-"member of", "located in", "owned by" — shown from both ends). Every entry
-defaults to GM-only; a "visible to players" checkbox reveals a specific one.
-This intentionally replaces having a separate external tool for campaign
-notes.
+locations, NPCs ("People"), factions, quests, and objects, each with a
+name/body (rendered as Markdown), an optional image (from the media
+library, not required — plenty of lore entries are just text), and
+relationships to other entries (e.g. "member of", "located in", "owned
+by" — shown from both ends, added via a search-then-pick picker rather
+than a flat dropdown). Every entry defaults to GM-only; a "visible to
+players" checkbox reveals a specific one. Wrap GM-only asides anywhere in
+an entry's body in `!!double bangs!!` — stripped automatically from
+whatever a non-GM sees (the player view, the tablet, the API response
+itself), so a secret can live inline in the same paragraph instead of a
+separate hidden field.
 
-The **Characters** sub-tab covers both real PCs (from the `characters`
-table, importable from Hephaistos below) and NPCs (campaign entries) side
-by side, since both are "characters" from a GM's perspective.
+Entries of the same type that reference each other with a recognized
+hierarchy relation (e.g. "located in") nest into a real tree in the list
+sidebar (`frontend/src/lib/campaignTree.js`), Goblin's-Notebook-style, with
+natural-sort ordering and a manual drag-free reorder (▲▼ arrows, persisted
+via `sort_order`) for anything that shouldn't sort alphabetically. A
+**Find duplicates** tool catches near-identical entries (Unicode homoglyph/
+diacritic folding included) for one-click merge or explicit dismissal.
+
+**Importing from Goblin's Notebook**: Campaign → People can import a
+`.tgn` export from Tangent/Goblin's Notebook — the app's internal name for
+this format is still `tgn`/"Tangent" in code and comments, only the GM-
+facing label changed. Imported NPCs land without a statblock; **"Convert
+to character"** promotes one to a full stat sheet when needed, and **"+ New
+passive NPC…"** (Characters tab) creates that lore-only kind directly,
+alongside **"+ New NPC (statted)"** for a full stat block from scratch —
+not every NPC needs one.
+
+A **bulk portrait importer** (Media Library → Portraits) uploads many
+images at once and proposes matches by filename against both statted
+characters/NPCs (`characters.portrait_url`, the tablet's own art) and
+lore-only People entries (`campaign_entries.image_id`, the Campaign
+reader's picture) — two genuinely separate image slots, confirmed
+per-file before applying. A related one-shot tool promotes any image link
+already embedded in a People entry's body text into that entry's default
+Campaign-reader image.
+
+The **Characters** sub-tab covers both real PCs/statted NPCs (the
+`characters` table, importable from Hephaistos below) and lore-only People
+entries side by side, since both are "characters" from a GM's perspective;
+a non-PC character can be deleted from here.
+
+## Sessions
+
+The GM console's **Sessions** tab plans and tracks individual game
+sessions: a name, prep notes, and links to whichever Campaign entries and
+media (maps, mood art, music/SFX tracks) are relevant to that session.
+Media Library and the Campaign tab's "linked to session" filters both
+read this to scope a busy campaign down to "what's relevant tonight."
+
+## Music & SFX
+
+Media Library's **Music** and **SFX** categories hold either an uploaded
+audio file or a pasted link (YouTube, or a direct audio URL — Suno's own
+share links can't be resolved without authentication, so record via
+another tool and upload the file instead). Tracks get tags and a folder
+(file-explorer-style sidebar, drag a track onto a folder or a tag chip
+onto a track to file it), a loop toggle, and can be scoped to a specific
+game session. A compact **now-playing control** sits in the GM topbar
+itself (`frontend/src/lib/musicPlayer.jsx`'s `MusicPlayerProvider` +
+`MiniPlayer`) so playback survives switching tabs — native `<audio>` for
+files/direct links, an invisible mounted YouTube IFrame player for YouTube
+links.
+
+## Galaxy
+
+The GM console's **Galaxy** tab imports a project exported by the offline
+`GalaxyGen/` tool (see `Docs/10-galaxy-mapgen.md`) — a whole procedurally
+generated galaxy (systems, sectors, factions, actors, hyperlanes) as one
+JSON file — and is deliberately **separate** from the Campaign wiki: a real
+galaxy has far more background content (hundreds of systems, a thousand+
+procedural actors) than should ever become individual lore entries on
+their own. The only bridge is an explicit per-entity link
+(`campaign_entries.galaxy_ref`) to an existing (or newly created) Campaign
+entry, set by hand or via a **"Suggest links"** tool that name-matches
+unlinked galaxy entities against unlinked lore entries for one-click batch
+review. A **Map** view renders the imported sectors/hyperlanes/systems as a
+pan-and-zoom SVG, faction-colored, clickable straight into the same link
+picker. The current project can also be downloaded back out (byte-
+identical) for local mass-editing in GalaxyGen before re-importing.
+
+## AI-driven management (MCP server)
+
+`WebApp/starfinder-tool/mcp-server/` is a separate service exposing a
+remote MCP server (Streamable HTTP + OAuth 2.1) so an AI client (primarily
+a claude.ai custom connector) can read/edit campaign data, the Compendium
+review workflow, characters, and the mood tablet/projector, through the
+same backend REST API the web UI uses — see its own README for the OAuth
+setup and available tools.
 
 ## Importing characters from Hephaistos
 
@@ -129,6 +210,7 @@ full automation.
 | `/tablet` | GM tablet — mood board (scenario art, featured characters), driven from `/gm`. No login (shared screen). |
 | `/display` | Projector — fullscreen read-only battle map, auto-follows the latest active session. No login (shared screen). |
 | `/compendium` | Any device — searchable rules lookup (feats/spells/races/classes) over `/api/aon`, filterable by category and source book. **Any login required** (GM or player). |
+| `/review` | GM only — hand-validate/correct `aon_entries` against the AoN source (see `Docs/04-data-pipeline-aon.md`). **GM login required.** |
 
 ## Mini tracker protocol (placeholder)
 
@@ -154,7 +236,7 @@ node scripts/create-user.js gm gm gmpass   # then log in with gm/gmpass
 cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 ```
 
-## Iteration 1 status (vs roadmap doc)
+## Iteration 1 status (vs roadmap doc, historical)
 
 - [x] Compose stack (backend, frontend, db) with SSD volume mapping
 - [x] Express REST scaffold + WS broadcast
@@ -171,7 +253,7 @@ cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 - [x] Compendium view (`/compendium`): sectioned, sortable, filterable tables (Spells / Weapons / Armor & Shields / Ammunition / Feats / Class-Racial-Theme Features / Gear & Items / Races-Classes-Archetypes / Conditions & Effects / Rules / Setting & Lore / Random Tables) — click a column header to sort, click a row to expand its full rules text and mechanics inline, per-section facet filters (weapon type, melee/ranged, armor weight, spell school/level, rules chapter, ...), defaults to GM's owned sources (`frontend/src/views/Compendium.jsx`); Rules/Setting/Random Tables cover the core rulebook's reference glossary and Pact Worlds lore (see `Docs/04-data-pipeline-aon.md` → "Journal/table-shaped content") — not tested live end-to-end this session (no local Postgres available), verified via the importer's output + a clean frontend build only
 - [x] GM "Owned sourcebooks" panel — sets the Compendium's default source filter (`frontend/src/components/SourcesConfig.jsx`)
 - [x] Login system: one GM account + one account per player (auto-linked to their character), signed session cookies, server-side ownership checks on every character/battlemap/settings route (`backend/src/auth.js`, `004_users.sql`, `scripts/create-user.js`)
-- [x] GM console restructured into tabs — Battle Map / Scene & Mood / Media Library / Campaign / Sources (`frontend/src/views/GM.jsx`)
+- [x] GM console restructured into tabs — Battle Map / Scene & Mood / Media Library / Campaign / Sources (`frontend/src/views/GM.jsx`; since expanded further, see "Since Iteration 1" below)
 - [x] Media library: upload/browse/delete maps, mood-screen images, token art, character portraits (`backend/src/routes/media.js`, `frontend/src/components/MediaLibrary.jsx`); wired into map images, token art (rendered on the battle map), and character portraits
 - [x] Campaign system: typed entries (events/locations/NPCs/factions/objects) with relationships between them, GM-only by default with a per-entry "visible to players" flag (`backend/src/routes/campaign.js`, `006_campaign.sql`, `frontend/src/components/Campaign.jsx`)
 - [x] Hephaistos character import: GM can import a character JSON export from hephaistos.online, optionally assigning it straight to a player account (`backend/src/hephaistos.js`, `POST /api/characters/import/hephaistos`)
@@ -179,3 +261,63 @@ cd frontend && npm install && npm run dev   # Vite proxies /api and /ws to :3000
 - [x] Foundry import: 8,921 entries across 26 categories (feats, spells, races, classes, archetypes, themes, every class/racial/archetype/theme feature, conditions, effects, full equipment family) imported from a local FoundryVTT Starfinder system checkout instead of scraping — higher-fidelity range/duration/save/damage/armor-AC and a real `modifiers` array of pre-designed, formula-capable bonuses (`backend/src/foundry-import.js`, `scripts/import-foundry.js`; full field reference in docs/04-data-pipeline-aon.md)
 - [ ] ESP32 firmware (spec in docs/07-modules-and-peripherals.md)
 - [ ] Automatic rule effects (e.g. a feat's numeric bonus auto-applying to a character) — categorization exists, application to a character sheet doesn't yet, see note below
+
+## Since Iteration 1
+
+Everything below landed after the checklist above, roughly in order.
+Sections higher up in this README already describe the current shape of
+each — this is the changelog-style summary, kept short since the doc
+sections do the explaining.
+
+- [x] GM console grew three more tabs — **Characters** (PCs/statted NPCs
+  split out of Campaign into their own view), **Sessions** (session
+  planning, linked entries/media), and **Galaxy** (see below) —
+  Battle Map / Scene & Mood / Media Library / Campaign / Galaxy /
+  Characters / Sessions / Sources is the current tab set
+  (`frontend/src/views/GM.jsx`)
+- [x] Session planning module: name/notes plus linked Campaign entries and
+  media per session, used to scope Media Library and Campaign's "this
+  session" filters (`backend/src/routes/sessions.js`, `009_game_sessions.sql`,
+  `frontend/src/components/Sessions.jsx`)
+- [x] Data Review tool (`/review`, GM only): hand-validate/correct
+  `aon_entries` against the AoN source, propose Compendium matches when
+  reviewing a Hephaistos import (`backend/src/routes/review.js`,
+  `010_aon_review.sql`, `frontend/src/views/ReviewTool.jsx`)
+- [x] Campaign wiki, expanded: hierarchy tree with natural sort + manual
+  reorder, search-based Related Entries linking (replacing a flat
+  dropdown), cross-type duplicate detection/merge (with homoglyph/
+  diacritic folding), Markdown rendering (incl. GFM tables) in entry
+  bodies, `!!GM-only asides!!` stripped from any non-GM view, Goblin's
+  Notebook (`.tgn`) import with "Convert to character" for statblock-less
+  imports, passive NPC creation, non-PC character deletion, a bulk
+  portrait importer matching both statted characters and lore-only People
+  entries, and a tool promoting an entry's embedded image link into its
+  default Campaign-reader image (`frontend/src/lib/campaignTree.js`,
+  `frontend/src/components/Campaign.jsx`,
+  `frontend/src/components/Characters.jsx`, `backend/src/tgn-import.js`,
+  `backend/src/gm-notes.js`,
+  `011_campaign_tgn_import.sql`, `012_character_lore_link.sql`,
+  `013_drop_campaign_summary.sql`, `014_duplicate_dismissals.sql`,
+  `019_campaign_sort_order.sql`)
+- [x] Music & SFX library: uploaded files or pasted links (YouTube/direct),
+  tags, folders (file-explorer-style sidebar with drag-and-drop), loop
+  toggle, session scoping, and a persistent topbar "now playing" control
+  that survives tab switches (`backend/src/routes/media.js`,
+  `frontend/src/lib/musicPlayer.jsx`, `frontend/src/lib/youtube.js`,
+  `frontend/src/components/MediaLibrary.jsx`, `015_music.sql`,
+  `018_music_tags_folders.sql`)
+- [x] Character sheet fixes: corrected ammo pack +/− semantics (magazine
+  vs. reserve, not "pack is the magazine"), auto-delete on full depletion,
+  Spells tab hidden for non-casters
+  (`frontend/src/components/CharacterSheet.jsx`)
+- [x] Galaxy tab: import a `GalaxyGen/`-generated project wholesale, link
+  individual systems/factions/actors to Campaign lore entries via
+  `campaign_entries.galaxy_ref` (by hand or via a bulk name-match
+  suggester), a pan/zoom Map view rendering the imported sectors/
+  hyperlanes/systems, and download-back-out for local mass-editing
+  (`backend/src/routes/galaxy.js`, `frontend/src/components/Galaxy.jsx`,
+  `020_galaxy_import.sql`; see "Galaxy" above and `Docs/10-galaxy-mapgen.md`)
+- [x] Remote MCP server (`mcp-server/`): OAuth 2.1 + Streamable HTTP, lets
+  an AI client manage campaign data, the Data Review workflow, characters,
+  and the mood tablet/projector through the same backend REST API
+  (`mcp-server/src/`, own README, own OAuth token tables)

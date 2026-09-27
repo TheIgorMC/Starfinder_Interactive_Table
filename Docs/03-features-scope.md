@@ -10,6 +10,20 @@ sensible defaults) — not fewer features.
 - Points of interest linked to lore entries (pulled from AoN Setting pages)
 - In-system navigation aid (system maps, travel time reference)
 
+**Status**: the zoomable/pannable galaxy map and point-of-interest linking
+are implemented, but via a different path than originally scoped here: a
+separate offline generator (`GalaxyGen/`, see
+[10-galaxy-mapgen.md](10-galaxy-mapgen.md)) procedurally builds a whole
+galaxy (systems, sectors, factions, actors, hyperlanes) as one project
+JSON, which the GM imports into SIT's own **Galaxy** tab
+(`backend/src/routes/galaxy.js`, `frontend/src/components/Galaxy.jsx`).
+There, a system/faction/actor can be linked to an existing Campaign lore
+entry (`campaign_entries.galaxy_ref`) — a GM-reviewed name-match suggester
+proposes likely pairs — and the tab's Map view renders the same sectors/
+hyperlanes/systems as a pan-and-zoom SVG. This is campaign-authored
+content (custom setting), not AoN's own Setting pages — a real system map
+of a homebrew galaxy, not Pact Worlds lore lookup.
+
 ## 2. Character Creation & Customization
 Must cover the full SF1e character sheet, nothing abridged:
 - Race/ancestry, theme, class (+ archetypes), level

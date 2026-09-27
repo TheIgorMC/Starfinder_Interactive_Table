@@ -59,18 +59,21 @@ a render branch.
 
 File: `frontend/src/views/GM.jsx`
 
-1. Add an entry to `TABS` (line ~67):
+1. Add an entry to `TABS` (line ~73):
    ```js
    const TABS = [
      { key: "battlemap", label: "Battle Map" },
      { key: "scene", label: "Scene & Mood" },
      { key: "media", label: "Media Library" },
      { key: "campaign", label: "Campaign" },
+     { key: "galaxy", label: "Galaxy" },
+     { key: "characters", label: "Characters" },
+     { key: "sessions", label: "Sessions" },
      { key: "sources", label: "Sources" },
      { key: "mynewtab", label: "My New Tab" },
    ];
    ```
-2. Add a render branch inside `.gm-tab-content` (line ~220), following the
+2. Add a render branch inside `.gm-tab-content` (line ~307), following the
    existing ones:
    ```jsx
    {tab === "mynewtab" && <MyNewTabComponent />}

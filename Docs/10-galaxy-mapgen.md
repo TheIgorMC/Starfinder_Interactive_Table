@@ -1,7 +1,29 @@
 # Galaxy Map Generator ("MapGen") — Design Doc v1
 
-Status: **proposal, not started.** This is a structure for review before any
-code is written.
+Status: **`GalaxyGen/` itself is built and in active use** — see its own
+`GalaxyGen/README.md` for the real, current phase-by-phase feature list,
+which has moved well past what this doc originally scoped (planet/body
+generation, ships & fleet economy, AI-assisted event authoring, etc.).
+
+**The SIT-side integration (§7's "export is content SIT can serve") landed
+differently than planned below.** §7 describes exporting to the SDF content
+tree as seven new categories (`systems/`, `sectors/`, `factions/`, ...); what
+actually shipped instead is simpler: the GM uploads the *raw GalaxyGen
+project JSON* wholesale through SIT's **Galaxy** tab
+(`POST /api/galaxy/import`, `backend/src/routes/galaxy.js`), which stores it
+verbatim in a `galaxy_projects` table and never converts it into SDF or
+`campaign_entries` rows on its own. A separate, explicit link —
+`campaign_entries.galaxy_ref` (a typed ref like `system:kreel-1`) — is the
+only bridge to the Campaign lore wiki, set per-entity by the GM (or via a
+bulk name-match suggestion tool) precisely because a galaxy this large has
+far more background content (hundreds of systems, a thousand+ procedural
+actors) than should ever become individual lore entries. The tab also
+renders a read-only pan/zoom map (sectors/hyperlanes/systems) straight from
+the imported JSON, and lets the GM download the current project back out for
+local mass-editing in GalaxyGen. See `frontend/src/components/Galaxy.jsx` for
+the implementation; the rest of this doc (generation pipeline, faction/
+security/war-chance model, actors, the AI event interface) still accurately
+describes how `GalaxyGen/` itself works.
 
 ## 1. What this is
 
