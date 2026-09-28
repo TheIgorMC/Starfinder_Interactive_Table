@@ -13,9 +13,10 @@ import * as factions from "./factions.js";
 import * as actors from "./actors.js";
 import * as organizations from "./organizations.js";
 import * as fleet from "./fleet.js";
+import * as stations from "./stations.js";
 import * as query from "./query.js";
 
-const MODULES = [project, sectors, fields, systems, planets, hyperlanes, factions, actors, organizations, fleet, query];
+const MODULES = [project, sectors, fields, systems, planets, hyperlanes, factions, actors, organizations, fleet, stations, query];
 
 export function registerAllTools(server) {
   for (const mod of MODULES) mod.register(server);

@@ -66,7 +66,9 @@ export function register(server) {
     tool(({ slug }) => {
       const project = state.requireProject();
       const sys = system(project, slug);
-      return { bodies: sys.bodies || [], zones: getSystemZones(sys) };
+      // station layouts are big — only flag them here (get_station_layout has the summary)
+      const bodies = (sys.bodies || []).map(({ layout, ...b }) => (layout ? { ...b, hasLayout: true } : b));
+      return { bodies, zones: getSystemZones(sys) };
     }),
   );
 

@@ -11,6 +11,9 @@ const ROLE_BY_KIND = Object.fromEntries(COMPANY_KINDS.map((k) => [k.value, k.rol
 function shipModel(project, slug) {
   return findBySlug(project.shipModels, slug, "ship model");
 }
+// ship layouts are big — only flag them (get_station_layout has the summary)
+const withoutLayouts = (c) => ({ ...c, notableShips: (c.notableShips || []).map(({ layout, ...s }) => (layout ? { ...s, hasLayout: true } : s)) });
+
 function company(project, slug) {
   return findBySlug(project.companies, slug, "company");
 }
@@ -118,7 +121,7 @@ export function register(server) {
     "get_company",
     "Full detail for one company, including its aggregate fleet (model slug + count) and individually-named notable ships.",
     { slug: z.string() },
-    tool(({ slug }) => company(state.requireProject(), slug)),
+    tool(({ slug }) => withoutLayouts(company(state.requireProject(), slug))),
   );
 
   server.tool(
@@ -192,7 +195,7 @@ export function register(server) {
         cleanPatch.role = ROLE_BY_KIND[kind];
       }
       state.setProject({ ...project, companies: replaceBySlug(project.companies, slug, cleanPatch) });
-      return company(state.requireProject(), slug);
+      return withoutLayouts(company(state.requireProject(), slug));
     }),
   );
 

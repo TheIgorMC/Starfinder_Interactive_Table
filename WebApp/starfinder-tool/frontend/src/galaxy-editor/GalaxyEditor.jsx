@@ -7,6 +7,7 @@ import SectorList from "./components/SectorList.jsx";
 import AIPanel from "./components/AIPanel.jsx";
 import OrreryView from "./components/OrreryView.jsx";
 import CityEditor from "./components/CityEditor.jsx";
+import StationGen from "./components/StationGen.jsx";
 import GeneratorStub from "./components/GeneratorStub.jsx";
 import { createDefaultProject, normalizeProject, FIELD_DEFS } from "@galaxy-core/lib/project.js";
 import { GRID_SIZE, paintGrid } from "@galaxy-core/lib/grid.js";
@@ -931,7 +932,8 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
         ))}
       </nav>
       {/* the city editor needs room for its layout preview */}
-      <div className="gg-body" style={{ gridTemplateColumns: `1fr 6px ${activeTab === "cities" ? Math.max(rightWidth, 440) : rightWidth}px` }}>
+      {activeTab === "stationGen" && <StationGen project={project} setProject={setProject} />}
+      <div className="gg-body" style={{ display: activeTab === "stationGen" ? "none" : undefined, gridTemplateColumns: `1fr 6px ${activeTab === "cities" ? Math.max(rightWidth, 440) : rightWidth}px` }}>
         <GalaxyCanvas
           project={project}
           tool={tool}
@@ -1055,7 +1057,6 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
             />
           )}
           {activeTab === "cityGen" && <GeneratorStub kind="city" />}
-          {activeTab === "stationGen" && <GeneratorStub kind="station" />}
           {activeTab === "ai" && (
             <AIPanel
               settings={aiSettings}

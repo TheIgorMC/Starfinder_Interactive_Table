@@ -12,7 +12,7 @@ one renderer pretending to fit all three.
 |---|---|---|---|---|
 | `outpost` | small settlements on moons / rocky / ice worlds, extraction sites, gas-giant platforms | districts as **domes** ("bubbles") joined by tunnels/rail/shuttles; floating platforms on gas giants | `layoutSettlement()` in `settlement.js` (seeded relaxation + MST transit) | **done** — this is the current system, kept as is |
 | `city` | real cities on planets, city-planets (ecumenopolis), capitals | own functional, procedural design (street grid / blocks / zoning / arteries) | Galaxy Editor **City Gen** tab → `galaxy-core/lib/cityGen.js` | **skeleton only** — until it exists, cities render with the outpost layout, flagged as *provisional* |
-| `station` | orbital stations (incl. ring stations) | own procedural station generator (modules, rings, spokes, docks), then split into zones with the same district logic | Galaxy Editor **Station Gen** tab → `galaxy-core/lib/stationGen.js` | **skeleton only** |
+| `station` | orbital stations, mining platforms, ships | prefab blocks on a 2 m grid, deck by deck (see below) | Galaxy Editor **Station Gen** tab → `galaxy-core/lib/stationGen.js` | **v1 done** (2026-09) — generator, editor, MCP; viewer rendering still to do |
 
 ## How a site picks its style
 
@@ -62,3 +62,41 @@ player redaction keep working unchanged:
   inputs/outputs) and stub modules `cityGen.js` / `stationGen.js` exporting
   the entry points above (they return `null` for now).
 - Viewer: settlement panel shows the style and a "provisional layout" note for city/station.
+
+## Station Gen (v1, 2026-09)
+
+`galaxy-core/lib/stationGen.js`, tab **Station Gen**, MCP `galaxy_generate_station_layout`,
+`galaxy_get_station_layout`, `galaxy_find_venues`, `galaxy_update_venue`.
+
+- **Grid**: 1 unit = 2 m × 2 m. Units are standard, blocks are not: a module
+  size is derived from the hull length (1 unit on a light freighter, ~400 on a
+  megastation), so a layout always has a few hundred blocks at most.
+- **Blocks**: one purpose each — transit, bridge, habitation, dining,
+  commercial, recreation, medical, security, research, factory, cargo,
+  hangar, technical, generator, engine. Geometry first (cells merged into
+  rectangles), then each block gets the type that fits its position and is
+  furthest below its floor-area target (`MIX` per purpose; habitation follows
+  the headcount in m²/person).
+- **Shapes**: `orbital` (hub + branching corridors, grows in every direction,
+  commerce near the core, docks at the rim), `vessel` (tapered bow with the
+  bridge, hangars amidships, engines/technical aft, generators scattered on
+  big hulls, shops only with passengers or big crews), `mining` (cube, cross
+  corridors, hangars on the faces, one mess and few shops). `colossal`
+  (Gemini-like city-ships) → city generator, `generateStation` returns null.
+- **Sizes**: stations from the body (`lengthM`, `population`, `docks`,
+  `sizeClass`); ships from the SF1e frame size (length ranges in
+  `SIZE_LENGTH_M`) and the model's crew, plus passengers by role.
+- **Decks**: at most 8 drawn decks; on tall hulls one drawn deck stands for
+  several physical ones (`decks[].levels`). Lifts at corridor junctions shared
+  by several decks.
+- **Stored** as `layout` on the station body (system gets curated/`locked`) or
+  on the company's notable ship: blocks, doors, lifts, venues — ~3–150 KB.
+- **Detail on demand**: `blockDetail()` derives rooms (cabins, shop fronts,
+  berths…) from block + seed when the plan is zoomed in; nothing stored.
+- **Venues**: named shops/pubs/etc. in dining, commercial and recreation
+  blocks (`layout.shops`, capped at 160 and scaled to the people aboard); a
+  big block's other shop fronts get derived names in the detail view. Menus
+  and inventories are a later step (same idea: derived from the seed).
+- **Editing**: move/resize by drag (grid snap), numeric x/y/w/h, change type,
+  add/delete blocks, rename/add/remove venues. Doors are recomputed after
+  every edit (`recomputeDoors`). Hiding blocks from players: not decided yet.
