@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCompact } from "./galaxy-compact.js";
+import { buildCompact } from "../../galaxy-core/lib/compact.js";
 
 const project = {
   seed: "abc",

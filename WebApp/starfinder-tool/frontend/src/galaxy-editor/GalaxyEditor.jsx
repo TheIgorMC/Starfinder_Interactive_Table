@@ -1,14 +1,22 @@
+import "../galaxy/galaxy.css";
 import "./editor.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerSync, fetchProject } from "./sync.js";
-import GalaxyCanvas from "./components/GalaxyCanvas.jsx";
-import { DrawPanel, GeneratePanel, ProjectPanel } from "./components/Toolbar.jsx";
-import SectorList from "./components/SectorList.jsx";
+import { ProjectPanel } from "./components/Toolbar.jsx";
+import SectorList, { PendingSectorForm, PendingFactionForm, FactionCard, ActorCard, OrgCard, CompanyCard } from "./components/SectorList.jsx";
 import AIPanel from "./components/AIPanel.jsx";
-import OrreryView from "./components/OrreryView.jsx";
-import CityEditor from "./components/CityEditor.jsx";
-import StationGen from "./components/StationGen.jsx";
-import GeneratorStub from "./components/GeneratorStub.jsx";
+import StationGen, { stationKey } from "./components/StationGen.jsx";
+import { EditorMap } from "./map/editor-map.js";
+import BuildPanel from "./shell/BuildPanel.jsx";
+import SystemWorkspace from "./shell/SystemWorkspace.jsx";
+import { Head, SystemInspector, SectorInspector, SystemsPanel } from "./shell/Inspectors.jsx";
+import { EIcon } from "./shell/icons.jsx";
+import { MODES, prepGalaxy, POPL } from "../galaxy/common.js";
+import { Icon } from "../galaxy/ui.jsx";
+import { Legend } from "../galaxy/GalaxyMapPage.jsx";
+import { buildCompact } from "@galaxy-core/lib/compact.js";
+import { generateBodies } from "@galaxy-core/lib/planetGen.js";
+import { createRng } from "@galaxy-core/lib/rng.js";
 import { createDefaultProject, normalizeProject, FIELD_DEFS } from "@galaxy-core/lib/project.js";
 import { GRID_SIZE, paintGrid } from "@galaxy-core/lib/grid.js";
 import { pointInPolygon } from "@galaxy-core/lib/geometry.js";
@@ -35,27 +43,31 @@ const PANEL_WIDTHS_KEY = "galaxygen.panelWidths.v1";
 const PANEL_MIN_WIDTH = 180;
 const PANEL_MAX_WIDTH = 560;
 
-// The app's single top-level mode switcher (replaces the old dual layout:
-// one long-scrolling left toolbar with every section stacked at once, plus
-// a second tab row buried inside the right sidebar). Selection state is
-// independent of this — see the activeTab-driven auto-jump effect below
-// and SectorList.jsx's always-rendered selection cards.
-const TABS = [
-  { key: "draw", label: "Draw" },
-  { key: "generate", label: "Generate" },
-  { key: "orrery", label: "Orrery" },
-  { key: "cities", label: "Cities" },
-  { key: "cityGen", label: "City Gen" },
-  { key: "stationGen", label: "Station Gen" },
-  { key: "sectors", label: "Sectors" },
-  { key: "factions", label: "Factions" },
-  { key: "actors", label: "Actors" },
-  { key: "organizations", label: "Organizations" },
-  { key: "companies", label: "Companies" },
-  { key: "events", label: "Events" },
-  { key: "ai", label: "AI" },
-  { key: "project", label: "Project" },
+// Layout (Docs/10-galaxy-mapgen.md, editor): three workspaces — MAP (the
+// viewer's galaxy map + editing tools), SYSTEM (orrery, bodies, cities),
+// STATIONS (station/ship layouts). On the map, tools sit in a dock at the
+// bottom, map layers on the left (as in the viewer), and the right panel
+// holds the pipeline and the entity lists — or the inspector of whatever is
+// selected.
+const TOOLS = [
+  { key: "select", label: "SELECT", key1: "V", hint: "Click a star, a faction seed or a sector to inspect it · drag to pan · double-click to zoom" },
+  { key: "paint", label: "PAINT", key1: "B", hint: "Drag to paint the field · Shift-drag erases · right-drag or Space-drag pans" },
+  { key: "sector", label: "SECTOR", key1: "S", hint: "Click to add corners (they snap to other sectors) · click the first corner or press Enter to close · Esc cancels" },
+  { key: "system", label: "SYSTEM", key1: "P", hint: "Click inside a sector to place a new system there — it is marked curated" },
+  { key: "lane", label: "LANE", key1: "L", hint: "Click two systems to add or remove the hyperlane between them" },
+  { key: "faction", label: "FACTION", key1: "F", hint: "Click to drop a faction's seed — on a star it holds that system outright" },
 ];
+const SECTIONS = [
+  { key: "build", label: "BUILD" },
+  { key: "systems", label: "SYSTEMS" },
+  { key: "factions", label: "FACTIONS" },
+  { key: "people", label: "PEOPLE" },
+  { key: "fleets", label: "FLEETS" },
+  { key: "events", label: "EVENTS" },
+  { key: "ai", label: "AI" },
+  { key: "project", label: "PROJECT" },
+];
+const MODE_KEYS = ["factions", "security", "conflict", "sectors", "population", "trade"];
 
 function uniqueSlug(base, sectors) {
   const existing = new Set(sectors.map((s) => s.slug));
@@ -120,11 +132,17 @@ function eventProposalToDraft(args) {
 function EditorApp({ initialProject, initialVersion, embedded }) {
   const [project, setProject] = useState(() => normalizeProject(initialProject));
   const sync = useServerSync(project, setProject, initialVersion);
-  const [activeTab, setActiveTab] = useState("draw");
-  const [tool, setTool] = useState("brush");
+  const [workspace, setWorkspace] = useState("map");
+  const [section, setSection] = useState("build"); // right panel; null = collapsed
+  const [tool, setToolRaw] = useState("select");
+  const [mapMode, setMapMode] = useState("factions");
+  const [showLanes, setShowLanes] = useState(true);
+  const [showNames, setShowNames] = useState(true);
+  const [stationTarget, setStationTarget] = useState(null);
+  const [laneFrom, setLaneFrom] = useState(null);
+  const [search, setSearch] = useState("");
   const [activeField, setActiveField] = useState(FIELD_DEFS[0].key);
   const [brush, setBrush] = useState({ radius: 80, strength: 0.6 });
-  const [showSectors, setShowSectors] = useState(true);
   const [constrainToSector, setConstrainToSector] = useState(false);
   const [selectedSectorId, setSelectedSectorId] = useState(null);
   const [selectedSystemId, setSelectedSystemId] = useState(null);
@@ -144,77 +162,11 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
   const [showFieldOverlay, setShowFieldOverlay] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => loadAISettings());
 
-  // Resizable side panel — purely a UI layout preference (not galaxy or AI
-  // data), so it gets its own small localStorage key rather than living in
-  // `project` or `aiSettings`. Only one panel now (the tab bar replaced the
-  // old dual left+right layout), so there's just one width to track.
-  const [rightWidth, setRightWidth] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(PANEL_WIDTHS_KEY))?.right ?? 280;
-    } catch {
-      return 280;
-    }
-  });
-  const dragRef = useRef(null); // { startX, startWidth }
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify({ right: rightWidth }));
-    } catch {
-      // Not critical — panel width just resets to default next load.
-    }
-  }, [rightWidth]);
-
-  const handlePanelResizeMove = useCallback((e) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const delta = e.clientX - drag.startX;
-    const next = drag.startWidth - delta;
-    setRightWidth(Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, next)));
-  }, []);
-
-  const handlePanelResizeEnd = useCallback(() => {
-    dragRef.current = null;
-    document.body.style.cursor = "";
-    window.removeEventListener("mousemove", handlePanelResizeMove);
-    window.removeEventListener("mouseup", handlePanelResizeEnd);
-  }, [handlePanelResizeMove]);
-
-  const handlePanelResizeStart = useCallback(
-    (e) => {
-      e.preventDefault();
-      dragRef.current = { startX: e.clientX, startWidth: rightWidth };
-      document.body.style.cursor = "col-resize";
-      window.addEventListener("mousemove", handlePanelResizeMove);
-      window.addEventListener("mouseup", handlePanelResizeEnd);
-    },
-    [rightWidth, handlePanelResizeMove, handlePanelResizeEnd],
-  );
-
-
   // Machine-local, never part of the project — saved on every change so a
   // GM doesn't have to re-enter their API base/key/model after a reload.
   useEffect(() => {
     saveAISettings(aiSettings);
   }, [aiSettings]);
-
-  // A canvas action that's mid-flow (drawing a new sector, dropping a new
-  // faction seed) or selects a sector jumps to the tab that can actually
-  // show it — sectors have no persistent selection card the way system/
-  // faction/actor/org do (SectorList.jsx), so without this, selecting one
-  // via the Select tool would look like nothing happened. Existing-entity
-  // selections for system/faction/actor/org deliberately do NOT jump tabs
-  // any more — their cards are always visible regardless of which tab is
-  // active, so there's nothing to jump to.
-  useEffect(() => {
-    if (pendingPoints && pendingPoints.length > 0) setActiveTab("sectors");
-  }, [pendingPoints]);
-  useEffect(() => {
-    if (pendingFactionSeed) setActiveTab("factions");
-  }, [pendingFactionSeed]);
-  useEffect(() => {
-    if (selectedSectorId) setActiveTab("sectors");
-  }, [selectedSectorId]);
 
   const selectedSector = project.sectors.find((s) => s.id === selectedSectorId) || null;
   const selectedSystem = project.systems.find((s) => s.id === selectedSystemId) || null;
@@ -289,6 +241,9 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
       ...p,
       sectors: p.sectors.map((s) => (s.id === id ? { ...s, focus } : s)),
     }));
+  }, []);
+  const handleUpdateSector = useCallback((id, patch) => {
+    setProject((p) => ({ ...p, sectors: p.sectors.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
   }, []);
 
   // Used for rename + the "important" flag — slug stays put either way, so
@@ -900,248 +855,340 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
     }
   }, [project]);
 
-  return (
-    <div className={"gxe galaxygen-app" + (embedded ? " embedded" : "")}>
-      <header className="gg-header">
-        <svg width="30" height="30" viewBox="0 0 34 34" fill="none" stroke="#ff9a3c" strokeWidth="1.4" aria-hidden>
-          <circle cx="17" cy="17" r="15" strokeOpacity=".45" />
-          <ellipse cx="17" cy="17" rx="15" ry="5.5" transform="rotate(-28 17 17)" />
-          <circle cx="17" cy="17" r="3" fill="#ff9a3c" />
-        </svg>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <h1>GALAXY MAPGEN</h1>
-          <span className="gg-sub">Galactic cartography editor · seed {project.seed}</span>
+  // ---------------------------------------------------------------------------
+  // Shell: selection routing, the map instance, keyboard shortcuts.
+  const setTool = useCallback((t) => {
+    setToolRaw(t);
+    setLaneFrom(null);
+    if (t !== "select") setWorkspace("map");
+  }, []);
+  const clearSelection = useCallback(() => {
+    setSelectedSectorId(null); setSelectedSystemId(null); setSelectedFactionId(null);
+    setSelectedActorId(null); setSelectedOrgId(null); setSelectedCompanyId(null);
+  }, []);
+  const selectOnly = useCallback((kind, id) => {
+    clearSelection();
+    if (kind === "system") setSelectedSystemId(id);
+    else if (kind === "sector") setSelectedSectorId(id);
+    else if (kind === "faction") setSelectedFactionId(id);
+    else if (kind === "actor") setSelectedActorId(id);
+    else if (kind === "org") setSelectedOrgId(id);
+    else if (kind === "company") setSelectedCompanyId(id);
+  }, [clearSelection]);
+
+  // compact data shared by the map and the panels (the viewer's format)
+  const D = useMemo(() => prepGalaxy(buildCompact(project)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project.systems, project.hyperlanes, project.factions, project.sectors, project.bounds]);
+
+  const cvRef = useRef(null);
+  const mapRef = useRef(null);
+  const live = useRef({});
+  const fieldAt = (wx, wy) => {
+    const b = project.bounds, g = project.fields[activeField];
+    if (!g || wx < 0 || wy < 0 || wx > b.width || wy > b.height) { setHoverInfo(null); return; }
+    const gx = Math.min(GRID_SIZE - 1, Math.floor((wx / b.width) * GRID_SIZE)), gy = Math.min(GRID_SIZE - 1, Math.floor((wy / b.height) * GRID_SIZE));
+    setHoverInfo({ wx, wy, value: g[gy * GRID_SIZE + gx] });
+  };
+  live.current = { fieldAt, selectOnly, handlePaint, handleAddSectorPoint, handleCloseSectorDraft, handlePlaceSystem, handleAddFactionSeed, handleToggleHyperlane, laneFrom, setLaneFrom, section, clearSelection };
+  const layoutRef = useRef({}); layoutRef.current = { panelOpen: section != null || !!(selectedSystemId || selectedSectorId || selectedFactionId || selectedActorId || selectedOrgId || selectedCompanyId) };
+  useEffect(() => {
+    const m = new EditorMap(cvRef.current, project, D, {
+      onPick: (hit) => { if (hit) live.current.selectOnly(hit.kind, hit.id); else live.current.clearSelection(); },
+      onHover: () => {},
+      onPaint: (x, y, erase) => live.current.handlePaint(x, y, erase),
+      onCursor: (x, y) => live.current.fieldAt(x, y),
+      onSectorPoint: (x, y) => live.current.handleAddSectorPoint(x, y),
+      onSectorClose: () => live.current.handleCloseSectorDraft(),
+      onPlaceSystem: (x, y) => live.current.handlePlaceSystem(x, y),
+      onFactionSeed: (x, y, slug, name) => live.current.handleAddFactionSeed(x, y, slug, name),
+      onLane: (id) => {
+        const L = live.current;
+        if (!id || id === L.laneFrom) L.setLaneFrom(null);
+        else if (!L.laneFrom) L.setLaneFrom(id);
+        else { L.handleToggleHyperlane(L.laneFrom, id); L.setLaneFrom(null); }
+      },
+      keepOut: (W, H) => [[0, 0, W, 84], [0, 84, 104, H], [W - (layoutRef.current.panelOpen ? 504 : 96), 84, W, H], [W / 2 - 300, H - 150, W / 2 + 300, H]],
+      scaleY: (H) => H - 118,
+    });
+    mapRef.current = m;
+    return () => { m.destroy(); mapRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { mapRef.current?.setProject(project, D); }, [project, D]);
+  useEffect(() => { mapRef.current?.setMode(mapMode); }, [mapMode]);
+  useEffect(() => { mapRef.current?.setLanes(showLanes); }, [showLanes]);
+  useEffect(() => { mapRef.current?.setLabels(showNames); }, [showNames]);
+  useEffect(() => { mapRef.current?.selectSystemId(selectedSystemId); }, [selectedSystemId, D]);
+  useEffect(() => { if (mapRef.current) mapRef.current.paused = workspace !== "map"; }, [workspace]);
+  useEffect(() => {
+    mapRef.current?.setEd({
+      tool, field: activeField, showField: showFieldOverlay, brush,
+      selSector: selectedSectorId, selFaction: selectedFactionId,
+      pending: pendingPoints, pendingClosed, pendingSeed: pendingFactionSeed, laneFrom,
+    });
+  }, [tool, activeField, showFieldOverlay, brush, selectedSectorId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, laneFrom]);
+
+  // keyboard: tools, Esc / Enter
+  useEffect(() => {
+    const onKey = (e) => {
+      if (workspace !== "map" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && e.key !== "Escape") return;
+      const t = TOOLS.find((x) => x.key1.toLowerCase() === e.key.toLowerCase());
+      if (t) { setTool(t.key); return; }
+      if (e.key === "Enter" && pendingPoints?.length >= 3 && !pendingClosed) handleCloseSectorDraft();
+      if (e.key === "Escape") {
+        if (pendingPoints) handleCancelSectorDraft();
+        else if (pendingFactionSeed) handleCancelFactionSeed();
+        else if (laneFrom) setLaneFrom(null);
+        else if (tool !== "select") setTool("select");
+        else clearSelection();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [workspace, tool, pendingPoints, pendingClosed, pendingFactionSeed, laneFrom, setTool, clearSelection, handleCloseSectorDraft, handleCancelSectorDraft, handleCancelFactionSeed]);
+
+  const flyTo = (id) => { selectOnly("system", id); setWorkspace("map"); setTimeout(() => mapRef.current?.focusSystemId(id), 0); };
+  const openSystem = (id) => { if (id) selectOnly("system", id); setWorkspace("system"); };
+  const openStation = (system, body) => { setStationTarget(stationKey("body", system.slug, body.slug)); setWorkspace("stations"); };
+  const rerollBodies = (sys) => {
+    if (!window.confirm(`Reroll every body of ${sys.name}? Hand edits to its planets are lost.`)) return;
+    handleUpdateSystem(sys.id, { bodies: generateBodies(createRng(`manual:${crypto.randomUUID()}`), sys), locked: true });
+  };
+
+  const matches = useMemo(() => {
+    const qq = search.trim().toLowerCase();
+    if (!qq) return [];
+    return project.systems.filter((s) => s.name.toLowerCase().includes(qq))
+      .sort((a, b) => (Number(b.name.toLowerCase().startsWith(qq)) - Number(a.name.toLowerCase().startsWith(qq))) || (b.important || 0) - (a.important || 0))
+      .slice(0, 7);
+  }, [project.systems, search]);
+
+  // what the right panel shows
+  const inspecting = selectedSystem || selectedSector || selectedFaction || selectedActor || selectedOrg || selectedCompany;
+  const panelOpen = section != null || !!inspecting;
+  const pickSection = (k) => { if (inspecting) { clearSelection(); setSection(k); } else setSection(section === k ? null : k); };
+
+  const sl = {
+    sectors: project.sectors, selectedSectorId, onSelect: (id) => selectOnly("sector", id), onFocusChange: handleFocusChange, onDelete: handleDeleteSector,
+    selectedSystem: null, onDeselectSystem: () => {}, onUpdateSystem: handleUpdateSystem, systems: project.systems,
+    factions: project.factions, selectedFactionId, selectedFaction: null, onSelectFaction: (id) => selectOnly("faction", id), onDeselectFaction: () => {},
+    onUpdateFaction: handleUpdateFaction, onDeleteFaction: handleDeleteFaction, pendingFactionSeed: null, onCommitFaction: handleCommitFaction, onCancelFactionSeed: handleCancelFactionSeed,
+    pendingPoints: null, pendingClosed, onClosePending: handleCloseSectorDraft, onReopenPending: handleReopenSectorDraft, onCommitPending: handleCommitSector, onCancelPending: handleCancelSectorDraft,
+    actors: project.actors, selectedActorId, selectedActor: null, onSelectActor: (id) => selectOnly("actor", id), onDeselectActor: () => {},
+    onCreateActor: handleCreateActor, onUpdateActor: handleUpdateActor, onDeleteActor: handleDeleteActor,
+    organizations: project.organizations, selectedOrgId, selectedOrg: null, onSelectOrg: (id) => selectOnly("org", id), onDeselectOrg: () => {},
+    onCreateOrganization: handleCreateOrganization, onUpdateOrganization: handleUpdateOrganization, onDeleteOrganization: handleDeleteOrganization,
+    companies: project.companies, shipModels: project.shipModels, selectedCompanyId, selectedCompany: null, onSelectCompany: (id) => selectOnly("company", id), onDeselectCompany: () => {},
+    onCreateCompany: handleCreateCompany, onUpdateCompany: handleUpdateCompany, onDeleteCompany: handleDeleteCompany, onCreateShipModel: handleCreateShipModel, onDeleteShipModel: handleDeleteShipModel,
+    events: project.events, onPreviewEvent: handlePreviewEvent, onCommitEvent: handleCommitEvent, onDeleteEvent: handleDeleteEvent,
+  };
+
+  const systemInspector = selectedSystem && (
+    <SystemInspector D={D} system={selectedSystem} actors={project.actors} onUpdate={handleUpdateSystem} onClose={clearSelection}
+      onOpenSystem={() => openSystem(selectedSystem.id)}
+      onPickSystem={(slug) => { const s = project.systems.find((x) => x.slug === slug); if (s) flyTo(s.id); }}
+      onReroll={() => rerollBodies(selectedSystem)} />
+  );
+
+  let inspector = null;
+  if (selectedSystem) inspector = systemInspector;
+  else if (selectedSector) inspector = <SectorInspector sector={selectedSector} project={project} onUpdate={handleUpdateSector} onDelete={handleDeleteSector} onClose={clearSelection} constrain={constrainToSector} setConstrain={setConstrainToSector} />;
+  else if (selectedFaction) inspector = (<><Head kind={`FACTION${selectedFaction.origin === "generated" ? " · AUTO-SEEDED" : ""}`} dot={selectedFaction.color} title={selectedFaction.name} editable onRename={(name) => handleUpdateFaction(selectedFaction.id, { name })} onClose={clearSelection} sub={selectedFaction.government} /><div className="gx-sec ge-form"><FactionCard faction={selectedFaction} factions={project.factions} onUpdate={handleUpdateFaction} onClose={clearSelection} /></div><div className="gx-sec"><button className="ge-btn danger" onClick={() => window.confirm(`Delete faction ${selectedFaction.name}?`) && handleDeleteFaction(selectedFaction.id)}>Delete faction</button></div></>);
+  else if (selectedActor) inspector = (<><Head kind={`ACTOR · ${selectedActor.role || ""}`.toUpperCase()} title={selectedActor.name} onClose={clearSelection} /><div className="gx-sec ge-form"><ActorCard actor={selectedActor} factions={project.factions} organizations={project.organizations} companies={project.companies} systems={project.systems} onUpdate={handleUpdateActor} onClose={clearSelection} /></div></>);
+  else if (selectedOrg) inspector = (<><Head kind="ORGANIZATION" title={selectedOrg.name} onClose={clearSelection} sub={selectedOrg.ideology} /><div className="gx-sec ge-form"><OrgCard org={selectedOrg} actors={project.actors} factions={project.factions} systems={project.systems} sectors={project.sectors} onUpdate={handleUpdateOrganization} onClose={clearSelection} /></div></>);
+  else if (selectedCompany) inspector = (<><Head kind={`COMPANY · ${selectedCompany.kind}`.toUpperCase()} title={selectedCompany.name} onClose={clearSelection} sub={`${selectedCompany.scale} · ${selectedCompany.fleet.reduce((n, f) => n + f.count, 0)} hulls`} /><div className="gx-sec ge-form"><CompanyCard company={selectedCompany} shipModels={project.shipModels} factions={project.factions} systems={project.systems} sectors={project.sectors} onUpdate={handleUpdateCompany} onClose={clearSelection} /></div></>);
+
+  const sectionBody = {
+    build: (
+      <BuildPanel p={project} tool={tool} setTool={setTool} field={activeField} setField={setActiveField} showField={showFieldOverlay} setShowField={setShowFieldOverlay}
+        spacing={spacing} setSpacing={setSpacing} settleStatus={settleStatus}
+        act={{ systems: handleGenerateSystems, redistribute: handleRedistributeSystems, planets: handleGeneratePlanets, settle: handleSettleGalaxy, lanes: handleGenerateHyperlanes, factions: handleGenerateFactions, shipModels: handleGenerateShipModels, companies: handleGenerateCompanies, actors: handleGenerateBackgroundActors }} />
+    ),
+    systems: (
+      <>
+        <SystemsPanel project={project} selectedId={selectedSystemId} onPick={flyTo} />
+        <div className="ge-sub-h">SECTORS · {project.sectors.length}</div>
+        <div className="ge-rows">
+          {project.sectors.map((s) => (
+            <button key={s.id} className="gx-gbtn gx-row" onClick={() => selectOnly("sector", s.id)}>
+              <span className="gx-ox" style={{ color: "#ff9a3c", minWidth: 28 }}>{s.name}</span>
+              <span className="t"><span className="b" style={{ color: "#9a958b" }}>{s.focus} · {project.systems.filter((x) => x.sector === s.slug).length} systems</span></span>
+            </button>
+          ))}
         </div>
-        <div style={{ flexGrow: 1 }} />
+        <button className={"ge-btn" + (tool === "sector" ? " on" : "")} onClick={() => setTool("sector")}>{EIcon.sector()} Draw a new sector</button>
+      </>
+    ),
+    factions: (
+      <>
+        <button className={"ge-btn primary" + (tool === "faction" ? " on" : "")} onClick={() => setTool("faction")}>{EIcon.faction()} Place a faction on the map</button>
+        <div className="ge-form"><SectorList {...sl} activeTab="factions" /></div>
+      </>
+    ),
+    people: <div className="ge-form"><SectorList {...sl} activeTab="actors" /><SectorList {...sl} activeTab="organizations" /></div>,
+    fleets: <div className="ge-form"><SectorList {...sl} activeTab="companies" /></div>,
+    events: <div className="ge-form"><SectorList {...sl} activeTab="events" /></div>,
+    ai: <div className="ge-form"><AIPanel settings={aiSettings} onSettingsChange={setAiSettings} onRunPass1={handleRunAIPass1} onRunPass2={handleRunAIPass2} onPreviewProposal={handlePreviewAIProposal} onConfirmProposal={handleConfirmAIProposal} resolveRefName={resolveRefName} /></div>,
+    project: (
+      <div className="ge-form">
+        <ProjectPanel project={project} hoverInfo={hoverInfo} activeField={activeField} onNewProject={handleNewProject}
+          onDownloadProject={() => downloadProjectJSON(project)} onDownloadIndex={() => downloadGalaxyIndex(project)}
+          onImportProject={handleImportProject} onExportSDF={handleExportSDF} exportStatus={exportStatus} />
+      </div>
+    ),
+  };
+  const SECTION_TITLES = { build: ["PIPELINE", "Build the galaxy"], systems: ["INDEX", "Systems & sectors"], factions: ["POWERS", "Factions"], people: ["CAST", "People & organizations"], fleets: ["SHIPPING", "Companies & ships"], events: ["HISTORY", "Events & journal"], ai: ["ASSISTANT", "AI"], project: ["FILE", "Project"] };
+
+  const toolDef = TOOLS.find((t) => t.key === tool);
+  const toolOptions = (() => {
+    if (tool === "paint") {
+      const fd = FIELD_DEFS.find((f) => f.key === activeField);
+      return (
+        <>
+          <div className="ge-opt-row">
+            <label className="ge-lbl">Field
+              <select className="ge-in" value={activeField} onChange={(e) => { setActiveField(e.target.value); setShowFieldOverlay(true); }}>
+                {FIELD_DEFS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+              </select>
+            </label>
+            <label className="ge-lbl">Radius <b>{brush.radius}</b><input type="range" min="10" max="250" value={brush.radius} onChange={(e) => setBrush({ ...brush, radius: Number(e.target.value) })} /></label>
+            <label className="ge-lbl">Strength <b>{brush.strength.toFixed(2)}</b><input type="range" min="0.05" max="1" step="0.05" value={brush.strength} onChange={(e) => setBrush({ ...brush, strength: Number(e.target.value) })} /></label>
+          </div>
+          <div className="ge-opt-row">
+            <label className="ge-check"><input type="checkbox" checked={showFieldOverlay} onChange={(e) => setShowFieldOverlay(e.target.checked)} /> Show <i className="ge-sw" style={{ background: `rgb(${fd?.color})` }} /> on the map</label>
+            <label className="ge-check" title={selectedSector ? "" : "Select a sector first (Select tool)"}><input type="checkbox" disabled={!selectedSector} checked={constrainToSector && !!selectedSector} onChange={(e) => setConstrainToSector(e.target.checked)} /> Only inside {selectedSector ? selectedSector.name : "the selected sector"}</label>
+            {hoverInfo && hoverInfo.value != null && <span className="gx-lore">value here: {hoverInfo.value.toFixed(2)}</span>}
+          </div>
+        </>
+      );
+    }
+    if (tool === "sector" && pendingPoints?.length) {
+      return <div className="ge-form"><PendingSectorForm pointCount={pendingPoints.length} closed={pendingClosed} onClose={handleCloseSectorDraft} onReopen={handleReopenSectorDraft} onCommit={handleCommitSector} onCancel={handleCancelSectorDraft} /></div>;
+    }
+    if (tool === "faction" && pendingFactionSeed) {
+      return <div className="ge-form"><PendingFactionForm pendingFactionSeed={pendingFactionSeed} onCommit={handleCommitFaction} onCancel={handleCancelFactionSeed} /></div>;
+    }
+    if (tool === "lane" && laneFrom) {
+      return <div className="gx-lore">From <b style={{ color: "#5fd3f3" }}>{project.systems.find((s) => s.id === laneFrom)?.name}</b> — now click the other end (Esc cancels).</div>;
+    }
+    return null;
+  })();
+
+  return (
+    <div className={"gx ge" + (embedded ? " embedded" : "") + (panelOpen ? "" : " ge-closed")}>
+      <canvas ref={cvRef} className="gx-canvas" style={{ visibility: workspace === "map" ? "visible" : "hidden", cursor: tool === "select" ? undefined : "crosshair" }} />
+
+      {/* top bar */}
+      <div className="gx-top ge-top">
+        <a href={embedded ? undefined : "/"} className="gx-brand" style={{ textDecoration: "none" }}>
+          {Icon.logo()}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div className="gx-brand-t">GALAXY EDITOR</div>
+            <div className="gx-brand-s">SEED {String(project.seed).toUpperCase()}</div>
+          </div>
+        </a>
+        <div role="tablist" aria-label="Workspace" className="gx-group ge-ws">
+          {[["map", "MAP", EIcon.map()], ["system", "SYSTEM", EIcon.orrery()], ["stations", "STATIONS", EIcon.station()]].map(([k, l, ic]) => (
+            <button key={k} role="tab" aria-selected={workspace === k} className={"gx-tbtn" + (workspace === k ? " on" : "")} onClick={() => setWorkspace(k)}>{ic}{l}</button>
+          ))}
+        </div>
+        {workspace === "map" && (
+          <div className="gx-search ge-search">
+            {Icon.search()}
+            <input type="search" autoComplete="off" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a system…"
+              onKeyDown={(e) => { if (e.key === "Enter" && matches.length) { flyTo(matches[0].id); setSearch(""); e.currentTarget.blur(); } if (e.key === "Escape") { setSearch(""); e.currentTarget.blur(); } }} />
+            {matches.length > 0 && (
+              <div className="gx-matches">
+                {matches.map((s) => (
+                  <button key={s.id} className="gx-gbtn" onClick={() => { flyTo(s.id); setSearch(""); }}>
+                    <span className="n">{s.name}</span>
+                    <span className="m">{(s.sector === "core" ? "CORE" : "SECTOR " + s.sector).toUpperCase()} · {(POPL[s.population] || s.population || "").toUpperCase()}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="gx-grow" style={{ pointerEvents: "none" }} />
+        {workspace === "map" && <div className="gx-stats ge-stats"><span><b>{project.systems.length}</b> SYSTEMS</span><span><b>{project.hyperlanes.length}</b> LANES</span><span><b>{project.factions.length}</b> FACTIONS</span></div>}
         <SaveStatus sync={sync} />
-        {!embedded && <a className="gg-headlink" href="/">APPS</a>}
-        <a className="gg-headlink" href="/galaxy" target={embedded ? "_blank" : undefined} rel="noreferrer">VIEWER ↗</a>
-      </header>
+        <a className="ge-toplink" href="/galaxy" target={embedded ? "_blank" : undefined} rel="noreferrer">VIEWER ↗</a>
+      </div>
       {(sync.status === "conflict" || sync.remoteVersion != null) && (
-        <div className="gg-banner">
+        <div className="ge-banner">
           <span>The galaxy was changed elsewhere (another tab or an MCP tool){sync.status === "conflict" ? " — your last save was not applied." : "."}</span>
-          <button onClick={sync.reload}>Reload theirs (drop my unsaved edits)</button>
-          <button onClick={sync.overwrite}>Keep mine (overwrite)</button>
+          <button className="ge-btn" onClick={sync.reload}>Reload theirs</button>
+          <button className="ge-btn" onClick={sync.overwrite}>Keep mine (overwrite)</button>
         </div>
       )}
-      <nav className="gg-tabbar">
-        {TABS.map((t) => (
-          <button key={t.key} className={activeTab === t.key ? "active" : ""} onClick={() => setActiveTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
-      </nav>
-      {/* the city editor needs room for its layout preview */}
-      {activeTab === "stationGen" && <StationGen project={project} setProject={setProject} />}
-      <div className="gg-body" style={{ display: activeTab === "stationGen" ? "none" : undefined, gridTemplateColumns: `1fr 6px ${activeTab === "cities" ? Math.max(rightWidth, 440) : rightWidth}px` }}>
-        <GalaxyCanvas
-          project={project}
-          tool={tool}
-          activeField={activeField}
-          brush={brush}
-          showSectors={showSectors}
-          showFactions={showFactions}
-          showFieldOverlay={showFieldOverlay}
-          selectedSectorId={selectedSectorId}
-          selectedSystemId={selectedSystemId}
-          selectedFactionId={selectedFactionId}
-          pendingPoints={pendingPoints}
-          pendingClosed={pendingClosed}
-          pendingFactionSeed={pendingFactionSeed}
-          onPaint={handlePaint}
-          onAddSectorPoint={handleAddSectorPoint}
-          onCloseSectorDraft={handleCloseSectorDraft}
-          onCancelSectorDraft={handleCancelSectorDraft}
-          onAddFactionSeed={handleAddFactionSeed}
-          onCancelFactionSeed={handleCancelFactionSeed}
-          onPlaceSystem={handlePlaceSystem}
-          onToggleHyperlane={handleToggleHyperlane}
-          onSelectSector={(id) => { setSelectedSectorId(id); setSelectedSystemId(null); setSelectedFactionId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
-          onSelectSystem={(id) => { setSelectedSystemId(id); setSelectedSectorId(null); setSelectedFactionId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
-          onSelectFaction={(id) => { setSelectedFactionId(id); setSelectedSectorId(null); setSelectedSystemId(null); setSelectedActorId(null); setSelectedOrgId(null); }}
-          onHover={(wx, wy, value) => setHoverInfo(wx == null ? null : { wx, wy, value })}
-        />
-        <div className="gg-resize-handle" onMouseDown={handlePanelResizeStart} />
-        <aside className="gg-panel">
-          {activeTab === "draw" && (
-            <DrawPanel
-              tool={tool}
-              setTool={setTool}
-              activeField={activeField}
-              setActiveField={setActiveField}
-              brush={brush}
-              setBrush={setBrush}
-              showFieldOverlay={showFieldOverlay}
-              setShowFieldOverlay={setShowFieldOverlay}
-              constrainToSector={constrainToSector}
-              setConstrainToSector={setConstrainToSector}
-              selectedSectorId={selectedSectorId}
-              showSectors={showSectors}
-              setShowSectors={setShowSectors}
-              showFactions={showFactions}
-              setShowFactions={setShowFactions}
-            />
-          )}
-          {activeTab === "generate" && (
-            <GeneratePanel
-              spacing={spacing}
-              setSpacing={setSpacing}
-              systemCount={project.systems.length}
-              onGenerateSystems={handleGenerateSystems}
-              onRedistributeSystems={handleRedistributeSystems}
-              onGeneratePlanets={handleGeneratePlanets}
-              onSettleGalaxy={handleSettleGalaxy}
-              settleStatus={settleStatus}
-              hyperlaneCount={project.hyperlanes.length}
-              onGenerateHyperlanes={handleGenerateHyperlanes}
-              factionCount={project.factions.length}
-              onGenerateFactions={handleGenerateFactions}
-              backgroundActorCount={project.actors.filter((a) => a.origin === "generated").length}
-              onGenerateBackgroundActors={handleGenerateBackgroundActors}
-              shipModelCount={project.shipModels.length}
-              onGenerateShipModels={handleGenerateShipModels}
-              companyCount={project.companies.filter((c) => c.origin === "generated").length}
-              onGenerateCompanies={handleGenerateCompanies}
-              hasSectors={project.sectors.length > 0}
-            />
-          )}
-          {activeTab === "orrery" && (
-            <>
-              <h3>Orrery</h3>
-              {project.systems.length === 0 ? (
-                <p className="muted small">No systems yet — generate some first (Generate tab).</p>
-              ) : (
+
+      {workspace === "map" && (
+        <>
+          <nav aria-label="Map layers" className="gx-rail">
+            {MODE_KEYS.map((m) => (
+              <button key={m} className={"gx-mbtn" + (mapMode === m ? " on" : "")} aria-pressed={mapMode === m} onClick={() => setMapMode(m)}>{Icon[m]()}<span>{MODES[m].t}</span></button>
+            ))}
+            <div className="gx-rail-sep" />
+            <button className={"gx-mbtn short" + (showLanes ? " on" : "")} aria-pressed={showLanes} onClick={() => setShowLanes(!showLanes)}>{Icon.lanes()}<span>LANES</span></button>
+            <button className={"gx-mbtn short" + (showNames ? " on" : "")} aria-pressed={showNames} onClick={() => setShowNames(!showNames)}>{Icon.labels()}<span>NAMES</span></button>
+            <button className={"gx-mbtn short" + (showFieldOverlay ? " on" : "")} aria-pressed={showFieldOverlay} onClick={() => setShowFieldOverlay(!showFieldOverlay)} title={FIELD_DEFS.find((f) => f.key === activeField)?.label}>{EIcon.field()}<span>FIELD</span></button>
+          </nav>
+          <div className="gx-zoom">
+            <button className="gx-mbtn" aria-label="Zoom in" onClick={() => mapRef.current?.zoomIn()}>{Icon.plus()}</button>
+            <button className="gx-mbtn" aria-label="Zoom out" onClick={() => mapRef.current?.zoomOut()}>{Icon.minus()}</button>
+            <button className="gx-mbtn" aria-label="Reset view" onClick={() => mapRef.current?.reset()}>{Icon.reset()}</button>
+          </div>
+          <div className="gx-legend ge-legend">
+            <div className="gx-legend-h"><span className="t">{MODES[mapMode].t}</span><span className="s">{MODES[mapMode].sub}</span></div>
+            <Legend mode={mapMode} D={D} />
+          </div>
+
+          {/* tool dock */}
+          <div className="ge-dockwrap">
+            {(toolOptions || tool !== "select") && (
+              <div className="ge-toolopts">
+                <div className="ge-toolopts-h"><span className="t">{toolDef.label}</span><span className="s">{toolDef.hint}</span></div>
+                {toolOptions}
+              </div>
+            )}
+            <div className="ge-dock" role="toolbar" aria-label="Tools">
+              {TOOLS.map((t) => (
+                <button key={t.key} className={"gx-mbtn" + (tool === t.key ? " on" : "")} aria-pressed={tool === t.key} onClick={() => setTool(t.key)} title={`${t.hint} (${t.key1})`}>
+                  {EIcon[t.key]()}<span>{t.label}</span><kbd>{t.key1}</kbd>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* right rail + panel */}
+          <nav aria-label="Panels" className="ge-rrail">
+            {SECTIONS.map((sct) => (
+              <button key={sct.key} className={"gx-mbtn" + (!inspecting && section === sct.key ? " on" : "")} aria-pressed={!inspecting && section === sct.key} onClick={() => pickSection(sct.key)}>{EIcon[sct.key]()}<span>{sct.label}</span></button>
+            ))}
+          </nav>
+          {panelOpen && (
+            <aside className="gx-panel gx-scroll ge-panel" aria-label={inspecting ? "Inspector" : "Panel"}>
+              {inspecting ? inspector : (
                 <>
-                  <label className="small muted">System</label>
-                  <select
-                    value={selectedSystemId || ""}
-                    onChange={(e) => {
-                      const id = e.target.value || null;
-                      setSelectedSystemId(id);
-                      setSelectedSectorId(null);
-                      setSelectedFactionId(null);
-                      setSelectedActorId(null);
-                      setSelectedOrgId(null);
-                    }}
-                  >
-                    <option value="">— pick a system —</option>
-                    {project.systems.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                  {selectedSystem ? (
-                    <OrreryView
-                      key={selectedSystem.id}
-                      system={selectedSystem}
-                      onUpdateBodies={(bodies) => handleUpdateSystem(selectedSystem.id, { bodies, locked: true })}
-                    />
-                  ) : (
-                    <p className="muted small">Pick a system above, or click one on the map (Select tool).</p>
-                  )}
+                  <Head kind={SECTION_TITLES[section][0]} title={SECTION_TITLES[section][1]} onClose={() => setSection(null)} />
+                  <div className="gx-sec ge-secbody">{sectionBody[section]}</div>
                 </>
               )}
-            </>
+            </aside>
           )}
-          {activeTab === "cities" && (
-            <CityEditor
-              systems={project.systems}
-              selectedSystem={selectedSystem}
-              onSelectSystem={(id) => {
-                setSelectedSystemId(id);
-                setSelectedSectorId(null);
-                setSelectedFactionId(null);
-                setSelectedActorId(null);
-                setSelectedOrgId(null);
-              }}
-              onUpdateSystem={handleUpdateSystem}
-            />
-          )}
-          {activeTab === "cityGen" && <GeneratorStub kind="city" />}
-          {activeTab === "ai" && (
-            <AIPanel
-              settings={aiSettings}
-              onSettingsChange={setAiSettings}
-              onRunPass1={handleRunAIPass1}
-              onRunPass2={handleRunAIPass2}
-              onPreviewProposal={handlePreviewAIProposal}
-              onConfirmProposal={handleConfirmAIProposal}
-              resolveRefName={resolveRefName}
-            />
-          )}
-          {activeTab === "project" && (
-            <ProjectPanel
-              project={project}
-              hoverInfo={hoverInfo}
-              activeField={activeField}
-              onNewProject={handleNewProject}
-              onDownloadProject={() => downloadProjectJSON(project)}
-              onDownloadIndex={() => downloadGalaxyIndex(project)}
-              onImportProject={handleImportProject}
-              onExportSDF={handleExportSDF}
-              exportStatus={exportStatus}
-            />
-          )}
-          <SectorList
-          activeTab={activeTab}
-          sectors={project.sectors}
-          selectedSectorId={selectedSectorId}
-          onSelect={setSelectedSectorId}
-          onFocusChange={handleFocusChange}
-          onDelete={handleDeleteSector}
-          selectedSystem={selectedSystem}
-          onDeselectSystem={() => setSelectedSystemId(null)}
+        </>
+      )}
+
+      {workspace === "system" && (
+        <SystemWorkspace project={project} system={selectedSystem}
+          onPickSystem={(id) => selectOnly("system", id)}
           onUpdateSystem={handleUpdateSystem}
-          systems={project.systems}
-          factions={project.factions}
-          selectedFactionId={selectedFactionId}
-          selectedFaction={selectedFaction}
-          onSelectFaction={setSelectedFactionId}
-          onDeselectFaction={() => setSelectedFactionId(null)}
-          onUpdateFaction={handleUpdateFaction}
-          onDeleteFaction={handleDeleteFaction}
-          pendingFactionSeed={pendingFactionSeed}
-          onCommitFaction={handleCommitFaction}
-          onCancelFactionSeed={handleCancelFactionSeed}
-          pendingPoints={pendingPoints}
-          pendingClosed={pendingClosed}
-          onClosePending={handleCloseSectorDraft}
-          onReopenPending={handleReopenSectorDraft}
-          onCommitPending={handleCommitSector}
-          onCancelPending={handleCancelSectorDraft}
-          actors={project.actors}
-          selectedActorId={selectedActorId}
-          selectedActor={selectedActor}
-          onSelectActor={setSelectedActorId}
-          onDeselectActor={() => setSelectedActorId(null)}
-          onCreateActor={handleCreateActor}
-          onUpdateActor={handleUpdateActor}
-          onDeleteActor={handleDeleteActor}
-          organizations={project.organizations}
-          selectedOrgId={selectedOrgId}
-          selectedOrg={selectedOrg}
-          onSelectOrg={setSelectedOrgId}
-          onDeselectOrg={() => setSelectedOrgId(null)}
-          onCreateOrganization={handleCreateOrganization}
-          onUpdateOrganization={handleUpdateOrganization}
-          onDeleteOrganization={handleDeleteOrganization}
-          companies={project.companies}
-          shipModels={project.shipModels}
-          selectedCompanyId={selectedCompanyId}
-          selectedCompany={selectedCompany}
-          onSelectCompany={setSelectedCompanyId}
-          onDeselectCompany={() => setSelectedCompanyId(null)}
-          onCreateCompany={handleCreateCompany}
-          onUpdateCompany={handleUpdateCompany}
-          onDeleteCompany={handleDeleteCompany}
-          onCreateShipModel={handleCreateShipModel}
-          onDeleteShipModel={handleDeleteShipModel}
-          events={project.events}
-          onPreviewEvent={handlePreviewEvent}
-          onCommitEvent={handleCommitEvent}
-          onDeleteEvent={handleDeleteEvent}
-          />
-        </aside>
-      </div>
+          onOpenStation={openStation}
+          systemInspector={systemInspector && React.cloneElement(systemInspector, { inWorkspace: true, onClose: undefined })} />
+      )}
+      {workspace === "stations" && <StationGen project={project} setProject={setProject} initialTarget={stationTarget} />}
     </div>
   );
 }
@@ -1163,15 +1210,15 @@ export default function GalaxyEditor({ embedded = false }) {
   }, []);
   if (state.project) return <EditorApp initialProject={state.project.data} initialVersion={state.project.version} embedded={embedded} />;
   return (
-    <div className={"gxe galaxygen-app" + (embedded ? " embedded" : "")}>
-      <div className="gg-empty">
+    <div className={"gx ge" + (embedded ? " embedded" : "")}>
+      <div className="gx-center-msg">
         {state.loading && <p>LOADING GALAXY…</p>}
         {state.error && <p>Could not load the galaxy: {state.error}</p>}
         {state.empty && (
           <>
             <h1>NO GALAXY YET</h1>
-            <p className="muted">Start an empty one here (it's saved to SIT as you work), or import an existing GalaxyGen project from the Galaxy tab.</p>
-            <button onClick={() => setState({ project: { data: createDefaultProject(), version: undefined } })}>Create a new galaxy</button>
+            <p className="muted" style={{ letterSpacing: 0, fontFamily: "Barlow Semi Condensed, sans-serif", fontSize: 15 }}>Start an empty one here (it's saved to SIT as you work), or import an existing GalaxyGen project from the Project panel.</p>
+            <button className="gx-cta" style={{ width: 280 }} onClick={() => setState({ project: { data: createDefaultProject(), version: undefined } })}>Create a new galaxy</button>
           </>
         )}
       </div>

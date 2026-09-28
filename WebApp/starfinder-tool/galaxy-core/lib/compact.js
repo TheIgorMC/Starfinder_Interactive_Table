@@ -1,7 +1,9 @@
-// Node port of the galaxy-viewer handoff's tools/build_compact.py — turns a
+// Port of the galaxy-viewer handoff's tools/build_compact.py — turns a
 // full GalaxyGen project (a few MB) into the short-keyed payload the
 // frontend galaxy viewer (frontend/src/galaxy/) renders (~600 KB). Straight
 // field mapping; see the key legend in frontend/src/galaxy/README.md.
+// Shared: the backend serves it (/api/galaxy/compact), the Galaxy Editor
+// renders its map and system views from it (same renderers as the viewer).
 //
 // `gm: false` strips hidden districts (e.g. a secret base) so players never
 // receive them at all — gating happens here, not in the UI.
@@ -46,27 +48,7 @@ export function buildCompact(d, { gm = true } = {}) {
     fld: Object.fromEntries(["security", "population"].map((k) => [k, (fields[k] || []).map(r2)])),
   };
 
-  for (const s of S) {
-    const bodies = (s.bodies || []).map((b) =>
-      prune({
-        k: b.kind, n: b.name, s: b.slug, p: b.parent, st: b.status,
-        au: b.orbitAU, auo: b.orbitAUOuter, a: b.orbitAngleDeg, pd: b.orbitPeriodDays,
-        r: b.radiusKm, hab: b.habitable, res: b.resources, sz: b.sizeClass,
-        pp: b.population, pc: b.inhabitants, sv: b.services, dk: b.docks, dc: b.dockClass,
-        gh: b.goodsHandled, lm: b.lengthM,
-        t: (b.tags || []).filter((t) => KEEP_BODY_TAGS.has(t)),
-        sites: compactSites(b.sites, gm),
-      })
-    );
-    out.sys.push({
-      s: s.slug, n: s.name, x: r1(s.position?.x ?? 0), y: r1(s.position?.y ?? 0),
-      i: s.important || 0, st: s.starType || "", sc: s.sector || "", pop: s.population || null, so: !!s.stationOnly,
-      ow: s.control?.owner || null,
-      cb: (s.control?.contestedBy || []).map((c) => [c.faction, c.share]),
-      sd: s.security?.dominion ?? 0.5, sf: s.security?.faction ?? 0, war: s.warChance ?? 0,
-      t: s.tags || [], note: s.note || null, ex: s.export || [], im: s.import || [], b: bodies,
-    });
-  }
+  for (const s of S) out.sys.push(compactSystem(s, { gm }));
 
   for (const h of d.hyperlanes || []) {
     let a = byId.get(h.a), b = byId.get(h.b);
@@ -75,4 +57,26 @@ export function buildCompact(d, { gm = true } = {}) {
     out.ln.push([a, b, CAP[h.capacity] ?? 1, h.risk ?? 0]);
   }
   return out;
+}
+
+export function compactSystem(s, { gm = true } = {}) {
+  const bodies = (s.bodies || []).map((b) =>
+    prune({
+      k: b.kind, n: b.name, s: b.slug, p: b.parent, st: b.status,
+      au: b.orbitAU, auo: b.orbitAUOuter, a: b.orbitAngleDeg, pd: b.orbitPeriodDays,
+      r: b.radiusKm, hab: b.habitable, res: b.resources, sz: b.sizeClass,
+      pp: b.population, pc: b.inhabitants, sv: b.services, dk: b.docks, dc: b.dockClass,
+      gh: b.goodsHandled, lm: b.lengthM,
+      t: (b.tags || []).filter((t) => KEEP_BODY_TAGS.has(t)),
+      sites: compactSites(b.sites, gm),
+    })
+  );
+  return {
+    s: s.slug, n: s.name, x: r1(s.position?.x ?? 0), y: r1(s.position?.y ?? 0),
+    i: s.important || 0, st: s.starType || "", sc: s.sector || "", pop: s.population || null, so: !!s.stationOnly,
+    ow: s.control?.owner || null,
+    cb: (s.control?.contestedBy || []).map((c) => [c.faction, c.share]),
+    sd: s.security?.dominion ?? 0.5, sf: s.security?.faction ?? 0, war: s.warChance ?? 0,
+    t: s.tags || [], note: s.note || null, ex: s.export || [], im: s.import || [], b: bodies,
+  };
 }

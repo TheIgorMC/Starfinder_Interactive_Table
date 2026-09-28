@@ -2,7 +2,7 @@
 
 Status: **design note + scaffolding** (2026-09). The current district layout
 (`galaxy-core/lib/settlement.js`, shared by the galaxy viewer and the Galaxy
-Editor's Cities tab) is only right for **small outposts**. Cities and stations get their own
+Editor's surface-site editor, SYSTEM workspace) is only right for **small outposts**. Cities and stations get their own
 generators later; this doc records the split so the code doesn't drift into
 one renderer pretending to fit all three.
 
@@ -11,14 +11,14 @@ one renderer pretending to fit all three.
 | Style | Where | Look | Generator | Status |
 |---|---|---|---|---|
 | `outpost` | small settlements on moons / rocky / ice worlds, extraction sites, gas-giant platforms | districts as **domes** ("bubbles") joined by tunnels/rail/shuttles; floating platforms on gas giants | `layoutSettlement()` in `settlement.js` (seeded relaxation + MST transit) | **done** — this is the current system, kept as is |
-| `city` | real cities on planets, city-planets (ecumenopolis), capitals | own functional, procedural design (street grid / blocks / zoning / arteries) | Galaxy Editor **City Gen** tab → `galaxy-core/lib/cityGen.js` | **skeleton only** — until it exists, cities render with the outpost layout, flagged as *provisional* |
-| `station` | orbital stations, mining platforms, ships | prefab blocks on a 2 m grid, deck by deck (see below) | Galaxy Editor **Station Gen** tab → `galaxy-core/lib/stationGen.js` | **v1 done** (2026-09) — generator, editor, MCP; viewer rendering still to do |
+| `city` | real cities on planets, city-planets (ecumenopolis), capitals | own functional, procedural design (street grid / blocks / zoning / arteries) | `galaxy-core/lib/cityGen.js` (will live in the SYSTEM workspace's site editor) | **skeleton only** — until it exists, cities render with the outpost layout, flagged as *provisional* |
+| `station` | orbital stations, mining platforms, ships | prefab blocks on a 2 m grid, deck by deck (see below) | Galaxy Editor **STATIONS** workspace → `galaxy-core/lib/stationGen.js` | **v1 done** (2026-09) — generator, editor, MCP; viewer rendering still to do |
 
 ## How a site picks its style
 
 `settlementStyle(body, site)` in `galaxy-core/lib/settlement.js`:
 
-1. an explicit `site.style` (`"outpost" | "city" | "station"`, set in the Cities tab) wins;
+1. an explicit `site.style` (`"outpost" | "city" | "station"`, set in the site editor) wins;
 2. a body of kind `orbital station` → `station`;
 3. an ecumenopolis body, or a site whose `kind` is `city`/`government`, or the procedural capital (`cap`) → `city`;
 4. everything else → `outpost`.
@@ -57,15 +57,13 @@ player redaction keep working unchanged:
 ## Scaffolding in place
 
 - `settlementStyle()` + style dispatch in `galaxy-core/lib/settlement.js`.
-- Cities tab: per-site **Layout style** selector (auto / outpost / city / station).
-- Galaxy Editor tabs **City Gen** and **Station Gen** (placeholders describing
-  inputs/outputs) and stub modules `cityGen.js` / `stationGen.js` exporting
-  the entry points above (they return `null` for now).
+- Site editor (SYSTEM workspace → body → Surface sites): per-site **Layout style** selector (auto / outpost / city / station).
+- Stub module `cityGen.js` (returns `null` for now); `stationGen.js` is built (below).
 - Viewer: settlement panel shows the style and a "provisional layout" note for city/station.
 
 ## Station Gen (v1, 2026-09)
 
-`galaxy-core/lib/stationGen.js`, tab **Station Gen**, MCP `galaxy_generate_station_layout`,
+`galaxy-core/lib/stationGen.js`, workspace **STATIONS** (also reachable from a station body in the SYSTEM workspace), MCP `galaxy_generate_station_layout`,
 `galaxy_get_station_layout`, `galaxy_find_venues`, `galaxy_update_venue`.
 
 - **Grid**: 1 unit = 2 m × 2 m. Units are standard, blocks are not: a module

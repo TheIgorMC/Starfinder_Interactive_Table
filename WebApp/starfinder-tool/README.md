@@ -134,7 +134,9 @@ merged in — see `Docs/10-galaxy-mapgen.md`):
 - **Galaxy Editor** (GM console tab, or `/galaxy-editor` full screen, GM
   only) — the procedural generator/editor: sectors, density fields,
   systems, bodies, hyperlanes, factions, actors, organizations, ships,
-  events, surface sites + city layouts (Cities tab). It edits the
+  events, surface sites + city layouts, station/ship layouts. Same look as
+  the viewer (it reuses its map and panels): MAP / SYSTEM / STATIONS
+  workspaces, tool dock, a BUILD checklist for the pipeline. It edits the
   campaign's stored galaxy **in place** (`GET/PUT /api/galaxy/project`,
   debounced autosave, versioned: a save based on an older version is
   refused with a reload-or-overwrite choice instead of silently clobbering

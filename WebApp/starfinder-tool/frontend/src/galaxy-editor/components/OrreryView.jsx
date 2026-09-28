@@ -99,6 +99,7 @@ function blankBody(system, bodies, kind, parentSlug, defaultOrbitAU) {
   };
 }
 
+export { blankBody };
 export default function OrreryView({ system, onUpdateBodies }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null); // { slug, isPrimary, isBelt }
@@ -330,7 +331,7 @@ export default function OrreryView({ system, onUpdateBodies }) {
 // Shared by Resources/Services/Goods handled below — a labeled row of
 // removable tag chips plus an add-input, same interaction pattern already
 // used elsewhere in the app for tag-shaped list fields.
-function TagEditor({ label, placeholder, values, onChange }) {
+export function TagEditor({ label, placeholder, values, onChange }) {
   const [draft, setDraft] = useState("");
   return (
     <>
@@ -365,7 +366,8 @@ function TagEditor({ label, placeholder, values, onChange }) {
   );
 }
 
-function BodyEditor({ body, bodies, onChange, onDelete }) {
+// `bare`: embedded under a header that already edits the name.
+export function BodyEditor({ body, bodies, onChange, onDelete, bare }) {
   const [newResource, setNewResource] = useState("");
   const isSatellite = !!body.parent;
   const isStation = body.kind === "orbital station";
@@ -373,17 +375,19 @@ function BodyEditor({ body, bodies, onChange, onDelete }) {
   const resources = body.resources || [];
 
   return (
-    <div className="gg-new-form">
-      <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <input
-          value={body.name}
-          onChange={(e) => onChange({ name: e.target.value })}
-          style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
-        />
-        <button className="gg-danger" onClick={onDelete} title="Delete this body (and any moons/stations attached to it)">
-          Delete
-        </button>
-      </div>
+    <div className={bare ? "" : "gg-new-form"}>
+      {!bare && (
+        <div className="gg-tool-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <input
+            value={body.name}
+            onChange={(e) => onChange({ name: e.target.value })}
+            style={{ flex: "1 1 auto", margin: 0, fontWeight: 600 }}
+          />
+          <button className="gg-danger" onClick={onDelete} title="Delete this body (and any moons/stations attached to it)">
+            Delete
+          </button>
+        </div>
+      )}
 
       <label className="small muted">Kind</label>
       <select value={body.kind} onChange={(e) => onChange({ kind: e.target.value })}>
@@ -552,6 +556,7 @@ function BodyEditor({ body, bodies, onChange, onDelete }) {
           </div>
         </>
       )}
+      {bare && <button className="gg-danger" style={{ marginTop: 12 }} onClick={onDelete}>Delete this body</button>}
     </div>
   );
 }

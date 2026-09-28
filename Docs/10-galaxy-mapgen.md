@@ -12,6 +12,21 @@
 > `frontend/src/galaxy-editor/…` (UI); `galaxy-core/FEATURES.md` is the old
 > GalaxyGen feature log.
 >
+> **Update 2026-09 — editor redesign.** The editor is now built on the
+> viewer itself: its map is the viewer's `GalaxyMap` renderer
+> (`galaxy/galaxy-map.js`) subclassed as `galaxy-editor/map/editor-map.js`
+> (editing overlay + tool-aware input), fed by the same compact format
+> (`galaxy-core/lib/compact.js`, shared with `/api/galaxy/compact`), and its
+> panels reuse the viewer's CSS and components (system panel, legend, body
+> tree, system view). Layout: three workspaces — **MAP** (layers rail on the
+> left as in the viewer, tool dock at the bottom: Select/Paint/Sector/System/
+> Lane/Faction with shortcuts V/B/S/P/L/F, right rail with BUILD — the whole
+> pipeline as a guided checklist —, Systems, Factions, People, Fleets,
+> Events, AI, Project; selecting anything opens its inspector), **SYSTEM**
+> (the viewer's orrery/schematic of the live system, body tree, body editor
+> with surface sites & city layouts, station → layout), **STATIONS** (Station
+> Gen). The default tool is Select, so a click never paints by accident.
+>
 > **Update 2026-09 — settlement rules (§8).** The body generator was far too
 > conservative for this setting (in the ARTS data: 18 colonized worlds in
 > 374 systems, 272 systems with no colony or station, "core world" systems

@@ -563,7 +563,7 @@ function BodiesSection({ system, onUpdate }) {
   );
 }
 
-function FactionCard({ faction, factions, onUpdate, onClose }) {
+export function FactionCard({ faction, factions, onUpdate, onClose }) {
   const [newCrime, setNewCrime] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const toleratedCrimes = faction.toleratedCrimes || [];
@@ -684,7 +684,7 @@ function FactionCard({ faction, factions, onUpdate, onClose }) {
   );
 }
 
-function PendingSectorForm({ pointCount, closed, onClose, onReopen, onCommit, onCancel }) {
+export function PendingSectorForm({ pointCount, closed, onClose, onReopen, onCommit, onCancel }) {
   const canClose = pointCount >= 3;
 
   if (!closed) {
@@ -734,7 +734,7 @@ function PendingFields({ onCommit }) {
   );
 }
 
-function PendingFactionForm({ pendingFactionSeed, onCommit, onCancel }) {
+export function PendingFactionForm({ pendingFactionSeed, onCommit, onCancel }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("#4f8ef7");
   const [government, setGovernment] = useState("");
@@ -863,7 +863,7 @@ function NewActorForm({ factions, organizations, companies, systems, onCreate })
   );
 }
 
-function ActorCard({ actor, factions, organizations, companies, systems, onUpdate, onClose }) {
+export function ActorCard({ actor, factions, organizations, companies, systems, onUpdate, onClose }) {
   const locationSystem = systems.find((s) => s.slug === actor.location);
   const [collapsed, setCollapsed] = useState(false);
   return (
@@ -1044,7 +1044,7 @@ function NewOrgForm({ factions, sectors, systems, onCreate }) {
   );
 }
 
-function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose }) {
+export function OrgCard({ org, actors, factions, systems, sectors, onUpdate, onClose }) {
   const members = actors.filter((a) => a.affiliation === `party:${org.slug}`);
   const [collapsed, setCollapsed] = useState(false);
   return (
@@ -1285,7 +1285,7 @@ function NewShipModelForm({ onCreate }) {
   );
 }
 
-function CompanyCard({ company, shipModels, factions, systems, sectors, onUpdate, onClose }) {
+export function CompanyCard({ company, shipModels, factions, systems, sectors, onUpdate, onClose }) {
   const modelsBySlug = new Map(shipModels.map((m) => [m.slug, m]));
   const fleetTotal = company.fleet.reduce((n, f) => n + f.count, 0);
   const [collapsed, setCollapsed] = useState(false);

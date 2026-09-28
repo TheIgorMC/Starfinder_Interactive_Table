@@ -3,7 +3,7 @@ import multer from "multer";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 import { z } from "zod";
-import { buildCompact } from "../galaxy-compact.js";
+import { buildCompact } from "../../../galaxy-core/lib/compact.js";
 import { broadcast } from "../ws.js";
 import { setZod } from "../../../galaxy-core/tools/zod.js";
 import { runTool, listTools } from "../../../galaxy-core/tools/runner.js";

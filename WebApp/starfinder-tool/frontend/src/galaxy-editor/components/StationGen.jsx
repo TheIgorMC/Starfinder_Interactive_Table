@@ -3,12 +3,15 @@ import {
   generateStation, stationSpec, blockDetail, summarizeStation, BLOCK_TYPES, SHOP_KINDS, UNIT_M,
   updateBlock, addBlock, removeBlock, addShop, updateShop, removeShop,
 } from "@galaxy-core/lib/stationGen.js";
+import { Icon } from "../../galaxy/ui.jsx";
+import { Head } from "../shell/Inspectors.jsx";
 
-// Station Gen tab (Docs/15-settlement-generators.md): generate and edit the
-// block layout of an orbital/mining station body or a company's notable
-// ship. The layout is stored on the target itself (`body.layout` /
-// `notableShips[i].layout`) and saved with the project like any other edit.
-// Graphics are deliberately plain (flat colored blocks) — the look comes later.
+// STATIONS workspace (Docs/15-settlement-generators.md): generate and edit
+// the block layout of a station body or a company's notable ship, in the
+// viewer's look — plan on a blueprint ground in the middle, target and
+// generator on the left, block / venue inspector on the right, deck
+// section along the bottom. The layout is stored on the target itself
+// (`body.layout` / `notableShips[i].layout`).
 const TYPES = Object.keys(BLOCK_TYPES);
 const ARCHETYPES = ["auto", "orbital", "vessel", "mining"];
 const PURPOSES = ["auto", "cargo", "tourism", "diplomacy", "private", "research", "military", "colony", "trade", "logistics", "shipyard", "fortress", "waystation", "fuel", "metropolis", "mining"];
@@ -16,35 +19,41 @@ const VENUE = new Set(["dining", "commercial", "recreation"]);
 const SHOP_KIND_LIST = [...new Set([...SHOP_KINDS.dining, ...SHOP_KINDS.commercial, ...SHOP_KINDS.recreation, ...SHOP_KINDS.mess])];
 
 const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
+export const stationKey = (kind, owner, slug) => `${kind}|${owner}|${slug}`;
 
-export default function StationGen({ project, setProject }) {
-  const [mode, setMode] = useState("stations");
-  const [systemSlug, setSystemSlug] = useState("");
-  const [companySlug, setCompanySlug] = useState("");
-  const [targetKey, setTargetKey] = useState(null); // "body:<sys>:<slug>" | "ship:<company>:<slug>"
+export default function StationGen({ project, setProject, initialTarget }) {
+  const [mode, setMode] = useState(initialTarget?.startsWith("ship|") ? "ships" : "stations");
+  const [targetKey, setTargetKey] = useState(initialTarget || null);
+  const [ownerPick, setOwnerPick] = useState(() => initialTarget?.split("|")[1] || "");
   const [opts, setOpts] = useState({ archetype: "auto", purpose: "auto", seed: "" });
   const [deck, setDeck] = useState(0);
   const [sel, setSel] = useState(null);
   const [shopQuery, setShopQuery] = useState("");
+  useEffect(() => { if (initialTarget) { setTargetKey(initialTarget); setOwnerPick(initialTarget.split("|")[1]); setMode(initialTarget.startsWith("ship|") ? "ships" : "stations"); } }, [initialTarget]);
 
-  const stationSystems = useMemo(() => project.systems.filter((s) => (s.bodies || []).some((b) => b.kind === "orbital station")), [project.systems]);
+  const stationSystems = useMemo(() => project.systems.filter((s) => (s.bodies || []).some((b) => b.kind === "orbital station")).sort((a, b) => a.name.localeCompare(b.name)), [project.systems]);
   const companies = useMemo(() => project.companies.filter((c) => (c.notableShips || []).length), [project.companies]);
   const models = useMemo(() => new Map((project.shipModels || []).map((m) => [m.slug, m])), [project.shipModels]);
+  const withLayouts = useMemo(() => {
+    const out = [];
+    for (const s of project.systems) for (const b of s.bodies || []) if (b.layout) out.push({ key: stationKey("body", s.slug, b.slug), name: b.name });
+    for (const c of project.companies) for (const sh of c.notableShips || []) if (sh.layout) out.push({ key: stationKey("ship", c.slug, sh.slug), name: `${sh.name} (${c.name})` });
+    return out;
+  }, [project.systems, project.companies]);
 
-  // resolve the current target from the live project
   const target = useMemo(() => {
     if (!targetKey) return null;
     const [kind, owner, slug] = targetKey.split("|");
     if (kind === "body") {
       const sys = project.systems.find((s) => s.slug === owner);
       const body = sys?.bodies?.find((b) => b.slug === slug);
-      return body ? { kind, owner, slug, entity: body, label: body.name, sub: `${body.sizeClass || "station"} · ${fmt(Number(body.population) || 0)} aboard · ${body.lengthM || "?"} m`, genInput: body } : null;
+      return body ? { kind, owner, slug, entity: body, label: body.name, where: sys.name, sub: `${body.sizeClass || "station"} · ${fmt(Number(body.population) || 0)} aboard · ${body.lengthM || "?"} m`, genInput: body } : null;
     }
     const co = project.companies.find((c) => c.slug === owner);
     const ship = co?.notableShips?.find((s) => s.slug === slug);
     if (!ship) return null;
     const model = models.get(ship.modelSlug);
-    return { kind, owner, slug, entity: ship, label: ship.name, sub: model ? `${model.hullClass} · ${model.sizeCategory} · crew ${model.crew}` : "unknown model", genInput: { ...ship, model: model || { sizeCategory: "Medium", crew: 6, role: co.role } } };
+    return { kind, owner, slug, entity: ship, label: ship.name, where: co.name, sub: model ? `${model.hullClass} · ${model.sizeCategory} · crew ${model.crew}` : "unknown model", genInput: { ...ship, model: model || { sizeCategory: "Medium", crew: 6, role: co.role } } };
   }, [targetKey, project.systems, project.companies, models]);
 
   const layout = target?.entity.layout || null;
@@ -52,35 +61,20 @@ export default function StationGen({ project, setProject }) {
   const writeLayout = useCallback((next) => {
     if (!target) return;
     const { kind, owner, slug } = target;
-    setProject((p) => {
-      if (kind === "body") {
-        return {
-          ...p,
-          systems: p.systems.map((s) => (s.slug !== owner ? s : {
-            ...s,
-            locked: true, // a hand-made layout is curation: keep it through "Generate planets"
-            bodies: s.bodies.map((b) => (b.slug === slug ? (next ? { ...b, layout: next } : (({ layout: _l, ...rest }) => rest)(b)) : b)),
-          })),
-        };
-      }
-      return {
-        ...p,
-        companies: p.companies.map((c) => (c.slug !== owner ? c : {
-          ...c,
-          notableShips: c.notableShips.map((s) => (s.slug === slug ? (next ? { ...s, layout: next } : (({ layout: _l, ...rest }) => rest)(s)) : s)),
-        })),
-      };
-    });
+    const put = (x) => (next ? { ...x, layout: next } : (({ layout: _l, ...rest }) => rest)(x));
+    setProject((p) => (kind === "body"
+      ? { ...p, systems: p.systems.map((s) => (s.slug !== owner ? s : { ...s, locked: true, bodies: s.bodies.map((b) => (b.slug === slug ? put(b) : b)) })) }
+      : { ...p, companies: p.companies.map((c) => (c.slug !== owner ? c : { ...c, notableShips: c.notableShips.map((s) => (s.slug === slug ? put(s) : s)) })) }));
   }, [target, setProject]);
 
-  useEffect(() => { setSel(null); setDeck(0); }, [targetKey]);
+  useEffect(() => { setSel(null); setDeck(layout ? Math.floor(layout.decks.length / 2) : 0); }, [targetKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (layout && deck >= layout.decks.length) setDeck(0); }, [layout, deck]);
 
   const spec = useMemo(() => (target ? stationSpec(target.genInput, { archetype: opts.archetype, purpose: opts.purpose === "auto" ? undefined : opts.purpose, seed: opts.seed || `station:${target.slug}` }) : null), [target, opts]);
 
   const generate = (reroll) => {
     if (!target) return;
-    if (layout && !window.confirm("Replace the current layout? Manual edits and shop names on it are lost.")) return;
+    if (layout && !window.confirm("Replace the current layout? Manual edits and venue names on it are lost.")) return;
     const seed = reroll ? `station:${target.slug}:${Math.random().toString(36).slice(2, 8)}` : opts.seed || `station:${target.slug}`;
     const l = generateStation(target.genInput, { archetype: opts.archetype, purpose: opts.purpose === "auto" ? undefined : opts.purpose, seed });
     if (!l) { window.alert("Colossal hulls (city-ships like the Gemini) are built by the City generator, not here."); return; }
@@ -92,142 +86,110 @@ export default function StationGen({ project, setProject }) {
 
   const selBlock = layout?.blocks.find((b) => b.id === sel) || null;
   const summary = useMemo(() => (layout ? summarizeStation(layout) : null), [layout]);
-
   const allShops = useMemo(() => {
     if (!summary) return [];
     const q = shopQuery.trim().toLowerCase();
     return layout.shops.map((s, i) => ({ ...s, where: summary.shops[i]?.where })).filter((s) => !q || `${s.name} ${s.kind}`.toLowerCase().includes(q));
   }, [layout, summary, shopQuery]);
 
+  const ownerList = mode === "stations"
+    ? (project.systems.find((s) => s.slug === ownerPick)?.bodies || []).filter((b) => b.kind === "orbital station").map((b) => ({ key: stationKey("body", ownerPick, b.slug), name: b.name, sub: b.sizeClass, has: !!b.layout }))
+    : (project.companies.find((c) => c.slug === ownerPick)?.notableShips || []).map((s) => ({ key: stationKey("ship", ownerPick, s.slug), name: s.name, sub: models.get(s.modelSlug)?.hullClass || "?", has: !!s.layout }));
+
   return (
-    <div className="gg-station">
-      <aside className="gg-station-side">
-        <div className="gg-tool-row">
-          <button className={mode === "stations" ? "active" : ""} onClick={() => setMode("stations")}>Stations</button>
-          <button className={mode === "ships" ? "active" : ""} onClick={() => setMode("ships")}>Ships</button>
+    <div className="ge-stws">
+      {/* sub bar */}
+      <div className="ge-subbar">
+        <div className="gx-titleblock">
+          <div className="gx-eyebrow">{target ? `${target.kind === "body" ? "STATION" : "SHIP"} LAYOUT · ${target.where}` : "STATION & SHIP LAYOUTS"}</div>
+          <h1 className="gx-title">{target ? target.label : "Pick a station or ship"}</h1>
         </div>
-        {mode === "stations" ? (
-          <>
-            <label className="small muted">System ({stationSystems.length} with stations)</label>
-            <select value={systemSlug} onChange={(e) => setSystemSlug(e.target.value)}>
-              <option value="">— pick a system —</option>
-              {stationSystems.map((s) => <option key={s.slug} value={s.slug}>{s.name}</option>)}
-            </select>
-            <div className="gg-station-list">
-              {(project.systems.find((s) => s.slug === systemSlug)?.bodies || []).filter((b) => b.kind === "orbital station").map((b) => {
-                const k = `body|${systemSlug}|${b.slug}`;
-                return (
-                  <button key={k} className={targetKey === k ? "active" : ""} onClick={() => setTargetKey(k)}>
-                    {b.layout ? "▣ " : "□ "}{b.name}<span className="muted"> · {b.sizeClass}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : (
-          <>
-            <label className="small muted">Company</label>
-            <select value={companySlug} onChange={(e) => setCompanySlug(e.target.value)}>
-              <option value="">— pick a company —</option>
-              {companies.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-            </select>
-            <div className="gg-station-list">
-              {(project.companies.find((c) => c.slug === companySlug)?.notableShips || []).map((s) => {
-                const k = `ship|${companySlug}|${s.slug}`;
-                const m = models.get(s.modelSlug);
-                return (
-                  <button key={k} className={targetKey === k ? "active" : ""} onClick={() => setTargetKey(k)}>
-                    {s.layout ? "▣ " : "□ "}{s.name}<span className="muted"> · {m?.hullClass || "?"}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="small muted">Ships live on companies: regenerating companies (Generate tab) replaces generated ships and their layouts.</p>
-          </>
+        <div className="gx-grow" />
+        {withLayouts.length > 0 && (
+          <select className="gx-select" value={withLayouts.some((w) => w.key === targetKey) ? targetKey : ""} onChange={(e) => e.target.value && setTargetKey(e.target.value)} aria-label="Jump to a layout">
+            <option value="">Layouts ({withLayouts.length})…</option>
+            {withLayouts.map((w) => <option key={w.key} value={w.key}>{w.name}</option>)}
+          </select>
         )}
+        {layout && layout.decks.length > 1 && (
+          <div role="group" aria-label="Deck" className="gx-group ge-decks">
+            {layout.decks.map((d) => <button key={d.z} className={"gx-tbtn" + (deck === d.z ? " on" : "")} onClick={() => setDeck(d.z)}>{d.name.toUpperCase()}</button>)}
+          </div>
+        )}
+      </div>
+
+      {/* left: target + generator */}
+      <nav className="gx-left gx-scroll ge-left" aria-label="Target">
+        <div className="gx-sec">
+          <div className="gx-label">TARGET</div>
+          <div className="ge-seg">
+            <button className={mode === "stations" ? "on" : ""} onClick={() => { setMode("stations"); setOwnerPick(""); }}>STATIONS</button>
+            <button className={mode === "ships" ? "on" : ""} onClick={() => { setMode("ships"); setOwnerPick(""); }}>SHIPS</button>
+          </div>
+          <select className="ge-in" value={ownerPick} onChange={(e) => setOwnerPick(e.target.value)}>
+            <option value="">{mode === "stations" ? `System (${stationSystems.length} with stations)…` : `Company (${companies.length})…`}</option>
+            {(mode === "stations" ? stationSystems : companies).map((x) => <option key={x.slug} value={x.slug}>{x.name}</option>)}
+          </select>
+          <div className="ge-rows">
+            {ownerList.map((o) => (
+              <button key={o.key} className={"gx-gbtn gx-row" + (targetKey === o.key ? " on" : "")} onClick={() => setTargetKey(o.key)}>
+                <span className="ge-sq" style={{ background: o.has ? "#ff9a3c" : "transparent" }} />
+                <span className="t"><span className="a">{o.name}</span><span className="b" style={{ color: "#9a958b" }}>{o.sub}{o.has ? " · layout" : ""}</span></span>
+              </button>
+            ))}
+          </div>
+          {mode === "ships" && <div className="gx-lore">Ship layouts live on their company: regenerating companies replaces generated ships.</div>}
+        </div>
 
         {target && (
-          <>
-            <h3 className="gg-station-title">{target.label}</h3>
-            <p className="small muted">{target.sub}</p>
-            <div className="gg-city-row">
-              <label className="small muted">Shape
-                <select value={opts.archetype} onChange={(e) => setOpts({ ...opts, archetype: e.target.value })}>
-                  {ARCHETYPES.map((a) => <option key={a} value={a}>{a === "auto" ? `auto (${spec?.archetype})` : a}</option>)}
+          <div className="gx-sec">
+            <div className="gx-label">GENERATOR</div>
+            <div className="gx-lore">{target.sub}</div>
+            <div className="ge-row">
+              <label className="ge-lbl">Shape
+                <select className="ge-in" value={opts.archetype} onChange={(e) => setOpts({ ...opts, archetype: e.target.value })}>
+                  {ARCHETYPES.map((a) => <option key={a} value={a}>{a === "auto" ? `auto · ${spec?.archetype}` : a}</option>)}
                 </select>
               </label>
-              <label className="small muted">Purpose
-                <select value={opts.purpose} onChange={(e) => setOpts({ ...opts, purpose: e.target.value })}>
-                  {PURPOSES.map((a) => <option key={a} value={a}>{a === "auto" ? `auto (${spec?.purpose})` : a}</option>)}
+              <label className="ge-lbl">Purpose
+                <select className="ge-in" value={opts.purpose} onChange={(e) => setOpts({ ...opts, purpose: e.target.value })}>
+                  {PURPOSES.map((a) => <option key={a} value={a}>{a === "auto" ? `auto · ${spec?.purpose}` : a}</option>)}
                 </select>
               </label>
             </div>
-            <p className="small muted">
-              {spec && <>{fmt(spec.lengthM)} m long · {fmt(spec.population)} aboard{spec.passengers ? ` (${fmt(spec.passengers)} passengers)` : ""}</>}
-            </p>
-            <div className="gg-tool-row">
-              <button onClick={() => generate(false)}>{layout ? "Regenerate" : "Generate"}</button>
-              <button onClick={() => generate(true)} title="New random seed">Reroll</button>
-              {layout && <button onClick={() => window.confirm("Remove this layout?") && writeLayout(null)}>Remove</button>}
+            {spec && <div className="gx-lore">{fmt(spec.lengthM)} m long · {fmt(spec.population)} aboard{spec.passengers ? ` (${fmt(spec.passengers)} passengers)` : ""}</div>}
+            <button className="gx-cta" onClick={() => generate(false)}>{layout ? "REGENERATE" : "GENERATE LAYOUT"}</button>
+            <div className="ge-row">
+              <button className="ge-btn ghost" onClick={() => generate(true)} title="New random seed">Reroll</button>
+              {layout && <button className="ge-btn ghost danger" onClick={() => window.confirm("Remove this layout?") && writeLayout(null)}>Remove</button>}
             </div>
-          </>
+          </div>
         )}
 
         {summary && (
-          <div className="gg-station-summary small">
-            <div>{summary.archetype} · {summary.purpose} · {fmt(summary.footprintM.length)}×{fmt(summary.footprintM.width)} m · {summary.decks} decks{summary.decks !== summary.drawnDecks ? ` (drawn as ${summary.drawnDecks}, ${layout.decks[0].levels} each)` : ""}</div>
-            <div>{summary.blocks} blocks · {summary.lifts} lifts · {layout.shops.length} named venues</div>
-            <div>Bunks for ~{fmt(summary.capacity)} · aboard {fmt(summary.population)}</div>
+          <div className="gx-sec gx-grid" style={{ "--cols": 3, gap: 10 }}>
+            <div className="gx-count"><div className="n">{summary.decks}</div><div className="l">DECKS</div></div>
+            <div className="gx-count"><div className="n">{summary.blocks}</div><div className="l">BLOCKS</div></div>
+            <div className="gx-count"><div className="n">{layout.shops.length}</div><div className="l">VENUES</div></div>
+            <div className="gx-count"><div className="n">{fmt(summary.footprintM.length)}</div><div className="l">LENGTH M</div></div>
+            <div className="gx-count"><div className="n">{fmt(summary.population)}</div><div className="l">ABOARD</div></div>
+            <div className="gx-count"><div className="n">{fmt(summary.capacity)}</div><div className="l">BUNKS</div></div>
           </div>
         )}
+      </nav>
 
-        {selBlock && (
-          <BlockInspector
-            layout={layout}
-            block={selBlock}
-            onChange={(patch) => writeLayout(updateBlock(layout, selBlock.id, patch))}
-            onDelete={() => { writeLayout(removeBlock(layout, selBlock.id)); setSel(null); }}
-            onAddShop={() => writeLayout(addShop(layout, selBlock.id, selBlock.type === "dining" ? "bar" : selBlock.type === "recreation" ? "gym" : "general store"))}
-            onShop={(id, patch) => writeLayout(updateShop(layout, id, patch))}
-            onRemoveShop={(id) => writeLayout(removeShop(layout, id))}
-          />
-        )}
-
-        {layout && (
-          <>
-            <h4>Venues</h4>
-            <input placeholder="Search: pub, bar, weapons…" value={shopQuery} onChange={(e) => setShopQuery(e.target.value)} />
-            <div className="gg-station-shops">
-              {allShops.slice(0, 200).map((s) => (
-                <button key={s.id} onClick={() => { const b = layout.blocks.find((x) => x.id === s.blockId); if (b) { setDeck(b.deck); setSel(b.id); } }}>
-                  <b>{s.name}</b> <span className="muted">· {s.kind}</span><br /><span className="muted small">{s.where}</span>
-                </button>
-              ))}
-              {!allShops.length && <p className="small muted">No venues{shopQuery ? " match" : ""}.</p>}
-            </div>
-          </>
-        )}
-      </aside>
-
-      <section className="gg-station-main">
+      {/* center */}
+      <section className="ge-stmain">
         {!layout ? (
-          <div className="gg-empty">
-            <h1>STATION GEN</h1>
-            <p>Pick a station or a ship on the left and generate its layout: prefab blocks on a 2 m grid, deck by deck, with named venues.</p>
+          <div className="gx-center-msg" style={{ left: 340, right: 412 }}>
+            {target ? "NO LAYOUT YET" : "PICK A STATION OR A SHIP"}
+            <span style={{ fontSize: 13, letterSpacing: "0.04em", color: "#9a958b", maxWidth: 420, fontFamily: "Barlow Semi Condensed, sans-serif" }}>
+              Prefab blocks on a 2 m grid, deck by deck: habitation, dining, shops, hangars, cargo, engines… with named venues.
+            </span>
+            {target && <button className="gx-cta" style={{ width: 260 }} onClick={() => generate(false)}>GENERATE LAYOUT</button>}
           </div>
         ) : (
           <>
-            <div className="gg-deckbar">
-              {layout.decks.map((d) => (
-                <button key={d.z} className={deck === d.z ? "active" : ""} onClick={() => setDeck(d.z)}>{d.name}</button>
-              ))}
-              <span style={{ flexGrow: 1 }} />
-              <button onClick={() => {
-                const s = layout.module * 2;
-                const { layout: next, block } = addBlock(layout, deck, { x: layout.footprint.w / 2 - s / 2, y: layout.footprint.h / 2 - s / 2, w: s, h: s }, "habitation");
-                writeLayout(next); setSel(block.id);
-              }}>+ Block</button>
-            </div>
             <Plan
               key={`${targetKey}:${layout.seed}:${layout.footprint.w}`}
               layout={layout}
@@ -235,68 +197,123 @@ export default function StationGen({ project, setProject }) {
               sel={sel}
               onSelect={setSel}
               onMove={(id, rect) => writeLayout(updateBlock(layout, id, rect))}
+              onAdd={() => {
+                const s = layout.module * 2;
+                const { layout: next, block } = addBlock(layout, deck, { x: layout.footprint.w / 2 - s / 2, y: layout.footprint.h / 2 - s / 2, w: s, h: s }, "habitation");
+                writeLayout(next); setSel(block.id);
+              }}
             />
-            <Section layout={layout} deck={deck} sel={selBlock} onPick={(b) => { setDeck(b.deck); setSel(b.id); }} />
-            <Legend />
+            <Section layout={layout} deck={deck} sel={selBlock} onPick={(b) => { setDeck(b.deck); setSel(b.id); }} onDeck={setDeck} />
           </>
         )}
       </section>
+
+      {/* right: block inspector / venue directory */}
+      {layout && (
+        <aside className="gx-panel gx-scroll ge-rpanel" aria-label="Details">
+          {selBlock ? (
+            <BlockInspector
+              layout={layout}
+              block={selBlock}
+              onClose={() => setSel(null)}
+              onChange={(patch) => writeLayout(updateBlock(layout, selBlock.id, patch))}
+              onDelete={() => { writeLayout(removeBlock(layout, selBlock.id)); setSel(null); }}
+              onAddShop={() => writeLayout(addShop(layout, selBlock.id, selBlock.type === "dining" ? "bar" : selBlock.type === "recreation" ? "gym" : "general store"))}
+              onShop={(id, patch) => writeLayout(updateShop(layout, id, patch))}
+              onRemoveShop={(id) => writeLayout(removeShop(layout, id))}
+            />
+          ) : (
+            <>
+              <Head kind="DIRECTORY" title="Venues" sub={`${layout.shops.length} named places aboard — what the PCs see on the signs`} />
+              <div className="gx-sec">
+                <input className="ge-in" type="search" placeholder="Search: pub, bar, weapons…" value={shopQuery} onChange={(e) => setShopQuery(e.target.value)} />
+                <div className="ge-rows" style={{ maxHeight: "none" }}>
+                  {allShops.slice(0, 250).map((s) => (
+                    <button key={s.id} className="gx-gbtn gx-row" onClick={() => { const b = layout.blocks.find((x) => x.id === s.blockId); if (b) { setDeck(b.deck); setSel(b.id); } }}>
+                      <span className="gx-diamond" style={{ width: 8, height: 8, background: BLOCK_TYPES[layout.blocks.find((x) => x.id === s.blockId)?.type]?.color || "#888" }} />
+                      <span className="t"><span className="a">{s.name}</span><span className="b" style={{ color: "#9a958b" }}>{s.kind} · {s.where}</span></span>
+                    </button>
+                  ))}
+                  {!allShops.length && <div className="gx-lore">No venues{shopQuery ? " match" : ""}.</div>}
+                </div>
+              </div>
+              <div className="gx-sec">
+                <div className="gx-label">BLOCK TYPES</div>
+                <div className="gx-lg-grid" style={{ maxHeight: "none" }}>
+                  {TYPES.map((t) => <div key={t} className="gx-lg-item"><span style={{ width: 10, height: 10, background: BLOCK_TYPES[t].color, flexShrink: 0 }} /><span className="nm">{BLOCK_TYPES[t].label}</span></div>)}
+                </div>
+              </div>
+            </>
+          )}
+        </aside>
+      )}
     </div>
   );
 }
 
-function BlockInspector({ layout, block, onChange, onDelete, onAddShop, onShop, onRemoveShop }) {
+function BlockInspector({ layout, block, onClose, onChange, onDelete, onAddShop, onShop, onRemoveShop }) {
   const shops = layout.shops.filter((s) => s.blockId === block.id);
-  const num = (k) => (
-    <label className="small muted">{k} (u)
-      <input type="number" min={k === "w" || k === "h" ? 1 : undefined} value={block[k]} onChange={(e) => onChange({ [k]: Number(e.target.value) })} />
+  const t = BLOCK_TYPES[block.type] || BLOCK_TYPES.technical;
+  const num = (k, label) => (
+    <label className="ge-lbl">{label}
+      <input className="ge-in" type="number" min={k === "w" || k === "h" ? 1 : undefined} value={block[k]} onChange={(e) => onChange({ [k]: Number(e.target.value) })} />
     </label>
   );
   return (
-    <div className="gg-district active">
-      <input value={block.name} onChange={(e) => onChange({ name: e.target.value })} />
-      <label className="small muted">Purpose
-        <select value={block.type} onChange={(e) => onChange({ type: e.target.value })}>
-          {TYPES.map((t) => <option key={t} value={t}>{BLOCK_TYPES[t].label}</option>)}
-        </select>
-      </label>
-      <div className="gg-city-row">{num("x")}{num("y")}{num("w")}{num("h")}</div>
-      <p className="small muted">{block.w * UNIT_M} × {block.h * UNIT_M} m · {block.doors?.length || 0} door(s) · {layout.decks[block.deck]?.name}</p>
+    <>
+      <Head kind={t.label.toUpperCase()} dot={t.color} title={block.name} editable onRename={(name) => onChange({ name })} onClose={onClose}
+        sub={`${layout.decks[block.deck]?.name} · ${block.w * UNIT_M} × ${block.h * UNIT_M} m · ${block.doors?.length || 0} door(s)`} />
+      <div className="gx-sec">
+        <div className="gx-label">PURPOSE</div>
+        <div className="ge-types">
+          {TYPES.map((k) => (
+            <button key={k} className={"ge-type" + (block.type === k ? " on" : "")} onClick={() => onChange({ type: k })} title={BLOCK_TYPES[k].label}>
+              <i style={{ background: BLOCK_TYPES[k].color }} />{BLOCK_TYPES[k].label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="gx-sec">
+        <div className="gx-label"><span>GEOMETRY</span><span style={{ color: "#9a958b" }}>UNITS · 1 U = 2 M</span></div>
+        <div className="gx-grid" style={{ "--cols": 4, gap: 8 }}>{num("x", "X")}{num("y", "Y")}{num("w", "W")}{num("h", "H")}</div>
+        <div className="gx-lore">Or drag the block on the plan; drag its corner handle to resize.</div>
+      </div>
       {VENUE.has(block.type) && (
-        <>
+        <div className="gx-sec">
+          <div className="gx-label"><span>VENUES</span><span style={{ color: "#ece6da" }}>{shops.length}</span></div>
           {shops.map((s) => (
-            <div key={s.id} className="gg-shop-row">
-              <input value={s.name} onChange={(e) => onShop(s.id, { name: e.target.value })} />
-              <select value={s.kind} onChange={(e) => onShop(s.id, { kind: e.target.value })}>
+            <div key={s.id} className="ge-shop">
+              <input className="ge-in" value={s.name} onChange={(e) => onShop(s.id, { name: e.target.value })} />
+              <select className="ge-in" value={s.kind} onChange={(e) => onShop(s.id, { kind: e.target.value })}>
                 {SHOP_KIND_LIST.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
-              <button onClick={() => onRemoveShop(s.id)} title="Remove venue">✕</button>
+              <button className="gx-gbtn ge-x" onClick={() => onRemoveShop(s.id)} aria-label="Remove venue">×</button>
             </div>
           ))}
-          <button onClick={onAddShop}>+ Venue</button>
-        </>
+          <button className="ge-btn ghost" onClick={onAddShop}>+ Add a venue</button>
+        </div>
       )}
-      <div className="gg-tool-row" style={{ marginTop: 8 }}>
-        <button onClick={onDelete}>Delete block</button>
+      <div className="gx-sec">
+        <button className="ge-btn danger" onClick={onDelete}>Delete block</button>
       </div>
-    </div>
+    </>
   );
 }
 
-// Plan view: SVG in unit coordinates, wheel = zoom, drag background = pan,
-// drag a block = move it (snapped to the grid), drag its corner = resize.
-// Double-click a block to zoom onto it. Blocks big enough on screen show
-// their interior (blockDetail) — the dynamic level of detail.
-function Plan({ layout, deck, sel, onSelect, onMove }) {
+// Plan view: SVG in unit coordinates on a blueprint ground. Wheel = zoom,
+// drag background = pan, drag a block = move (grid snap), corner = resize,
+// double-click = zoom onto a block. Blocks big enough on screen show their
+// interior (blockDetail) — the dynamic level of detail.
+function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
   const svgRef = useRef(null);
   const fit = useCallback(() => {
-    const pad = Math.max(layout.footprint.w, layout.footprint.h) * 0.04;
+    const pad = Math.max(layout.footprint.w, layout.footprint.h) * 0.06;
     return { x: -pad, y: -pad, w: layout.footprint.w + pad * 2, h: layout.footprint.h + pad * 2 };
   }, [layout.footprint.w, layout.footprint.h]);
   const [vb, setVb] = useState(fit);
   const [px, setPx] = useState(800);
   const drag = useRef(null);
-  const [ghost, setGhost] = useState(null); // live rect while dragging a block
+  const [ghost, setGhost] = useState(null);
 
   useEffect(() => {
     const el = svgRef.current;
@@ -311,7 +328,6 @@ function Plan({ layout, deck, sel, onSelect, onMove }) {
     const ox = vb.x + (vb.w - r.width * k) / 2, oy = vb.y + (vb.h - r.height * k) / 2;
     return { x: ox + (e.clientX - r.left) * k, y: oy + (e.clientY - r.top) * k, k };
   };
-
   useEffect(() => {
     const el = svgRef.current;
     const onWheel = (e) => {
@@ -329,14 +345,14 @@ function Plan({ layout, deck, sel, onSelect, onMove }) {
 
   const blocks = layout.blocks.filter((b) => b.deck === deck);
   const lifts = (layout.lifts || []).filter((l) => l.decks.includes(deck));
-  const upp = vb.w / px; // units per pixel (approx.)
+  const r = svgRef.current?.getBoundingClientRect();
+  const upp = r ? Math.max(vb.w / r.width, vb.h / r.height) : vb.w / px;
 
   const down = (e, b, handle) => {
     e.stopPropagation();
     svgRef.current.setPointerCapture(e.pointerId);
-    const p = toUnits(e);
     if (b) onSelect(b.id);
-    drag.current = { b, handle, start: p, vb0: vb, moved: false };
+    drag.current = { b, handle, start: toUnits(e), vb0: vb, moved: false };
   };
   const move = (e) => {
     const d = drag.current;
@@ -358,18 +374,21 @@ function Plan({ layout, deck, sel, onSelect, onMove }) {
     setGhost(null);
   };
   const zoomTo = (b) => {
-    const pad = Math.max(b.w, b.h) * 0.25;
+    const pad = Math.max(b.w, b.h) * 0.3;
     setVb({ x: b.x - pad, y: b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 });
   };
+  const zoomBy = (f) => setVb((v) => { const w = Math.min(Math.max(v.w * f, 4), fit().w * 4), h = (w / v.w) * v.h; return { x: v.x + (v.w - w) / 2, y: v.y + (v.h - h) / 2, w, h }; });
 
-  // LOD: interior for the (few) blocks that are large on screen
   const detailed = blocks
-    .filter((b) => b.type !== "transit" && b.w / upp > 180 && b.x < vb.x + vb.w && b.x + b.w > vb.x && b.y < vb.y + vb.h && b.y + b.h > vb.y)
+    .filter((b) => b.type !== "transit" && b.w / upp > 170 && b.x < vb.x + vb.w && b.x + b.w > vb.x && b.y < vb.y + vb.h && b.y + b.h > vb.y)
     .slice(0, 8);
-  const fs = 11 * upp; // 11px text
+  const fs = 11 * upp;
+  const gridStep = layout.module * Math.max(1, 2 ** Math.round(Math.log2(Math.max(1, (upp * 18) / layout.module))));
+  const selB0 = blocks.find((b) => b.id === sel);
+  const selB = selB0 && ghost?.id === selB0.id ? { ...selB0, ...ghost } : selB0;
 
   return (
-    <div className="gg-plan">
+    <div className="ge-plan">
       <svg
         ref={svgRef}
         viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
@@ -378,48 +397,69 @@ function Plan({ layout, deck, sel, onSelect, onMove }) {
         onPointerUp={up}
         onPointerCancel={up}
         onDoubleClick={(e) => {
-          // pointer capture retargets events to the svg, so hit-test here
           const p = toUnits(e);
           const hit = blocks.filter((b) => p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h).sort((a, b) => a.w * a.h - b.w * b.h)[0];
           if (hit) zoomTo(hit);
         }}
       >
-        <rect x={0} y={0} width={layout.footprint.w} height={layout.footprint.h} fill="none" stroke="rgba(255,154,60,.15)" strokeWidth={upp} strokeDasharray={`${upp * 4} ${upp * 4}`} />
+        <defs>
+          <pattern id="ge-grid" width={gridStep} height={gridStep} patternUnits="userSpaceOnUse">
+            <path d={`M ${gridStep} 0 L 0 0 0 ${gridStep}`} fill="none" stroke="rgba(95,211,243,.07)" strokeWidth={upp} />
+          </pattern>
+          <filter id="ge-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation={upp * 6} /></filter>
+        </defs>
+        <rect x={vb.x} y={vb.y} width={vb.w} height={vb.h} fill="url(#ge-grid)" />
+        {/* hull glow + outline: union of this deck's blocks */}
+        <g opacity=".55" filter="url(#ge-glow)">
+          {blocks.map((b) => <rect key={b.id} x={b.x} y={b.y} width={b.w} height={b.h} fill="rgba(255,154,60,.18)" />)}
+        </g>
         {blocks.map((b0) => {
           const b = ghost?.id === b0.id ? { ...b0, ...ghost } : b0;
           const t = BLOCK_TYPES[b.type] || BLOCK_TYPES.technical;
-          const big = b.w / upp > 60 && b.h / upp > 18;
+          const tr = b.type === "transit";
+          const big = b.w / upp > 64 && b.h / upp > 18;
           return (
             <g key={b.id} onPointerDown={(e) => down(e, b0, false)} style={{ cursor: "move" }}>
-              <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={t.color} fillOpacity={b.type === "transit" ? 0.35 : 0.55} stroke={sel === b.id ? "#5fd3f3" : "#03050a"} strokeWidth={sel === b.id ? upp * 2.5 : upp} />
-              {big && <text x={b.x + b.w / 2} y={b.y + b.h / 2} fontSize={fs} textAnchor="middle" dominantBaseline="middle" fill="#ece6da" pointerEvents="none">{b.name}</text>}
+              <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={tr ? "#0d141f" : t.color} fillOpacity={tr ? 1 : 0.32} stroke={tr ? "rgba(95,211,243,.18)" : t.color} strokeOpacity={tr ? 1 : 0.85} strokeWidth={upp * 1.2} />
+              {!tr && <rect x={b.x} y={b.y} width={b.w} height={Math.min(b.h, upp * 3)} fill={t.color} fillOpacity=".9" pointerEvents="none" />}
+              {big && (
+                <text x={b.x + upp * 6} y={b.y + upp * 16} fontSize={fs} fill={tr ? "rgba(159,230,248,.55)" : "#fff4e6"} pointerEvents="none" style={{ fontFamily: "Oxanium, sans-serif", letterSpacing: "0.08em" }}>
+                  {b.name.toUpperCase()}
+                </text>
+              )}
             </g>
           );
         })}
         {detailed.map((b) => <Detail key={`d${b.id}`} layout={layout} block={b} upp={upp} />)}
         {blocks.flatMap((b) => (b.doors || []).map((d, i) => {
-          const s = Math.max(upp * 3, Math.min(1, b.w, b.h) * 0.5);
+          const s = Math.max(upp * 5, Math.min(2, b.w, b.h) * 0.5);
           const v = d.side === "e" || d.side === "w";
-          return <rect key={`${b.id}d${i}`} x={d.x - (v ? upp : s / 2)} y={d.y - (v ? s / 2 : upp)} width={v ? upp * 2 : s} height={v ? s : upp * 2} fill="#ece6da" pointerEvents="none" />;
+          return <rect key={`${b.id}d${i}`} x={d.x - (v ? upp * 1.5 : s / 2)} y={d.y - (v ? s / 2 : upp * 1.5)} width={v ? upp * 3 : s} height={v ? s : upp * 3} fill="#fff4e6" pointerEvents="none" />;
         }))}
         {lifts.map((l) => (
           <g key={l.id} pointerEvents="none">
             <rect x={l.x} y={l.y} width={l.w} height={l.h} fill="#03050a" stroke="#5fd3f3" strokeWidth={upp * 1.5} />
-            <text x={l.x + l.w / 2} y={l.y + l.h / 2} fontSize={fs} textAnchor="middle" dominantBaseline="middle" fill="#5fd3f3">⇅</text>
+            <path d={`M ${l.x + l.w * 0.3} ${l.y + l.h * 0.42} L ${l.x + l.w / 2} ${l.y + l.h * 0.22} L ${l.x + l.w * 0.7} ${l.y + l.h * 0.42} M ${l.x + l.w * 0.3} ${l.y + l.h * 0.58} L ${l.x + l.w / 2} ${l.y + l.h * 0.78} L ${l.x + l.w * 0.7} ${l.y + l.h * 0.58}`} fill="none" stroke="#5fd3f3" strokeWidth={upp * 1.4} />
           </g>
         ))}
-        {sel && (() => {
-          const b0 = blocks.find((b) => b.id === sel);
-          if (!b0) return null;
-          const b = ghost?.id === b0.id ? { ...b0, ...ghost } : b0;
-          const s = upp * 10;
-          return <rect x={b.x + b.w - s / 2} y={b.y + b.h - s / 2} width={s} height={s} fill="#5fd3f3" style={{ cursor: "nwse-resize" }} onPointerDown={(e) => down(e, b0, true)} />;
+        {selB && (() => {
+          const b = selB, c = upp * 14, g = upp * 5;
+          const corner = (x, y, dx, dy) => `M ${x + dx * c} ${y} L ${x} ${y} L ${x} ${y + dy * c}`;
+          return (
+            <g>
+              <path d={[corner(b.x - g, b.y - g, 1, 1), corner(b.x + b.w + g, b.y - g, -1, 1), corner(b.x + b.w + g, b.y + b.h + g, -1, -1), corner(b.x - g, b.y + b.h + g, 1, -1)].join(" ")} fill="none" stroke="#5fd3f3" strokeWidth={upp * 2} pointerEvents="none" />
+              <rect x={b.x + b.w - upp * 5} y={b.y + b.h - upp * 5} width={upp * 10} height={upp * 10} fill="#5fd3f3" style={{ cursor: "nwse-resize" }} onPointerDown={(e) => down(e, selB0, true)} />
+            </g>
+          );
         })()}
       </svg>
-      <div className="gg-plan-hint">
-        {layout.unitM} m grid · wheel zoom · drag to pan / move · corner to resize · double-click a block to zoom in
-        <button onClick={() => setVb(fit())}>Fit</button>
+      <div className="ge-plan-tools">
+        <button className="gx-mbtn" aria-label="Zoom in" onClick={() => zoomBy(1 / 1.4)}>{Icon.plus()}</button>
+        <button className="gx-mbtn" aria-label="Zoom out" onClick={() => zoomBy(1.4)}>{Icon.minus()}</button>
+        <button className="gx-mbtn" aria-label="Fit" onClick={() => setVb(fit())}>{Icon.reset()}</button>
+        <button className="gx-mbtn" aria-label="Add block" onClick={onAdd} title="Add a block on this deck">＋<span>BLOCK</span></button>
       </div>
+      <div className="gx-hint" style={{ bottom: 12 }}>{layout.unitM} M GRID · DRAG TO PAN / MOVE · CORNER TO RESIZE · DOUBLE-CLICK TO ZOOM IN</div>
     </div>
   );
 }
@@ -427,14 +467,15 @@ function Plan({ layout, deck, sel, onSelect, onMove }) {
 function Detail({ layout, block, upp }) {
   const { rooms, hall } = useMemo(() => blockDetail(layout, block), [layout, block]);
   const fs = 10 * upp;
+  const col = BLOCK_TYPES[block.type]?.color || "#888";
   return (
     <g pointerEvents="none">
-      {hall && <rect x={hall.x} y={hall.y} width={hall.w} height={hall.h} fill="#5b6270" fillOpacity={0.5} />}
+      {hall && <rect x={hall.x} y={hall.y} width={hall.w} height={hall.h} fill="#0d141f" stroke="rgba(95,211,243,.25)" strokeWidth={upp} />}
       {rooms.map((r, i) => (
         <g key={i}>
-          <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="none" stroke="#03050a" strokeOpacity={0.8} strokeWidth={upp} />
+          <rect x={r.x + upp} y={r.y + upp} width={Math.max(0, r.w - upp * 2)} height={Math.max(0, r.h - upp * 2)} fill={col} fillOpacity={r.shopId ? 0.28 : 0.12} stroke={col} strokeOpacity=".7" strokeWidth={upp} />
           {r.w / upp > 50 && r.h / upp > 14 && (
-            <text x={r.x + r.w / 2} y={r.y + r.h / 2} fontSize={fs} textAnchor="middle" dominantBaseline="middle" fill={r.shopId || r.kind ? "#ffb866" : "#ece6da"}>{r.label}</text>
+            <text x={r.x + r.w / 2} y={r.y + r.h / 2} fontSize={fs} textAnchor="middle" dominantBaseline="middle" fill={r.shopId || r.kind ? "#ffb866" : "rgba(236,230,218,.8)"} style={{ fontFamily: "Barlow Semi Condensed, sans-serif" }}>{r.label}</text>
           )}
         </g>
       ))}
@@ -442,10 +483,9 @@ function Detail({ layout, block, upp }) {
   );
 }
 
-// Side section: decks stacked (top deck on top) along the long axis, cut
-// through the selected block (or the middle of the hull). Click to jump.
-function Section({ layout, deck, sel, onPick }) {
-  // default cut: the row near the middle crossing the fewest corridors
+// Side section: decks stacked (first deck on top) along the long axis, cut
+// through the selected block (or the least-corridor row near the middle).
+function Section({ layout, deck, sel, onPick, onDeck }) {
   const cutY = useMemo(() => {
     if (sel) return sel.y + sel.h / 2;
     const h = layout.footprint.h, m = layout.module || 1;
@@ -457,34 +497,25 @@ function Section({ layout, deck, sel, onPick }) {
     }
     return best;
   }, [layout, sel]);
-  const n = layout.decks.length;
   const W = layout.footprint.w;
-  const rowH = W / 40; // flat strip
-  const H = rowH * n;
+  const rowH = W / 50;
+  const H = rowH * layout.decks.length;
   return (
-    <div className="gg-section">
+    <div className="ge-section">
+      <div className="gx-label sm" style={{ padding: "0 4px 6px" }}><span>SECTION · CUT THROUGH {sel ? sel.name.toUpperCase() : "THE MIDDLE OF THE HULL"}</span><span>CLICK A DECK</span></div>
       <svg viewBox={`${-W * 0.01} ${-rowH * 0.2} ${W * 1.02} ${H + rowH * 0.4}`} preserveAspectRatio="none">
         {layout.decks.map((d) => {
-          const y = d.z * rowH; // deck 0 on top
+          const y = d.z * rowH;
           return (
-            <g key={d.z}>
-              <rect x={0} y={y} width={W} height={rowH} fill={d.z === deck ? "rgba(255,154,60,.08)" : "none"} />
+            <g key={d.z} onClick={() => onDeck(d.z)} style={{ cursor: "pointer" }}>
+              <rect x={-W * 0.01} y={y} width={W * 1.02} height={rowH} fill={d.z === deck ? "rgba(255,154,60,.12)" : "transparent"} />
               {layout.blocks.filter((b) => b.deck === d.z && b.y <= cutY && b.y + b.h > cutY).map((b) => (
-                <rect key={b.id} x={b.x} y={y + rowH * 0.08} width={b.w} height={rowH * 0.84} fill={BLOCK_TYPES[b.type]?.color || "#777"} fillOpacity={b.type === "transit" ? 0.3 : 0.65} stroke={sel?.id === b.id ? "#5fd3f3" : "#03050a"} strokeWidth={W / 800} onClick={() => onPick(b)} style={{ cursor: "pointer" }} />
+                <rect key={b.id} x={b.x} y={y + rowH * 0.1} width={b.w} height={rowH * 0.8} fill={b.type === "transit" ? "#1a2230" : BLOCK_TYPES[b.type]?.color || "#777"} fillOpacity={b.type === "transit" ? 1 : 0.75} stroke={sel?.id === b.id ? "#5fd3f3" : "#03050a"} strokeWidth={W / 900} onClick={(e) => { e.stopPropagation(); onPick(b); }} />
               ))}
             </g>
           );
         })}
       </svg>
-      <span className="gg-plan-hint">SECTION · cut through {sel ? sel.name : "the middle of the hull"}</span>
-    </div>
-  );
-}
-
-function Legend() {
-  return (
-    <div className="gg-legend">
-      {TYPES.map((t) => <span key={t}><i style={{ background: BLOCK_TYPES[t].color }} />{BLOCK_TYPES[t].label}</span>)}
     </div>
   );
 }

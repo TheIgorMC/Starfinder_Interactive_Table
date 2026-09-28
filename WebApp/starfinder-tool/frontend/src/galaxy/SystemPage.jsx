@@ -4,7 +4,7 @@ import { SystemView } from "./system-view.js";
 import { KCOL, KLAB, POPL, counts, short, cap, starColor, hasSurface, bodyPop, fmtPop, systemPop } from "./common.js";
 import { useGalaxyData, useIsMobile, useRenderer, Status, NotFound, Icon, Sheet } from "./ui.jsx";
 
-function bodyTree(s) {
+export function bodyTree(s) {
   const kids = {};
   s.b.forEach((b) => { if (b.p) (kids[b.p] = kids[b.p] || []).push(b); });
   const out = [];
@@ -12,7 +12,7 @@ function bodyTree(s) {
   s.b.filter((b) => !b.p).sort((a, b) => (a.au || 0) - (b.au || 0)).forEach((b) => node(b, 1));
   return { out, kids };
 }
-function BodyIcon({ b }) {
+export function BodyIcon({ b }) {
   const k = b.k, col = KCOL[k] || "#aaa";
   const st = (b.t || []).includes("ring-station") ? { width: 14, height: 14, border: "2px solid #e6d6bd", borderRadius: "50%", transform: "scaleY(.5)" }
     : k === "orbital station" ? { width: 9, height: 9, background: col, transform: "rotate(45deg)" }
@@ -21,7 +21,7 @@ function BodyIcon({ b }) {
   return <span style={{ width: 18, display: "flex", justifyContent: "center", flexShrink: 0 }}><span style={{ boxSizing: "border-box", ...st }} /></span>;
 }
 
-function details(D, s, b, kids) {
+export function details(D, s, b, kids) {
   if (!b) {
     const lead = s.ow || (s.cb[0] && s.cb[0][0]), n = counts(s);
     return {
@@ -60,7 +60,7 @@ function details(D, s, b, kids) {
   return { kind: KLAB[b.k], name: b.n, badges, stats, lists, surface: hasSurface(b) };
 }
 
-function Details({ d, mobile, onSurface, slot }) {
+export function Details({ d, mobile, onSurface, slot }) {
   return (
     <>
       <div className="gx-head" style={mobile ? undefined : { gap: 6, padding: "20px 22px 16px" }}>

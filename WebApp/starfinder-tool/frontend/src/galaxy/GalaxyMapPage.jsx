@@ -6,7 +6,7 @@ import { useGalaxyData, useIsMobile, useRenderer, Status, Icon, Sheet, Toggle } 
 
 const MODE_KEYS = ["factions", "security", "conflict", "sectors", "population", "trade"];
 
-function Legend({ mode, D }) {
+export function Legend({ mode, D }) {
   if (mode === "factions") {
     const list = D.f.filter((f) => f.count > 0).sort((a, b) => b.count - a.count);
     return (
@@ -42,7 +42,7 @@ function Legend({ mode, D }) {
   );
 }
 
-function useSystemInfo(D, sel) {
+export function useSystemInfo(D, sel) {
   return useMemo(() => {
     if (!D || sel < 0) return null;
     const s = D.sys[sel], sc = secRGB(s.sd), n = counts(s);
@@ -57,7 +57,7 @@ function useSystemInfo(D, sel) {
   }, [D, sel]);
 }
 
-function SysSections({ info, onPick, mobile }) {
+export function SysSections({ info, onPick, mobile }) {
   const { s } = info;
   return (
     <>

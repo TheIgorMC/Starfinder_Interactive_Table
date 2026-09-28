@@ -74,13 +74,15 @@ function Preview({ body, site, selected, onSelect, onMove }) {
   );
 }
 
-export default function CityEditor({ systems, selectedSystem, onSelectSystem, onUpdateSystem }) {
+// `fixedBodySlug`: embedded in the System workspace's body inspector — no
+// system/body pickers, just that body's sites.
+export default function CityEditor({ systems, selectedSystem, onSelectSystem, onUpdateSystem, fixedBodySlug }) {
   const bodies = (selectedSystem?.bodies || []).filter(hasSurface);
   const [bodySlug, setBodySlug] = useState(null);
   const [siteSlug, setSiteSlug] = useState(null);
   const [selDistrict, setSelDistrict] = useState(null);
 
-  const body = bodies.find((b) => b.slug === bodySlug) || bodies.find((b) => b.sites?.length) || bodies[0] || null;
+  const body = fixedBodySlug ? bodies.find((b) => b.slug === fixedBodySlug) || null : bodies.find((b) => b.slug === bodySlug) || bodies.find((b) => b.sites?.length) || bodies[0] || null;
   const sites = body?.sites || [];
   const site = sites.find((s) => s.slug === siteSlug) || sites[0] || null;
   useEffect(() => { setSelDistrict(null); }, [body?.slug, site?.slug]);
@@ -132,18 +134,21 @@ export default function CityEditor({ systems, selectedSystem, onSelectSystem, on
 
   return (
     <div className="gg-city">
-      <h3>Cities</h3>
-      <SystemPicker systems={systems} value={selectedSystem.id} onChange={onSelectSystem} />
-      {bodies.length === 0 ? (
+      {!fixedBodySlug && <h3>Cities</h3>}
+      {!fixedBodySlug && <SystemPicker systems={systems} value={selectedSystem.id} onChange={onSelectSystem} />}
+      {!body ? (
         <p className="muted small">This system has no body with a surface (only stations/belts).</p>
       ) : (
         <>
-          <label className="small muted">Body</label>
-          <select value={body.slug} onChange={(e) => { setBodySlug(e.target.value); setSiteSlug(null); }}>
-            {bodies.map((b) => <option key={b.slug} value={b.slug}>{b.name} — {b.kind}{b.sites?.length ? ` · ${b.sites.length} site(s)` : ""}</option>)}
-          </select>
-
-          <h4>Surface sites</h4>
+          {!fixedBodySlug && (
+            <>
+              <label className="small muted">Body</label>
+              <select value={body.slug} onChange={(e) => { setBodySlug(e.target.value); setSiteSlug(null); }}>
+                {bodies.map((b) => <option key={b.slug} value={b.slug}>{b.name} — {b.kind}{b.sites?.length ? ` · ${b.sites.length} site(s)` : ""}</option>)}
+              </select>
+              <h4>Surface sites</h4>
+            </>
+          )}
           <div className="gg-tool-row">
             {sites.map((s) => (
               <button key={s.slug} className={s === site ? "active" : ""} onClick={() => setSiteSlug(s.slug)}>{s.name}</button>
