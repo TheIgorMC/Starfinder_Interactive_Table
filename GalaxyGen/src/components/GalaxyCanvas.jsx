@@ -4,6 +4,16 @@ import { centroid, pointInPolygon, distance } from "../lib/geometry.js";
 import { FIELD_DEFS } from "../lib/project.js";
 import { computeControlShares, hexToRgba } from "../lib/factionGen.js";
 
+// ARTS "galactic cartography" palette — shared with the SIT web app's galaxy
+// viewer (WebApp/starfinder-tool/frontend/src/galaxy/), so the editor reads
+// like the thing players will actually see.
+function starDotColor(t) {
+  t = t || "";
+  if (t.includes("neutron")) return "168,242,255";
+  if (t.includes("binary")) return "255,217,160";
+  return ({ O: "157,184,255", B: "179,203,255", A: "232,238,255", F: "255,244,222", G: "255,226,154", K: "255,181,102", M: "255,122,82" })[t[0]] || "255,255,255";
+}
+
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 8;
 const SNAP_PX = 12; // screen-space snap radius, so it stays easy to hit at any zoom
@@ -166,13 +176,13 @@ export default function GalaxyCanvas({
     ctx.clearRect(0, 0, size.w, size.h);
 
     // Background.
-    ctx.fillStyle = "#05070a";
+    ctx.fillStyle = "#03050a";
     ctx.fillRect(0, 0, size.w, size.h);
 
     // Galaxy bounds rectangle.
     const [bx0, by0] = worldToScreen(0, 0);
     const [bx1, by1] = worldToScreen(project.bounds.width, project.bounds.height);
-    ctx.fillStyle = "#0b0e11";
+    ctx.fillStyle = "#060a12";
     ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
 
     // Active field heatmap.
@@ -216,7 +226,7 @@ export default function GalaxyCanvas({
     }
 
     // Bounds border.
-    ctx.strokeStyle = "#33414f";
+    ctx.strokeStyle = "rgba(255,154,60,0.22)";
     ctx.lineWidth = 1;
     ctx.strokeRect(bx0, by0, bx1 - bx0, by1 - by0);
 
@@ -228,17 +238,22 @@ export default function GalaxyCanvas({
         pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
         ctx.closePath();
         const selected = sector.id === selectedSectorId;
-        ctx.fillStyle = selected ? "rgba(79,142,247,0.14)" : "rgba(230,230,235,0.05)";
+        ctx.fillStyle = selected ? "rgba(255,154,60,0.10)" : "rgba(95,211,243,0.035)";
         ctx.fill();
-        ctx.strokeStyle = selected ? "#6db3f2" : "#5a6773";
-        ctx.lineWidth = selected ? 2 : 1;
+        ctx.strokeStyle = selected ? "#ff9a3c" : "rgba(255,154,60,0.45)";
+        ctx.lineWidth = selected ? 2 : 1.2;
+        ctx.setLineDash(selected ? [] : [6, 5]);
         ctx.stroke();
+        ctx.setLineDash([]);
 
         const [cx, cy] = worldToScreen(...centroid(sector.points));
-        ctx.fillStyle = "#c9d3dc";
-        ctx.font = "12px system-ui, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(`${sector.name} (${sector.focus})`, cx, cy);
+        ctx.fillStyle = "rgba(255,176,100,0.7)";
+        ctx.font = "600 13px Oxanium, sans-serif";
+        ctx.fillText(sector.name.toUpperCase(), cx, cy);
+        ctx.fillStyle = "rgba(236,230,218,0.55)";
+        ctx.font = "500 10px Oxanium, sans-serif";
+        ctx.fillText((sector.focus || "").toUpperCase(), cx, cy + 14);
       }
     }
 
@@ -256,16 +271,18 @@ export default function GalaxyCanvas({
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
         if (edge.capacity === "major trade route") {
-          ctx.strokeStyle = "rgba(120,200,255,0.55)";
+          ctx.strokeStyle = "rgba(95,211,243,0.55)";
           ctx.lineWidth = 1.6;
         } else if (edge.capacity === "backwater spur") {
-          ctx.strokeStyle = "rgba(120,140,150,0.25)";
-          ctx.lineWidth = 0.75;
+          ctx.strokeStyle = "rgba(95,211,243,0.22)";
+          ctx.lineWidth = 0.9;
+          ctx.setLineDash([3, 4]);
         } else {
-          ctx.strokeStyle = "rgba(150,170,185,0.35)";
+          ctx.strokeStyle = "rgba(95,211,243,0.3)";
           ctx.lineWidth = 1;
         }
         ctx.stroke();
+        ctx.setLineDash([]);
       }
     }
 
@@ -294,16 +311,38 @@ export default function GalaxyCanvas({
       // Dim the dot itself once its label is showing (unless selected —
       // that already has its own ring) so the name reads cleanly instead
       // of competing with a bright dot sitting right under it.
-      const dotRgb = system.stationOnly ? "138,151,163" : "242,230,179";
-      const dotAlpha = showLabel && !selected ? 0.5 : 1;
+      const dotRgb = starDotColor(system.starType);
+      const dotAlpha = showLabel && !selected ? 0.7 : 1;
+      if (importance > 0.25) {
+        const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, baseRadius * 5);
+        g.addColorStop(0, "rgba(255,220,170,.28)");
+        g.addColorStop(1, "rgba(255,200,140,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(sx - baseRadius * 5, sy - baseRadius * 5, baseRadius * 10, baseRadius * 10);
+      }
       ctx.beginPath();
-      ctx.arc(sx, sy, baseRadius, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${dotRgb},${dotAlpha})`;
-      ctx.fill();
-      if (selected) {
-        ctx.strokeStyle = "#6db3f2";
-        ctx.lineWidth = 2;
+      if (system.stationOnly) {
+        const q = baseRadius + 1;
+        ctx.moveTo(sx, sy - q); ctx.lineTo(sx + q, sy); ctx.lineTo(sx, sy + q); ctx.lineTo(sx - q, sy); ctx.closePath();
+        ctx.strokeStyle = `rgba(${dotRgb},${dotAlpha})`;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
+      } else {
+        ctx.arc(sx, sy, baseRadius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${dotRgb},${dotAlpha})`;
+        ctx.fill();
+      }
+      if (selected) {
+        // amber reticle, as in the viewer
+        const R = baseRadius + 7;
+        ctx.strokeStyle = "#ff9a3c";
+        ctx.lineWidth = 1.6;
+        for (let q = 0; q < 4; q++) {
+          const a = (q * Math.PI) / 2 + 0.3;
+          ctx.beginPath();
+          ctx.arc(sx, sy, R, a, a + 0.9);
+          ctx.stroke();
+        }
       }
       // Hyperlane tool's first click — cyan ring so it's obvious which
       // system the next click will connect (or disconnect) against.
@@ -340,10 +379,14 @@ export default function GalaxyCanvas({
         ctx.fill();
       }
       if (showLabel) {
-        ctx.fillStyle = "#e6e9ec";
-        ctx.font = "11px system-ui, sans-serif";
+        const major = importance >= 0.45;
+        ctx.fillStyle = selected ? "#ffb866" : major ? "#ffb15c" : "#e6dfd2";
+        ctx.font = major ? "600 12px Oxanium, sans-serif" : "500 11px Oxanium, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(system.name, sx, sy - (baseRadius + 4));
+        ctx.shadowColor = "rgba(0,0,0,.9)";
+        ctx.shadowBlur = 4;
+        ctx.fillText(major || selected ? system.name.toUpperCase() : system.name, sx, sy - (baseRadius + 5));
+        ctx.shadowBlur = 0;
       }
     }
 

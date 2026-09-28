@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
+import { buildCompact } from "../galaxy-compact.js";
 
 // GalaxyGen project import (Docs/10-galaxy-mapgen.md) — a read-only
 // reference layer SIT never writes back into. The GM re-imports the whole
@@ -158,6 +159,25 @@ r.get("/map", requireAuth, async (req, res) => {
     hyperlanes: (d.hyperlanes || []).map((h) => ({ a: h.aSlug, b: h.bSlug, risk: h.risk })),
     factions: (d.factions || []).map((f) => ({ ref: `faction:${f.slug}`, name: f.name, color: f.color })),
   });
+});
+
+// Short-keyed payload for the full-screen galaxy viewer (frontend/src/galaxy/)
+// — every system with its bodies/sites, lanes as index tuples, the security
+// and population fields. Hidden districts are stripped for players here, so
+// they never reach a player's browser. Cached per project + role: a project
+// only changes on re-import, which gets a new id.
+const compactCache = new Map();
+r.get("/compact", requireAuth, async (req, res) => {
+  const project = await currentProject();
+  if (!project) return res.json(null);
+  const gm = req.user.role === "gm";
+  const key = `${project.id}:${gm}`;
+  if (!compactCache.has(key)) {
+    for (const k of compactCache.keys()) if (!k.startsWith(`${project.id}:`)) compactCache.delete(k);
+    compactCache.set(key, JSON.stringify({ ...buildCompact(project.data, { gm }), name: project.name }));
+  }
+  res.setHeader("Content-Type", "application/json");
+  res.send(compactCache.get(key));
 });
 
 export default r;

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 
 // GalaxyGen project browser (Docs/10-galaxy-mapgen.md) — a read-only view
@@ -270,115 +270,16 @@ function SuggestLinksPanel({ proposals, onClose, onApplied }) {
   );
 }
 
-// Faction-colored system dots on a pan/zoom canvas, sector polygons as
-// faint outlines, hyperlanes as thin lines — same drawing primitives
-// GalaxyGen itself uses (Docs/10-galaxy-mapgen.md §2-3), restyled to this
-// app's own look rather than borrowing GalaxyGen's toolbar/UI chrome.
-function MapView({ onOpenCampaignEntry }) {
-  const [map, setMap] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [entries, setEntries] = useState([]);
-  const [links, setLinks] = useState([]);
-  const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
-  const svgRef = useRef(null);
-  const dragRef = useRef(null);
-
-  useEffect(() => {
-    api("/galaxy/map").then(setMap).catch(() => setMap(null));
-    api("/campaign").then(setEntries).catch(() => setEntries([]));
-    api("/galaxy/links").then(setLinks).catch(() => setLinks([]));
-  }, []);
-
-  const linksByRef = useMemo(() => Object.fromEntries(links.map((l) => [l.galaxy_ref, l])), [links]);
-  const entriesById = useMemo(() => Object.fromEntries(entries.map((e) => [e.id, e])), [entries]);
-  const factionColor = useMemo(() => Object.fromEntries((map?.factions || []).map((f) => [f.ref.slice(8), f.color])), [map]);
-  const posBySlug = useMemo(() => {
-    const out = {};
-    for (const s of map?.systems || []) out[s.ref.slice(7)] = s;
-    return out;
-  }, [map]);
-
-  if (!map) return <div className="muted">Loading map…</div>;
-
-  const w = map.bounds?.width || 1000, h = map.bounds?.height || 1000;
-
-  const onWheel = (e) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setView((v) => ({ ...v, scale: Math.min(8, Math.max(0.5, v.scale * factor)) }));
-  };
-  const onPointerDown = (e) => {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: view.x, origY: view.y };
-  };
-  const onPointerMove = (e) => {
-    if (!dragRef.current) return;
-    const dx = (e.clientX - dragRef.current.startX) / view.scale;
-    const dy = (e.clientY - dragRef.current.startY) / view.scale;
-    setView((v) => ({ ...v, x: dragRef.current.origX - dx, y: dragRef.current.origY - dy }));
-  };
-  const onPointerUp = () => { dragRef.current = null; };
-
-  const vw = w / view.scale, vh = h / view.scale;
-  const viewBox = `${view.x} ${view.y} ${vw} ${vh}`;
-
-  const selectedEntry = selected && linksByRef[selected.ref] ? entriesById[linksByRef[selected.ref].id] : null;
-
+// The map is the full-screen galaxy viewer (src/galaxy/, route /galaxy),
+// embedded here so the GM doesn't have to leave the console; "Open full
+// screen" gives it the whole window (and is the link players use too).
+function MapView() {
   return (
     <div className="galaxy-map">
-      <svg
-        ref={svgRef}
-        viewBox={viewBox}
-        className="galaxy-map-svg"
-        onWheel={onWheel}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-      >
-        {map.sectors.map((s) => (
-          <polygon key={s.ref} points={s.points.map((p) => p.join(",")).join(" ")} className="galaxy-map-sector" />
-        ))}
-        {map.hyperlanes.map((hl, i) => {
-          const a = posBySlug[hl.a], b = posBySlug[hl.b];
-          if (!a || !b) return null;
-          return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="galaxy-map-lane" />;
-        })}
-        {map.systems.map((s) => (
-          <circle
-            key={s.ref}
-            cx={s.x} cy={s.y}
-            r={2 + s.important * 5}
-            fill={s.owner ? factionColor[s.owner] || "var(--accent)" : "var(--text-muted)"}
-            className={`galaxy-map-system${selected?.ref === s.ref ? " selected" : ""}`}
-            onClick={() => setSelected({ ...s, kind: "system" })}
-          >
-            <title>{s.name}</title>
-          </circle>
-        ))}
-      </svg>
-      <div className="galaxy-map-legend">
-        {map.factions.map((f) => (
-          <span key={f.ref} className="row" style={{ gap: 5 }}>
-            <span className="galaxy-map-swatch" style={{ background: f.color }} />
-            {f.name}
-          </span>
-        ))}
+      <div className="row" style={{ justifyContent: "flex-end", padding: "6px 10px" }}>
+        <a href="/galaxy" target="_blank" rel="noreferrer">Open full screen ↗</a>
       </div>
-      {selected && (
-        <div className="galaxy-map-info">
-          <strong>{selected.name}</strong>
-          {selected.sector && <span className="muted small"> · sector {selected.sector}</span>}
-          <div style={{ marginTop: 6 }}>
-            <LinkCell
-              item={selected}
-              linkedEntry={selectedEntry}
-              entries={entries}
-              onOpenCampaignEntry={onOpenCampaignEntry}
-              onLinked={() => { api("/campaign").then(setEntries); api("/galaxy/links").then(setLinks); }}
-            />
-          </div>
-        </div>
-      )}
+      <iframe title="Galaxy map" src="/galaxy" className="galaxy-map-frame" />
     </div>
   );
 }
@@ -435,7 +336,7 @@ export default function Galaxy({ onOpenCampaignEntry }) {
       </div>
 
       {view === "map" ? (
-        <MapView onOpenCampaignEntry={onOpenCampaignEntry} />
+        <MapView />
       ) : (
         <>
           <div className="row galaxy-toolbar">
