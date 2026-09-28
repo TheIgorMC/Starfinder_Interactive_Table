@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="540" style="display: block"><rect width="100%" height="100%" fill="#0e1316"/>
+<g transform="translate(55 62) scale(85)">
+<g opacity="1">
+<rect x="0" y="0" width="6" height="5" style="fill: #4a2440"></rect>
+<rect x="5" y="0" width="1" height="2" style="fill: #183b3a"></rect>
+<rect x="0" y="4.65" width="1.5" height="0.35" style="fill: #262b30"></rect>
+</g>
+<g opacity="1">
+<path d="M0.5 0V5M1.5 0V5M2.5 0V5M3.5 0V5M4.5 0V5M5.5 0V5M0 0.5H6M0 1.5H6M0 2.5H6M0 3.5H6M0 4.5H6" style="fill: none; stroke: #2a2530; stroke-width: 0.011"></path>
+<path d="M1 0V5M2 0V5M3 0V5M4 0V5M5 0V5M0 1H6M0 2H6M0 3H6M0 4H6" style="fill: none; stroke: #3a3440; stroke-width: 0.014"></path>
+</g>
+<g style="fill: none; stroke: #b59bb0; stroke-width: 0.013">
+<rect x="0.25" y="0.1" width="0.35" height="0.8" rx="0.05"></rect>
+<rect x="0.75" y="0.1" width="0.35" height="0.8" rx="0.05"></rect>
+<rect x="1.25" y="0.1" width="0.35" height="0.8" rx="0.05"></rect>
+<rect x="1.75" y="0.1" width="0.35" height="0.8" rx="0.05"></rect>
+<rect x="2.5" y="0.15" width="1" height="0.22" rx="0.05"></rect>
+<rect x="2.5" y="0.55" width="1" height="0.22" rx="0.05"></rect>
+<rect x="3.8" y="0.1" width="0.9" height="0.75"></rect>
+<path d="M3.8 0.475H4.7"></path>
+<rect x="0.04" y="1.5" width="0.25" height="1.6"></rect>
+<path d="M0.04 1.9H0.29M0.04 2.3H0.29M0.04 2.7H0.29"></path>
+<rect x="0.6" y="1.8" width="0.55" height="0.2"></rect>
+<rect x="0.6" y="2.6" width="0.55" height="0.2"></rect>
+<rect x="1.8" y="1.6" width="3" height="2.6" style="stroke-dasharray: 0.07 0.05"></rect>
+<path d="M3.3 1.6V4.2"></path>
+<circle cx="3.3" cy="2.9" r="0.35"></circle>
+<rect x="0.04" y="4.7" width="1.42" height="0.26"></rect>
+<path d="M0.28 4.7V4.96M0.52 4.7V4.96M0.76 4.7V4.96M1.0 4.7V4.96M1.24 4.7V4.96"></path>
+<rect x="5.5" y="0.05" width="0.45" height="0.45"></rect>
+<path d="M5.5 0.05L5.95 0.5M5.95 0.05L5.5 0.5"></path>
+<rect x="5.5" y="0.55" width="0.45" height="0.45"></rect>
+<path d="M5.5 0.55L5.95 1.0M5.95 0.55L5.5 1.0"></path>
+<rect x="5.04" y="0.05" width="0.2" height="1.0"></rect>
+<rect x="5.3" y="1.5" width="0.6" height="0.2"></rect>
+</g>
+<path d="M5 0V1.3M5 1.7V2H6" style="fill: none; stroke: #9fb2bd; stroke-width: 0.022"></path>
+<path d="M2.25 5H0V0H6V3.25M6 3.75V5H2.75" style="fill: none; stroke: #e6ecef; stroke-width: 0.033; stroke-linecap: square"></path>
+<path d="M0.05 -0.08H5.95" style="fill: none; stroke: #52c4b5; stroke-width: 0.03; stroke-dasharray: 0.1 0.07"></path>
+<rect x="2.25" y="4.97" width="0.5" height="0.06" style="fill: #f0a640"></rect>
+<path d="M2.43 5.1L2.57 5.1L2.5 5.2Z" style="fill: #f0a640"></path>
+<rect x="6.04" y="3.25" width="0.06" height="0.5" style="fill: none; stroke: #f0a640; stroke-width: 0.012; stroke-dasharray: 0.05 0.035"></rect>
+<g style="font-family: 'IBM Plex Mono', monospace; font-size: 0.13px; fill: #93a6b1; text-anchor: middle">
+<text x="0.5" y="-0.22">A</text>
+<text x="1.5" y="-0.22">B</text>
+<text x="2.5" y="-0.22">C</text>
+<text x="3.5" y="-0.22">D</text>
+<text x="4.5" y="-0.22">E</text>
+<text x="5.5" y="-0.22">F</text>
+<text x="-0.24" y="0.55">1</text>
+<text x="-0.24" y="1.55">2</text>
+<text x="-0.24" y="2.55">3</text>
+<text x="-0.24" y="3.55">4</text>
+<text x="-0.24" y="4.55">5</text>
+</g>
+<g style="font-family: 'IBM Plex Mono', monospace; font-size: 0.12px; fill: #e6ecef; text-anchor: middle">
+<text x="1.18" y="1.1" style="font-size: 0.1px">TREADMILLS</text>
+<text x="3.0" y="1.0" style="font-size: 0.1px">ROWERS</text>
+<text x="4.25" y="1.05" style="font-size: 0.1px">RESIST.</text>
+<text x="0.7" y="3.35" style="fill: #b59bb0; font-size: 0.1px">free weights</text>
+<text x="3.3" y="4.05">COURT · 2U high</text>
+<text x="5.5" y="1.4" style="font-size: 0.1px">SHOWER</text>
+<text x="0.75" y="4.6" style="fill: #b59bb0; font-size: 0.1px">lockers</text>
+<text x="2.5" y="5.4" style="fill: #f0a640">S1</text>
+<text x="6.15" y="3.55" style="fill: #f0a640; font-size: 0.1px; text-anchor: start">E1 opt.</text>
+<text x="3" y="-0.38" style="fill: #52c4b5; font-size: 0.1px">SPINE · power · water · air (high flow)</text>
+</g>
+</g>
+</svg>

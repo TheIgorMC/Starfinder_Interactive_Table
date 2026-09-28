@@ -3,6 +3,8 @@ import {
   generateStation, stationSpec, blockDetail, summarizeStation, BLOCK_TYPES, SHOP_KINDS, UNIT_M,
   updateBlock, addBlock, removeBlock, addShop, updateShop, removeShop,
 } from "@galaxy-core/lib/stationGen.js";
+import { blockInterior, KIT_ZONE_COLORS, kitModule } from "@galaxy-core/lib/stationInterior.js";
+import { KIT_PLANS } from "@galaxy-core/lib/stationKitPlans.js";
 import { Icon } from "../../galaxy/ui.jsx";
 import { Head } from "../shell/Inspectors.jsx";
 
@@ -262,7 +264,7 @@ function BlockInspector({ layout, block, onClose, onChange, onDelete, onAddShop,
   return (
     <>
       <Head kind={t.label.toUpperCase()} dot={t.color} title={block.name} editable onRename={(name) => onChange({ name })} onClose={onClose}
-        sub={`${layout.decks[block.deck]?.name} · ${block.w * UNIT_M} × ${block.h * UNIT_M} m · ${block.doors?.length || 0} door(s)`} />
+        sub={`${block.zone ? `${block.zone} section · ` : ""}${layout.decks[block.deck]?.name}${(block.span || 1) > 1 ? ` (+${block.span - 1} below)` : ""} · ${block.w * UNIT_M} × ${block.h * UNIT_M} m · ${block.doors?.length || 0} door(s)`} />
       <div className="gx-sec">
         <div className="gx-label">PURPOSE</div>
         <div className="ge-types">
@@ -275,7 +277,11 @@ function BlockInspector({ layout, block, onClose, onChange, onDelete, onAddShop,
       </div>
       <div className="gx-sec">
         <div className="gx-label"><span>GEOMETRY</span><span style={{ color: "#9a958b" }}>UNITS · 1 U = 2 M</span></div>
-        <div className="gx-grid" style={{ "--cols": 4, gap: 8 }}>{num("x", "X")}{num("y", "Y")}{num("w", "W")}{num("h", "H")}</div>
+        <div className="gx-grid" style={{ "--cols": 5, gap: 8 }}>{num("x", "X")}{num("y", "Y")}{num("w", "W")}{num("h", "H")}
+          <label className="ge-lbl">Decks
+            <input className="ge-in" type="number" min={1} max={3} value={block.span || 1} onChange={(e) => onChange({ span: Number(e.target.value) })} />
+          </label>
+        </div>
         <div className="gx-lore">Or drag the block on the plan; drag its corner handle to resize.</div>
       </div>
       {VENUE.has(block.type) && (
@@ -317,7 +323,7 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
 
   useEffect(() => {
     const el = svgRef.current;
-    const ro = new ResizeObserver(() => setPx(el.clientWidth || 800));
+    const ro = new ResizeObserver(() => { if (el.clientWidth) setPx(el.clientWidth); });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -343,24 +349,34 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
     return () => el.removeEventListener("wheel", onWheel);
   });
 
-  const blocks = layout.blocks.filter((b) => b.deck === deck);
+  const blocks = useMemo(() => layout.blocks.filter((b) => deck >= b.deck && deck < b.deck + (b.span || 1)), [layout.blocks, deck]);
   const lifts = (layout.lifts || []).filter((l) => l.decks.includes(deck));
   const r = svgRef.current?.getBoundingClientRect();
-  const upp = r ? Math.max(vb.w / r.width, vb.h / r.height) : vb.w / px;
+  // hidden (GM tab not shown) → 0-size box: fall back to the last known width
+  const upp = r && r.width > 0 && r.height > 0 ? Math.max(vb.w / r.width, vb.h / r.height) : vb.w / Math.max(1, px);
 
   const down = (e, b, handle) => {
     e.stopPropagation();
     svgRef.current.setPointerCapture(e.pointerId);
-    if (b) onSelect(b.id);
-    drag.current = { b, handle, start: toUnits(e), vb0: vb, moved: false };
+    // dragging pans, except on the block that is already selected (that one
+    // moves); a click without dragging selects
+    const moving = b && (handle || b.id === sel) ? b : null;
+    drag.current = { b: moving, tap: b, handle, start: toUnits(e), vb0: vb, cx: e.clientX, cy: e.clientY, k: upp, moved: false };
+  };
+  const raf = useRef(0);
+  const panTo = (next) => {
+    raf.pending = next;
+    if (raf.current) return;
+    raf.current = requestAnimationFrame(() => { raf.current = 0; setVb(raf.pending); });
   };
   const move = (e) => {
     const d = drag.current;
     if (!d) return;
-    const p = toUnits(e);
-    const dx = p.x - d.start.x, dy = p.y - d.start.y;
-    if (Math.abs(dx) + Math.abs(dy) > upp * 3) d.moved = true;
-    if (!d.b) { setVb({ ...d.vb0, x: d.vb0.x - dx, y: d.vb0.y - dy }); return; }
+    // screen-pixel deltas × the scale at drag start: the view moving under
+    // the pointer never feeds back into the delta (that was the jitter)
+    const dx = (e.clientX - d.cx) * d.k, dy = (e.clientY - d.cy) * d.k;
+    if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) > 3) d.moved = true;
+    if (!d.b) { if (d.moved) panTo({ ...d.vb0, x: d.vb0.x - dx, y: d.vb0.y - dy }); return; }
     const snap = (v) => Math.round(v);
     setGhost(d.handle
       ? { id: d.b.id, x: d.b.x, y: d.b.y, w: Math.max(1, snap(d.b.w + dx)), h: Math.max(1, snap(d.b.h + dy)) }
@@ -370,7 +386,7 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
     const d = drag.current;
     drag.current = null;
     if (d?.b && d.moved && ghost) onMove(d.b.id, { x: ghost.x, y: ghost.y, w: ghost.w, h: ghost.h });
-    if (d && !d.b && !d.moved) onSelect(null);
+    if (d && !d.b && !d.moved) onSelect(d.tap ? d.tap.id : null);
     setGhost(null);
   };
   const zoomTo = (b) => {
@@ -379,9 +395,13 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
   };
   const zoomBy = (f) => setVb((v) => { const w = Math.min(Math.max(v.w * f, 4), fit().w * 4), h = (w / v.w) * v.h; return { x: v.x + (v.w - w) / 2, y: v.y + (v.h - h) / 2, w, h }; });
 
-  const detailed = blocks
-    .filter((b) => b.type !== "transit" && b.w / upp > 170 && b.x < vb.x + vb.w && b.x + b.w > vb.x && b.y < vb.y + vb.h && b.y + b.h > vb.y)
-    .slice(0, 8);
+  // LOD: blocks on screen get their interior — kit modules (tinted rects
+  // from ~7 px/U, full plan drawings from ~18 px/U), generated only for the
+  // visible part; types without kit modules fall back to generic rooms.
+  const pxPerU = 1 / upp;
+  const view = { x: vb.x, y: vb.y, w: vb.w, h: vb.h };
+  const inView = (b) => b.x < vb.x + vb.w && b.x + b.w > vb.x && b.y < vb.y + vb.h && b.y + b.h > vb.y;
+  const detailed = blocks.filter((b) => b.type !== "transit" && inView(b) && (pxPerU >= 4 || b.w * pxPerU > 170)).slice(0, 40);
   const fs = 11 * upp;
   const gridStep = layout.module * Math.max(1, 2 ** Math.round(Math.log2(Math.max(1, (upp * 18) / layout.module))));
   const selB0 = blocks.find((b) => b.id === sel);
@@ -406,6 +426,9 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
           <pattern id="ge-grid" width={gridStep} height={gridStep} patternUnits="userSpaceOnUse">
             <path d={`M ${gridStep} 0 L 0 0 0 ${gridStep}`} fill="none" stroke="rgba(95,211,243,.07)" strokeWidth={upp} />
           </pattern>
+          <pattern id="ge-tall" width={upp * 14} height={upp * 14} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <path d={`M 0 0 L 0 ${upp * 14}`} stroke="rgba(255,244,230,.16)" strokeWidth={upp * 2} />
+          </pattern>
           <filter id="ge-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation={upp * 6} /></filter>
         </defs>
         <rect x={vb.x} y={vb.y} width={vb.w} height={vb.h} fill="url(#ge-grid)" />
@@ -422,16 +445,17 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
             <g key={b.id} onPointerDown={(e) => down(e, b0, false)} style={{ cursor: "move" }}>
               <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={tr ? "#0d141f" : t.color} fillOpacity={tr ? 1 : 0.32} stroke={tr ? "rgba(95,211,243,.18)" : t.color} strokeOpacity={tr ? 1 : 0.85} strokeWidth={upp * 1.2} />
               {!tr && <rect x={b.x} y={b.y} width={b.w} height={Math.min(b.h, upp * 3)} fill={t.color} fillOpacity=".9" pointerEvents="none" />}
+              {(b.span || 1) > 1 && <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="url(#ge-tall)" pointerEvents="none" />}
               {big && (
                 <text x={b.x + upp * 6} y={b.y + upp * 16} fontSize={fs} fill={tr ? "rgba(159,230,248,.55)" : "#fff4e6"} pointerEvents="none" style={{ fontFamily: "Oxanium, sans-serif", letterSpacing: "0.08em" }}>
-                  {b.name.toUpperCase()}
+                  {b.name.toUpperCase()}{(b.span || 1) > 1 ? ` · ${b.span} DECKS${deck > b.deck ? " (UPPER LEVEL ABOVE)" : ""}` : ""}
                 </text>
               )}
             </g>
           );
         })}
-        {detailed.map((b) => <Detail key={`d${b.id}`} layout={layout} block={b} upp={upp} />)}
-        {blocks.flatMap((b) => (b.doors || []).map((d, i) => {
+        {detailed.map((b) => <Interior key={`d${b.id}`} layout={layout} block={b} upp={upp} view={view} deck={deck} kit={pxPerU >= 4} />)}
+        {blocks.flatMap((b) => (b.doors || []).filter((d) => d.deck == null || d.deck === deck).map((d, i) => {
           const s = Math.max(upp * 5, Math.min(2, b.w, b.h) * 0.5);
           const v = d.side === "e" || d.side === "w";
           return <rect key={`${b.id}d${i}`} x={d.x - (v ? upp * 1.5 : s / 2)} y={d.y - (v ? s / 2 : upp * 1.5)} width={v ? upp * 3 : s} height={v ? s : upp * 3} fill="#fff4e6" pointerEvents="none" />;
@@ -459,8 +483,58 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
         <button className="gx-mbtn" aria-label="Fit" onClick={() => setVb(fit())}>{Icon.reset()}</button>
         <button className="gx-mbtn" aria-label="Add block" onClick={onAdd} title="Add a block on this deck">＋<span>BLOCK</span></button>
       </div>
-      <div className="gx-hint" style={{ bottom: 12 }}>{layout.unitM} M GRID · DRAG TO PAN / MOVE · CORNER TO RESIZE · DOUBLE-CLICK TO ZOOM IN</div>
+      <div className="gx-hint" style={{ bottom: 12 }}>{layout.unitM} M GRID · DRAG TO PAN · CLICK TO SELECT · DRAG A SELECTED BLOCK TO MOVE · DOUBLE-CLICK TO ZOOM</div>
     </div>
+  );
+}
+
+// kit interior of one block (or generic rooms when the kit has no modules for its type)
+const MOD_COLOR = {};
+function modColor(id) {
+  if (MOD_COLOR[id]) return MOD_COLOR[id];
+  const m = kitModule(id); let best = null, ba = -1;
+  for (const z of m?.zones || []) { const a = z.rect[2] * z.rect[3]; if (a > ba) { ba = a; best = z.zone; } }
+  return (MOD_COLOR[id] = KIT_ZONE_COLORS[best] || "#262b30");
+}
+function Interior({ layout, block, upp, view, deck, kit }) {
+  // clip snapped to 16U so panning doesn't regenerate every frame
+  const q = 16, cx = Math.floor(view.x / q) * q, cy = Math.floor(view.y / q) * q;
+  const cw = Math.ceil((view.x + view.w - cx) / q) * q, ch = Math.ceil((view.y + view.h - cy) / q) * q;
+  const r = useMemo(() => (kit ? blockInterior(layout, block, { x: cx, y: cy, w: cw, h: ch }) : null), [kit, layout, block, cx, cy, cw, ch]);
+  const plans = 1 / upp >= 14;
+  const uppQ = 2 ** Math.round(Math.log2(upp)); // stroke/label scale, quantised so panning doesn't re-render
+  const drawn = useMemo(() => (r ? <InteriorMarkup r={r} block={block} layout={layout} plans={plans} upp={uppQ} /> : null), [r, block, layout, plans, uppQ]);
+  if (!r) return <Detail layout={layout} block={block} upp={upp} />;
+  if (deck > block.deck) {
+    // lower level of a two-deck block: open to the level above (hangar floor, reactor pit, atrium)
+    return <rect x={block.x} y={block.y} width={block.w} height={block.h} fill="url(#ge-tall)" pointerEvents="none" />;
+  }
+  return drawn;
+}
+
+function InteriorMarkup({ r, block, layout, plans, upp }) {
+  const shops = (layout.shops || []).filter((s) => s.blockId === block.id);
+  let si = 0;
+  return (
+    <g pointerEvents="none">
+      <rect x={block.x} y={block.y} width={block.w} height={block.h} fill="#0e1316" />
+      {r.halls.map((h, i) => <rect key={`h${i}`} x={h.x} y={h.y} width={h.w} height={h.h} fill={KIT_ZONE_COLORS.CIRC} />)}
+      {r.fillers.map((f, i) => <rect key={`f${i}`} x={f.x} y={f.y} width={f.w} height={f.h} fill={KIT_ZONE_COLORS[f.zone] || "#262b30"} opacity=".6" />)}
+      {r.modules.map((m, i) => {
+        const venue = ["F2-CANTEEN", "F1-MESS", "L1-BAR", "L2-GYM", "L0-NOOK"].includes(m.id) ? shops[si++] : null;
+        const [W0, H0] = kitModule(m.id).footprint_U;
+        const t = m.k === 1 ? `translate(${m.x + H0} ${m.y}) rotate(90)` : m.k === 2 ? `translate(${m.x + W0} ${m.y + H0}) rotate(180)` : m.k === 3 ? `translate(${m.x} ${m.y + W0}) rotate(270)` : `translate(${m.x} ${m.y})`;
+        return (
+          <g key={i}>
+            {plans ? <g transform={t} dangerouslySetInnerHTML={{ __html: KIT_PLANS[m.id] || "" }} />
+              : <rect x={m.x + 0.05} y={m.y + 0.05} width={m.w - 0.1} height={m.h - 0.1} fill={modColor(m.id)} stroke="#e6ecef" strokeOpacity=".45" strokeWidth={upp} />}
+            {venue && (
+              <text x={m.x + m.w / 2} y={m.y + m.h / 2} fontSize={Math.max(upp * 12, 0.35)} textAnchor="middle" dominantBaseline="middle" fill="#ffb866" stroke="#0e1316" strokeWidth={upp * 3} paintOrder="stroke" style={{ fontFamily: "Oxanium, sans-serif" }}>{venue.name}</text>
+            )}
+          </g>
+        );
+      })}
+    </g>
   );
 }
 
@@ -510,7 +584,7 @@ function Section({ layout, deck, sel, onPick, onDeck }) {
             <g key={d.z} onClick={() => onDeck(d.z)} style={{ cursor: "pointer" }}>
               <rect x={-W * 0.01} y={y} width={W * 1.02} height={rowH} fill={d.z === deck ? "rgba(255,154,60,.12)" : "transparent"} />
               {layout.blocks.filter((b) => b.deck === d.z && b.y <= cutY && b.y + b.h > cutY).map((b) => (
-                <rect key={b.id} x={b.x} y={y + rowH * 0.1} width={b.w} height={rowH * 0.8} fill={b.type === "transit" ? "#1a2230" : BLOCK_TYPES[b.type]?.color || "#777"} fillOpacity={b.type === "transit" ? 1 : 0.75} stroke={sel?.id === b.id ? "#5fd3f3" : "#03050a"} strokeWidth={W / 900} onClick={(e) => { e.stopPropagation(); onPick(b); }} />
+                <rect key={b.id} x={b.x} y={y + rowH * 0.1} width={b.w} height={rowH * ((b.span || 1) - 0.2)} fill={b.type === "transit" ? "#1a2230" : BLOCK_TYPES[b.type]?.color || "#777"} fillOpacity={b.type === "transit" ? 1 : 0.75} stroke={sel?.id === b.id ? "#5fd3f3" : "#03050a"} strokeWidth={W / 900} onClick={(e) => { e.stopPropagation(); onPick(b); }} />
               ))}
             </g>
           );

@@ -98,3 +98,36 @@ player redaction keep working unchanged:
 - **Editing**: move/resize by drag (grid snap), numeric x/y/w/h, change type,
   add/delete blocks, rename/add/remove venues. Doors are recomputed after
   every edit (`recomputeDoors`). Hiding blocks from players: not decided yet.
+
+### v2 (2026-09): sections, two-deck blocks, the Station Interiors kit
+
+- **Sections.** Every block belongs to one zone — command, habitation,
+  commerce, research, industry, docking, engineering — and each zone is one
+  contiguous region cut from an archetype ordering by floor area: vessels in
+  transverse slices bow → stern (through all decks), mining platforms in
+  layers top → bottom (hangars on the faces of the bottom layers), orbital
+  stations as a core ring (command + commerce) around the hub, a docking ring
+  at the rim and angular wings in between. Inside a zone the same ordering
+  splits it by type, so food courts, shops and arcades are clusters too.
+- **Stacked decks.** Module rectangles are merged once on the widest deck and
+  reused on every deck they fit, so decks line up; stacked twins of hangars,
+  engines, reactors, cargo holds, assembly bays and atria merge into
+  **two-deck blocks** (`block.span`, editable). Doors carry their deck.
+- **Interiors = the Station Interiors kit** (`galaxy-core/data/station-interiors/`,
+  converted to `lib/stationKit.js` + `lib/stationKitPlans.js`):
+  `lib/stationInterior.js → blockInterior(layout, block, clip)` fills a block
+  with kit modules — clusters of ≤16U with a cross hall and a V1 stair at the
+  head of each (rule V2), rows of [band][1U hall][band], modules turned so a
+  connector faces the hall. Habitation uses the kit housing mix for the
+  station's scale (outpost/station/hub/mega) plus an F1 mess per 3 H0 racks
+  and L0 nooks; dining F2+F3/F1/F0; recreation L3 park/L2/L1/L0; technical
+  T2/T1/T0; generator blocks get the T3 reactor hall (the only place reactors
+  go, which keeps SLEEP away from them, rule X1). Derived per cluster × band
+  seed and only for the visible clip, never stored. Types without kit modules
+  (cargo, hangar, bridge, shops, security, medical, research, factory) still
+  show generic rooms. Not applied yet: WET/spine adjacency (R4), T1/T2 on
+  block mains every 32U, V2/V3 cores and trunks as geometry, wealth shift (W1).
+- **Editor.** Modules appear as zone-tinted cells from ~4 px/U and as the
+  kit's plan drawings from ~14 px/U; venues label their mess/bar/gym. Drag
+  pans (a block only moves once selected); pan uses screen deltas and one
+  update per frame.

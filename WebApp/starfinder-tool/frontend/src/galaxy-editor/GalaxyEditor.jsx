@@ -129,13 +129,13 @@ function eventProposalToDraft(args) {
 // The Galaxy Editor (formerly the standalone GalaxyGen app), now part of
 // SIT: it edits the campaign's stored galaxy in place (see sync.js) — the
 // same project the galaxy viewer renders and the galaxy MCP tools operate on.
-function EditorApp({ initialProject, initialVersion, embedded }) {
+function EditorApp({ initialProject, initialVersion, embedded, active = true }) {
   const [project, setProject] = useState(() => normalizeProject(initialProject));
   const sync = useServerSync(project, setProject, initialVersion);
   const [workspace, setWorkspace] = useState("map");
   const [section, setSection] = useState("build"); // right panel; null = collapsed
   const [tool, setToolRaw] = useState("select");
-  const [mapMode, setMapMode] = useState("factions");
+  const [mapMode, setMapMode] = useState("sectors");
   const [showLanes, setShowLanes] = useState(true);
   const [showNames, setShowNames] = useState(true);
   const [stationTarget, setStationTarget] = useState(null);
@@ -920,7 +920,7 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
   useEffect(() => { mapRef.current?.setLanes(showLanes); }, [showLanes]);
   useEffect(() => { mapRef.current?.setLabels(showNames); }, [showNames]);
   useEffect(() => { mapRef.current?.selectSystemId(selectedSystemId); }, [selectedSystemId, D]);
-  useEffect(() => { if (mapRef.current) mapRef.current.paused = workspace !== "map"; }, [workspace]);
+  useEffect(() => { if (mapRef.current) mapRef.current.paused = !active || workspace !== "map"; }, [workspace, active]);
   useEffect(() => {
     mapRef.current?.setEd({
       tool, field: activeField, showField: showFieldOverlay, brush,
@@ -932,7 +932,7 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
   // keyboard: tools, Esc / Enter
   useEffect(() => {
     const onKey = (e) => {
-      if (workspace !== "map" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!active || workspace !== "map" || e.metaKey || e.ctrlKey || e.altKey) return;
       if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && e.key !== "Escape") return;
       const t = TOOLS.find((x) => x.key1.toLowerCase() === e.key.toLowerCase());
       if (t) { setTool(t.key); return; }
@@ -947,7 +947,7 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [workspace, tool, pendingPoints, pendingClosed, pendingFactionSeed, laneFrom, setTool, clearSelection, handleCloseSectorDraft, handleCancelSectorDraft, handleCancelFactionSeed]);
+  }, [active, workspace, tool, pendingPoints, pendingClosed, pendingFactionSeed, laneFrom, setTool, clearSelection, handleCloseSectorDraft, handleCancelSectorDraft, handleCancelFactionSeed]);
 
   const flyTo = (id) => { selectOnly("system", id); setWorkspace("map"); setTimeout(() => mapRef.current?.focusSystemId(id), 0); };
   const openSystem = (id) => { if (id) selectOnly("system", id); setWorkspace("system"); };
@@ -1203,12 +1203,12 @@ function SaveStatus({ sync }) {
 }
 
 // Loads the campaign's galaxy from SIT; offers to start one if none exists.
-export default function GalaxyEditor({ embedded = false }) {
+export default function GalaxyEditor({ embedded = false, active = true }) {
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
     fetchProject().then((p) => setState(p ? { project: p } : { empty: true }), (e) => setState({ error: e.message }));
   }, []);
-  if (state.project) return <EditorApp initialProject={state.project.data} initialVersion={state.project.version} embedded={embedded} />;
+  if (state.project) return <EditorApp initialProject={state.project.data} initialVersion={state.project.version} embedded={embedded} active={active} />;
   return (
     <div className={"gx ge" + (embedded ? " embedded" : "")}>
       <div className="gx-center-msg">

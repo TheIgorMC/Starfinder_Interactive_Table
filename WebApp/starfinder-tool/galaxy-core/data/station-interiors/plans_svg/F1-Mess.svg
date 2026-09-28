@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="490" style="display: block"><rect width="100%" height="100%" fill="#0e1316"/>
+<g transform="translate(40 50) scale(130)">
+<g opacity="1">
+<rect x="0" y="0" width="3" height="0.8" style="fill: #332c1f"></rect>
+<rect x="0" y="0.8" width="3" height="2.2" style="fill: #2a261d"></rect>
+<rect x="2.55" y="2.55" width="0.45" height="0.45" style="fill: #262b30"></rect>
+</g>
+<g opacity="1">
+<path d="M0.5 0V3M1.5 0V3M2.5 0V3M0 0.5H3M0 1.5H3M0 2.5H3" style="fill: none; stroke: #1f2c34; stroke-width: 0.007"></path>
+<path d="M1 0V3M2 0V3M0 1H3M0 2H3" style="fill: none; stroke: #2f414d; stroke-width: 0.009"></path>
+</g>
+<g style="fill: none; stroke: #7f97a6; stroke-width: 0.009">
+<rect x="0.04" y="0.04" width="2.92" height="0.32"></rect>
+<rect x="0.2" y="0.09" width="0.35" height="0.22" rx="0.03"></rect>
+<circle cx="0.9" cy="0.2" r="0.09"></circle>
+<circle cx="1.2" cy="0.2" r="0.09"></circle>
+<rect x="1.45" y="0.06" width="0.5" height="0.28"></rect>
+<rect x="1.5" y="0.12" width="0.4" height="0.16"></rect>
+<rect x="2.4" y="0.04" width="0.56" height="0.32"></rect>
+<rect x="0.55" y="1.1" width="0.4" height="1.4" rx="0.03"></rect>
+<rect x="1.85" y="1.1" width="0.4" height="1.4" rx="0.03"></rect>
+<rect x="0.3" y="1.1" width="0.2" height="1.4"></rect>
+<rect x="1.0" y="1.1" width="0.2" height="1.4"></rect>
+<rect x="1.6" y="1.1" width="0.2" height="1.4"></rect>
+<rect x="2.3" y="1.1" width="0.2" height="1.4"></rect>
+<path d="M0.3 1.45H0.5M0.3 1.8H0.5M0.3 2.15H0.5M1.0 1.45H1.2M1.0 1.8H1.2M1.0 2.15H1.2M1.6 1.45H1.8M1.6 1.8H1.8M1.6 2.15H1.8M2.3 1.45H2.5M2.3 1.8H2.5M2.3 2.15H2.5"></path>
+<rect x="2.58" y="2.58" width="0.38" height="0.38"></rect>
+<circle cx="2.77" cy="2.77" r="0.1"></circle>
+</g>
+<path d="M1.25 3H0V0H3V3H1.75" style="fill: none; stroke: #e6ecef; stroke-width: 0.026; stroke-linecap: square"></path>
+<path d="M0.05 -0.07H2.95" style="fill: none; stroke: #52c4b5; stroke-width: 0.025; stroke-dasharray: 0.07 0.05"></path>
+<rect x="1.25" y="2.975" width="0.5" height="0.05" style="fill: #f0a640"></rect>
+<path d="M1.43 3.08L1.57 3.08L1.5 3.17Z" style="fill: #f0a640"></path>
+<rect x="3.04" y="1.25" width="0.05" height="0.5" style="fill: none; stroke: #f0a640; stroke-width: 0.01; stroke-dasharray: 0.04 0.03"></rect>
+<g style="font-family: 'IBM Plex Mono', monospace; font-size: 0.09px; fill: #93a6b1; text-anchor: middle">
+<text x="0.5" y="-0.16">A</text>
+<text x="1.5" y="-0.16">B</text>
+<text x="2.5" y="-0.16">C</text>
+<text x="-0.16" y="0.53">1</text>
+<text x="-0.16" y="1.53">2</text>
+<text x="-0.16" y="2.53">3</text>
+</g>
+<g style="font-family: 'IBM Plex Mono', monospace; font-size: 0.085px; fill: #e6ecef; text-anchor: middle">
+<text x="1.5" y="0.64">GALLEY · work aisle</text>
+<text x="2.68" y="0.23" style="font-size: 0.07px">COLD</text>
+<text x="1.5" y="2.78">MESS · 16 seats</text>
+<text x="2.77" y="2.5" style="fill: #93a6b1; font-size: 0.06px">recycle</text>
+<text x="1.5" y="3.32" style="fill: #f0a640">S1</text>
+<text x="3.14" y="1.53" style="fill: #f0a640; font-size: 0.07px; text-anchor: start">E1 opt.</text>
+<text x="1.5" y="-0.3" style="fill: #52c4b5; font-size: 0.07px">SPINE · power · water · waste · extraction</text>
+</g>
+</g>
+</svg>

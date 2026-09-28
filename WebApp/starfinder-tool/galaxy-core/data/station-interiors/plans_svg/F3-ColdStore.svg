@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="410" style="display: block"><rect width="100%" height="100%" fill="#0e1316"/>
+<g transform="translate(50 60) scale(150)">
+<g opacity="1">
+<rect x="0" y="0" width="1.5" height="2" style="fill: #1b3346"></rect>
+<rect x="1.5" y="0" width="1.5" height="1" style="fill: #262b30"></rect>
+</g>
+<g opacity="1">
+<path d="M0.5 0V2M1.5 0V2M2.5 0V2M0 0.5H3M0 1.5H3" style="fill: none; stroke: #1f2c34; stroke-width: 0.006"></path>
+<path d="M1 0V2M2 0V2M0 1H3" style="fill: none; stroke: #2f414d; stroke-width: 0.008"></path>
+</g>
+<g style="fill: none; stroke: #7f97a6; stroke-width: 0.008">
+<rect x="0.06" y="0.06" width="0.26" height="1.88"></rect>
+<path d="M0.06 0.5H0.32M0.06 0.97H0.32M0.06 1.44H0.32"></path>
+<rect x="0.32" y="0.06" width="1.1" height="0.24"></rect>
+<path d="M0.87 0.06V0.3"></path>
+<rect x="0.6" y="0.6" width="0.6" height="0.6" style="stroke-dasharray: 0.04 0.03"></rect>
+<rect x="0.6" y="1.62" width="0.8" height="0.32"></rect>
+<path d="M1.0 1.62V1.94"></path>
+<rect x="1.56" y="0.04" width="1.4" height="0.26"></rect>
+<path d="M2.03 0.04V0.3M2.5 0.04V0.3"></path>
+<rect x="2.7" y="0.3" width="0.26" height="0.66"></rect>
+<rect x="1.62" y="1.42" width="0.28" height="0.46" rx="0.03"></rect>
+<rect x="1.96" y="1.42" width="0.28" height="0.46" rx="0.03"></rect>
+</g>
+<path d="M1.5 0V1.25M1.5 1.7V2" style="fill: none; stroke: #7fb8c9; stroke-width: 0.03"></path>
+<path d="M1.5 1H2.0M2.45 1H3" style="fill: none; stroke: #9fb2bd; stroke-width: 0.016"></path>
+<path d="M2.25 2H0V0H3V1.25M3 1.75V2H2.75" style="fill: none; stroke: #e6ecef; stroke-width: 0.025; stroke-linecap: square"></path>
+<path d="M0.05 -0.07H2.95" style="fill: none; stroke: #52c4b5; stroke-width: 0.025; stroke-dasharray: 0.07 0.05"></path>
+<rect x="2.25" y="1.975" width="0.5" height="0.05" style="fill: #f0a640"></rect>
+<path d="M2.43 2.08L2.57 2.08L2.5 2.17Z" style="fill: #f0a640"></path>
+<rect x="2.975" y="1.25" width="0.05" height="0.5" style="fill: #f0a640"></rect>
+<path d="M3.08 1.43L3.08 1.57L3.17 1.5Z" style="fill: #f0a640"></path>
+<g style="font-family: 'IBM Plex Mono', monospace; font-size: 0.085px; fill: #93a6b1; text-anchor: middle">
+<text x="0.5" y="-0.14">A</text>
+<text x="1.5" y="-0.14">B</text>
+<text x="2.5" y="-0.14">C</text>
+<text x="-0.16" y="0.53">1</text>
+<text x="-0.16" y="1.53">2</text>
+</g>
+<g style="font-family: 'IBM Plex Mono', monospace; font-size: 0.08px; fill: #e6ecef; text-anchor: middle">
+<text x="0.95" y="1.4">CHILLER +4 °C</text>
+<text x="0.9" y="0.93" style="fill: #93a6b1; font-size: 0.065px">crates</text>
+<text x="1.0" y="1.56" style="fill: #93a6b1; font-size: 0.06px">freezers −18 °C</text>
+<text x="2.1" y="0.62">DRY STORE</text>
+<text x="1.93" y="1.36" style="fill: #93a6b1; font-size: 0.06px">cart bay</text>
+<text x="2.5" y="2.3" style="fill: #f0a640; font-size: 0.07px">S1 logistics</text>
+<text x="3.12" y="1.2" style="fill: #f0a640; font-size: 0.07px; text-anchor: start">E1 kitchen</text>
+<text x="1.5" y="-0.26" style="fill: #52c4b5; font-size: 0.065px">SPINE · power · heat rejection</text>
+</g>
+</g>
+</svg>

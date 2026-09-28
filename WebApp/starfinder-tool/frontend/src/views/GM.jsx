@@ -228,6 +228,11 @@ function BattleMapTab({ session, sessions, loadSessions, loadSession, createSess
 export default function GM() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState("battlemap");
+  // Tabs stay mounted once visited (hidden, not unmounted), so switching to
+  // another section and back keeps whatever was open there.
+  const [visited, setVisited] = useState(() => new Set(["battlemap"]));
+  useEffect(() => { setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab))); }, [tab]);
+  const pane = (k, el) => (visited.has(k) || tab === k ? <div key={k} className="gm-pane" style={{ display: tab === k ? "contents" : "none" }}>{el}</div> : null);
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [selectedToken, setSelectedToken] = useState(null);
@@ -314,46 +319,34 @@ export default function GM() {
       )}
 
       <div className="gm-tab-content">
-        {tab === "battlemap" && (
-          <BattleMapTab
+        {pane("battlemap", <BattleMapTab
             session={session} sessions={sessions}
             loadSessions={loadSessions} loadSession={loadSession} createSession={createSession}
             selectedToken={selectedToken} setSelectedToken={setSelectedToken}
             onCellClick={onCellClick}
-          />
-        )}
-        {tab === "scene" && <ScenePanel session={session} characters={characters} />}
-        {tab === "media" && <MediaLibrary />}
-        {tab === "campaign" && (
-          <Campaign
+          />)}
+        {pane("scene", <ScenePanel session={session} characters={characters} />)}
+        {pane("media", <MediaLibrary />)}
+        {pane("campaign", <Campaign
             onOpenCharacter={(id) => { setFocusCharacterId(id); setTab("characters"); }}
             focusEntryId={focusEntryId}
             onFocusHandled={() => setFocusEntryId(null)}
-          />
-        )}
-        {tab === "galaxymap" && <iframe title="Galaxy map" src="/galaxy" className="gm-frame" />}
-        {tab === "galaxyeditor" && (
-          <React.Suspense fallback={<div className="gm-panel muted">Loading editor…</div>}>
-            <GalaxyEditor embedded />
-          </React.Suspense>
-        )}
-        {tab === "galaxy" && (
-          <Galaxy onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }} />
-        )}
-        {tab === "characters" && (
-          <Characters
+          />)}
+        {pane("galaxymap", <iframe title="Galaxy map" src="/galaxy" className="gm-frame" />)}
+        {pane("galaxyeditor", <React.Suspense fallback={<div className="gm-panel muted">Loading editor…</div>}>
+            <GalaxyEditor embedded active={tab === "galaxyeditor"} />
+          </React.Suspense>)}
+        {pane("galaxy", <Galaxy onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }} />)}
+        {pane("characters", <Characters
             focusCharacterId={focusCharacterId}
             onFocusHandled={() => setFocusCharacterId(null)}
             onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }}
-          />
-        )}
-        {tab === "sessions" && <Sessions />}
-        {tab === "sources" && (
-          <div className="gm-panel">
+          />)}
+        {pane("sessions", <Sessions />)}
+        {pane("sources", <div className="gm-panel">
             <SourcesConfig />
             <WealthLimitConfig />
-          </div>
-        )}
+          </div>)}
       </div>
     </div>
     </MusicPlayerProvider>

@@ -140,13 +140,25 @@ export function generateStation(target, options = {}) {
   else if (spec.archetype === "mining") grid = miningGrid(rng, N, spec);
   else grid = orbitalGrid(rng, N, spec);
 
-  // cells → rectangles
+  // cells → rectangles. Module rectangles are merged once on the reference
+  // (widest) deck and reused on every deck where they fit, so decks stack
+  // cleanly; leftovers are merged per deck.
   const rects = [];
+  const maxSpan = spec.archetype === "mining" || N >= 20 ? 3 : 2;
+  const refDeck = grid.decks.reduce((best, c, z) => (count(c) > count(grid.decks[best]) ? z : best), 0);
+  const refRects = mergeCells(rng, grid.decks[refDeck], 0, "B", maxSpan);
   grid.decks.forEach((cells, z) => {
-    const maxSpan = spec.archetype === "mining" || N >= 20 ? 3 : 2;
     rects.push(...mergeCells(rng, cells, z, "T", 999));
     rects.push(...mergeCells(rng, cells, z, "H", 3).map((r) => ({ ...r, hub: true })));
-    rects.push(...mergeCells(rng, cells, z, "B", maxSpan));
+    const left = cells.map((row) => row.slice());
+    for (const r of refRects) {
+      let fits = true;
+      for (let j = 0; j < r.h && fits; j++) for (let i = 0; i < r.w; i++) if (left[r.y + j][r.x + i] !== "B") { fits = false; break; }
+      if (!fits) continue;
+      for (let j = 0; j < r.h; j++) for (let i = 0; i < r.w; i++) left[r.y + j][r.x + i] = null;
+      rects.push({ ...r, z });
+    }
+    rects.push(...mergeCells(rng, left, z, "B", maxSpan));
   });
 
   const blocks = rects.map((r, i) => ({
@@ -160,11 +172,13 @@ export function generateStation(target, options = {}) {
   }));
 
   assignTypes(rng, blocks, grid, spec, module);
+  const merged = mergeTall(rng, blocks);
+  blocks.length = 0; blocks.push(...merged);
   nameBlocks(rng, blocks, spec);
 
   const layout = {
     style: "station",
-    generator: 1,
+    generator: 2,
     seed,
     archetype: spec.archetype,
     purpose: spec.purpose,
@@ -202,6 +216,7 @@ function deckCount(spec, heightM) {
   return { decks, levels: Math.max(1, Math.round(physical / decks)) };
 }
 
+function count(cells) { let n = 0; for (const row of cells) for (const v of row) if (v === "B") n++; return n; }
 function emptyGrid(W, H) { return Array.from({ length: H }, () => new Array(W).fill(null)); }
 
 function vesselGrid(rng, N, spec) {
@@ -253,53 +268,52 @@ function orbitalGrid(rng, N, spec) {
   const c = Math.floor(G / 2);
   const { decks, levels } = deckCount(spec, spec.lengthM * 0.15);
   const midDeck = Math.floor(decks / 2);
-  const out = [];
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // One corridor plan for the whole station (the widest, middle deck); the
+  // other decks are the same plan cut to a smaller radius, so decks stack
+  // and sections line up vertically (and can span two decks).
+  const plan = emptyGrid(G, G);
+  const reach0 = Math.max(2, c);
+  const inside0 = (x, y) => x >= 0 && y >= 0 && x < G && y < G && Math.hypot(x - c, y - c) <= reach0 + 0.5;
+  const drng = createRng(`${spec.purpose}:plan:${rng()}`);
+  const hr = G >= 7 ? 1 : 0; // core hub 3×3 (1×1 on tiny stations)
+  for (let y = c - hr; y <= c + hr; y++) for (let x = c - hr; x <= c + hr; x++) plan[y][x] = "H";
+  const nearT = (x, y, px, py) => dirs.some(([dx, dy]) => {
+    const nx = x + dx, ny = y + dy;
+    return !(nx === px && ny === py) && inside0(nx, ny) && plan[ny][nx] === "T";
+  });
+  const grow = (x, y, [dx, dy], len, depth) => {
+    let px = x, py = y;
+    for (let i = 1; i <= len; i++) {
+      const nx = x + dx * i, ny = y + dy * i;
+      if (!inside0(nx, ny) || plan[ny][nx] === "H" || plan[ny][nx] === "T") break;
+      if (nearT(nx, ny, px, py)) { plan[ny][nx] = "T"; break; } // joined another corridor
+      plan[ny][nx] = "T";
+      px = nx; py = ny;
+      if (depth < 3 && i >= 2 && i % 3 === 0 && drng() < 0.75) {
+        const side = drng() < 0.5 ? 1 : -1;
+        grow(nx, ny, [dy * side, dx * side], Math.round(len * (0.4 + drng() * 0.4)), depth + 1);
+        if (drng() < 0.4) grow(nx, ny, [-dy * side, -dx * side], Math.round(len * (0.3 + drng() * 0.4)), depth + 1);
+      }
+    }
+  };
+  const arms = dirs.filter(() => drng() < 0.92);
+  for (const d of (arms.length ? arms : dirs)) grow(c + d[0] * hr, c + d[1] * hr, d, Math.round(reach0 * (0.7 + drng() * 0.3)), 0);
+  // modules up to 2 cells off the corridors
+  for (let pass = 0; pass < 2; pass++) {
+    const add = [];
+    for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
+      if (plan[y][x] || !inside0(x, y)) continue;
+      const touch = dirs.some(([dx, dy]) => { const v = plan[y + dy]?.[x + dx]; return pass === 0 ? v === "T" || v === "H" : v === "B"; });
+      if (touch && (pass === 0 || drng() < 0.8)) add.push([x, y]);
+    }
+    for (const [x, y] of add) plan[y][x] = "B";
+  }
+  const out = [];
   for (let z = 0; z < decks; z++) {
-    const cells = emptyGrid(G, G);
     const shrink = decks > 1 ? 1 - (Math.abs(z - midDeck) / decks) * 0.9 : 1;
     const reach = Math.max(2, Math.round(c * shrink));
-    const inside = (x, y) => x >= 0 && y >= 0 && x < G && y < G && Math.hypot(x - c, y - c) <= reach + 0.5;
-    const drng = createRng(`${spec.purpose}:${z}:${rng()}`);
-    // core hub (3×3, or 1×1 on tiny stations)
-    const hr = G >= 7 ? 1 : 0;
-    for (let y = c - hr; y <= c + hr; y++) for (let x = c - hr; x <= c + hr; x++) cells[y][x] = "H";
-    const nearT = (x, y, px, py) => dirs.some(([dx, dy]) => {
-      const nx = x + dx, ny = y + dy;
-      return !(nx === px && ny === py) && inside(nx, ny) && cells[ny][nx] === "T";
-    });
-    const grow = (x, y, [dx, dy], len, depth) => {
-      let px = x, py = y;
-      for (let i = 1; i <= len; i++) {
-        const nx = x + dx * i, ny = y + dy * i;
-        if (!inside(nx, ny) || cells[ny][nx] === "H") break;
-        if (cells[ny][nx] === "T") break;
-        if (nearT(nx, ny, px, py)) { cells[ny][nx] = "T"; break; } // joined another corridor
-        cells[ny][nx] = "T";
-        px = nx; py = ny;
-        if (depth < 3 && i >= 2 && i % 3 === 0 && drng() < 0.75) {
-          const side = drng() < 0.5 ? 1 : -1;
-          grow(nx, ny, [dy * side, dx * side], Math.round(len * (0.4 + drng() * 0.4)), depth + 1);
-          if (drng() < 0.4) grow(nx, ny, [-dy * side, -dx * side], Math.round(len * (0.3 + drng() * 0.4)), depth + 1);
-        }
-      }
-    };
-    const arms = dirs.filter(() => drng() < 0.92);
-    for (const d of (arms.length ? arms : dirs)) grow(c + d[0] * hr, c + d[1] * hr, d, Math.round(reach * (0.7 + drng() * 0.3)), 0);
-    // blocks up to 2 cells off the corridors
-    for (let pass = 0; pass < 2; pass++) {
-      const add = [];
-      for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
-        if (cells[y][x] || !inside(x, y)) continue;
-        const touch = dirs.some(([dx, dy]) => {
-          const v = cells[y + dy]?.[x + dx];
-          return pass === 0 ? v === "T" || v === "H" : v === "B";
-        });
-        if (touch && (pass === 0 || drng() < 0.8)) add.push([x, y]);
-      }
-      for (const [x, y] of add) cells[y][x] = "B";
-    }
-    out.push(cells);
+    out.push(plan.map((row, y) => row.map((v, x) => (v && Math.hypot(x - c, y - c) <= reach + 0.5 ? v : null))));
   }
   return { W: G, H: G, decks: out, levels };
 }
@@ -330,114 +344,175 @@ function mergeCells(rng, cells, z, kind, maxSpan) {
   return out;
 }
 
-// Program → types. Geometry first, then each block gets the type that best
-// fits its position (zone preference) and is furthest below its target
-// floor-area share.
+// Sections. A station is organised in sections like any settlement: every
+// block belongs to one zone (command, habitation, commerce, research,
+// industry, docking, engineering) and each zone is ONE contiguous region —
+// food courts sit with the shops, hangars with the cargo bays, never
+// interleaved. Zones are cut out of an archetype-specific ordering of the
+// blocks by floor area:
+//   vessel  — transverse slices bow → stern (through every deck):
+//             command · habitation · commerce · research · docking · industry · engineering
+//   mining  — horizontal layers top → bottom: command · habitation · commerce ·
+//             research · engineering · industry · docking (hangars on the faces)
+//   orbital — core ring (command, commerce) around the hub, docking ring at
+//             the rim, angular wings in between (habitation, research,
+//             industry, engineering)
+// Inside a zone the same ordering splits it by type, so each type is a
+// cluster too (the food court, then the shopping street, then the arcade).
+const ZONES = {
+  command: ["bridge", "security", "medical"],
+  habitation: ["habitation"],
+  commerce: ["dining", "commercial", "recreation"],
+  research: ["research"],
+  industry: ["factory", "cargo"],
+  docking: ["hangar", "cargo"],
+  engineering: ["technical", "generator", "engine"],
+};
+// block types that may be two decks tall, with the chance a stacked pair merges
+const TALL = { hangar: 0.75, engine: 0.8, generator: 0.7, cargo: 0.5, factory: 0.5, recreation: 0.4, dining: 0.2, research: 0.25 };
+
 function assignTypes(rng, blocks, grid, spec, module) {
   const mix = { ...(MIX[spec.purpose] || MIX.waystation) };
   // a working crew doesn't run shops; only hulls carrying people who dock or
   // travel (passengers, big crews) get commerce and recreation
-  if (spec.kind === "ship" && spec.population < 200) { mix.commercial = 0; mix.recreation = 0; }
+  if (spec.kind === "ship" && spec.passengers < 40 && spec.population < 200) { mix.commercial = 0; mix.recreation = 0; }
   const nDecks = grid.decks.length;
   const W = grid.W * module, H = grid.H * module;
   const build = blocks.filter((b) => b.type !== "transit");
-  const total = build.reduce((a, b) => a + b.w * b.h, 0) || 1;
+  const area = (b) => b.w * b.h;
+  const total = build.reduce((a, b) => a + area(b), 0) || 1;
 
   // habitation share follows the headcount (m² per person), within limits
   const m2 = spec.kind === "ship" && spec.population < 60 ? 6 : M2_PER_PERSON[spec.purpose] || M2_PER_PERSON.default;
-  const levels = grid.levels || 1;
-  const needU = (spec.population * m2) / (UNIT_M * UNIT_M) / levels;
+  const needU = (spec.population * m2) / (UNIT_M * UNIT_M) / (grid.levels || 1);
   const mixSum = Object.values(mix).reduce((a, x) => a + x, 0);
   const habShare = Math.min(spec.purpose === "colony" ? 0.7 : 0.55, Math.max(0.06, needU / total));
   const rest = mixSum - (mix.habitation || 0);
   for (const k of Object.keys(mix)) if (k !== "habitation") mix[k] = (mix[k] / rest) * (1 - habShare);
   mix.habitation = habShare;
-  // bigger vessels scatter generators; every hull has some technical space
-  if (spec.archetype !== "orbital" || spec.lengthM > 600) mix.generator = (mix.generator || 0) + (spec.lengthM > 240 ? 0.04 : 0.015);
-  if (spec.archetype === "vessel") mix.engine = 0; // placed by position below
-
-  const target = Object.fromEntries(Object.entries(mix).map(([k, v]) => [k, v * total]));
-  const got = {};
+  mix.technical = (mix.technical || 0) + 0.02;
+  if (spec.archetype !== "orbital" || spec.lengthM > 600) mix.generator = (mix.generator || 0) + (spec.lengthM > 240 ? 0.03 : 0.012);
 
   const isVessel = spec.archetype === "vessel";
   const cx = W / 2, cy = H / 2, rMax = Math.hypot(cx, cy) || 1;
-  const pos = (b) => {
+  const P = new Map(build.map((b) => {
     const x = b.x + b.w / 2, y = b.y + b.h / 2;
-    return { f: x / W, g: y / H, r: Math.hypot(x - cx, y - cy) / rMax, deck: nDecks > 1 ? b.deck / (nDecks - 1) : 0.5, edge: b.x === 0 || b.y === 0 || b.x + b.w >= W || b.y + b.h >= H };
-  };
-  const zone = (type, p, b) => {
-    if (isVessel) {
-      const bow = p.f < 0.14, stern = p.f > 0.86, mid = p.f > 0.35 && p.f < 0.65;
-      switch (type) {
-        case "bridge": return bow ? 6 : 0;
-        case "engine": return 0;
-        case "hangar": return (mid ? 4 : 0.4) * (p.deck > 0.6 ? 2 : 1) * (p.edge ? 2 : 0.6);
-        case "cargo": return p.f > 0.5 && !stern ? 3 : mid ? 1.5 : 0.5;
-        case "technical": return stern ? 4 : bow ? 1.2 : 1;
-        case "generator": return stern ? 3 : 0.8;
-        case "security": return bow ? 3 : 1;
-        case "habitation": return p.f > 0.12 && p.f < 0.45 ? 3 : p.f < 0.8 ? 1.2 : 0.3;
-        case "dining": case "commercial": case "recreation": return p.f > 0.15 && p.f < 0.55 ? 2.5 : 0.6;
-        default: return 1;
-      }
-    }
-    if (spec.archetype === "mining") {
-      switch (type) {
-        case "hangar": return (p.edge ? 5 : 0.05) * (p.deck > 0.5 ? 1.8 : 1);
-        case "cargo": return p.deck > 0.4 ? 2.5 : 1;
-        case "habitation": return p.deck < 0.5 ? 2.5 : 0.8;
-        case "dining": case "commercial": case "medical": return p.r < 0.5 ? 2 : 0.5;
-        default: return 1;
-      }
-    }
-    // orbital: hub core → commerce → habitation → docks at the rim
-    switch (type) {
-      case "hangar": return p.r > 0.5 ? 4 * p.r : 0.2;
-      case "cargo": return p.r > 0.4 ? 2 : 0.6;
-      case "commercial": case "dining": case "recreation": return p.r < 0.45 ? 3 : 0.8;
-      case "habitation": return p.r > 0.2 && p.r < 0.75 ? 2.5 : 1;
-      case "generator": case "technical": return p.deck > 0.7 || p.deck < 0.15 ? 2 : 1;
-      case "factory": return p.r > 0.45 ? 2 : 0.6;
-      default: return 1;
-    }
-  };
+    return [b, { f: x / W, r: Math.hypot(x - cx, y - cy) / rMax, a: Math.atan2(y - cy, x - cx), edge: b.x === 0 || b.y === 0 || b.x + b.w >= W || b.y + b.h >= H }];
+  }));
 
-  // fixed placements
+  // fixed placements: engines at the stern, the hub, the bridge
   let bridge = null;
   for (const b of build) {
-    const p = pos(b);
-    if (isVessel && p.f > 0.9 && (b.x + b.w >= W - module * 1.5)) { b.type = "engine"; continue; }
-    if (b.hub) { b.type = Math.abs(b.deck - Math.floor(nDecks / 2)) === 0 && !bridge ? "bridge" : "technical"; if (b.type === "bridge") bridge = b; continue; }
+    if (isVessel && P.get(b).f > 0.9 && b.x + b.w >= W - module * 1.5) { b.type = "engine"; continue; }
+    if (b.hub) { b.type = b.deck === Math.floor(nDecks / 2) && !bridge ? "bridge" : "technical"; if (b.type === "bridge") bridge = b; }
   }
   if (!bridge) {
-    const cand = build.filter((b) => !b.type).sort((a, b) => (isVessel ? a.x - b.x : Math.abs(a.deck - nDecks / 2) - Math.abs(b.deck - nDecks / 2)) || (a.w * a.h - b.w * b.h))[0];
+    const cand = build.filter((b) => !b.type).sort((a, b) => (isVessel ? a.x - b.x : Math.abs(a.deck - nDecks / 2) - Math.abs(b.deck - nDecks / 2)) || area(a) - area(b))[0];
     if (cand) { cand.type = "bridge"; bridge = cand; }
   }
-  for (const b of build) if (b.type) got[b.type] = (got[b.type] || 0) + b.w * b.h;
+  const free = build.filter((b) => !b.type);
+  const freeArea = free.reduce((a, b) => a + area(b), 0) || 1;
 
-  const order = build.filter((b) => !b.type).sort(() => rng() - 0.5);
-  const types = Object.keys(target).filter((k) => target[k] > 0 && k !== "bridge");
-  for (const b of order) {
-    const p = pos(b), a = b.w * b.h;
-    let best = null, bestS = -1;
-    for (const t of types) {
-      const deficit = Math.max(0.02, (target[t] - (got[t] || 0)) / target[t]);
-      const s = zone(t, p, b) * deficit * (0.75 + rng() * 0.5);
-      if (s > bestS) { bestS = s; best = t; }
+  // type → zone targets (cargo splits between industry and docking)
+  const typeT = { ...mix };
+  delete typeT.bridge; delete typeT.engine;
+  const zoneT = {};
+  const zoneTypes = {};
+  for (const [z, ts] of Object.entries(ZONES)) {
+    zoneTypes[z] = [];
+    for (const t of ts) {
+      let v = typeT[t] || 0;
+      if (t === "cargo") v *= z === "industry" ? (mix.factory ? 0.4 : 0) : (mix.factory ? 0.6 : 1);
+      if (v > 0) { zoneT[z] = (zoneT[z] || 0) + v; zoneTypes[z].push([t, v]); }
     }
-    b.type = best || "technical";
-    got[b.type] = (got[b.type] || 0) + a;
   }
+  const sumZ = Object.values(zoneT).reduce((a, x) => a + x, 0) || 1;
+  for (const z of Object.keys(zoneT)) zoneT[z] = (zoneT[z] / sumZ) * freeArea;
+
+  // cut a sorted list into consecutive runs by target area
+  const cut = (list, parts, apply) => {
+    const tot = parts.reduce((a, [, v]) => a + v, 0) || 1, have = list.reduce((a, b) => a + area(b), 0);
+    let i = 0, acc = 0, bound = 0;
+    for (const [name, v] of parts) {
+      bound += (v / tot) * have;
+      while (i < list.length && (acc + area(list[i]) / 2 <= bound || name === parts[parts.length - 1][0])) { apply(list[i], name); acc += area(list[i]); i++; }
+    }
+    while (i < list.length) apply(list[i++], parts[parts.length - 1][0]);
+  };
+  const zoneOf = new Map();
+  const order = (names) => names.filter((z) => zoneT[z] > 0).map((z) => [z, zoneT[z]]);
+  const jitter = new Map(free.map((b) => [b, rng() * 1e-6]));
+  let subKey; // ordering used to split each zone into types
+
+  if (isVessel) {
+    const key = (b) => b.x + b.w / 2 + jitter.get(b);
+    const list = [...free].sort((a, b) => key(a) - key(b));
+    cut(list, order(["command", "habitation", "commerce", "research", "docking", "industry", "engineering"]), (b, z) => zoneOf.set(b, z));
+    subKey = (b, z) => (z === "docking" ? (P.get(b).edge ? 0 : 1e6) + b.deck * 1e4 : 0) + key(b);
+  } else if (spec.archetype === "mining") {
+    const key = (b) => b.deck * 1e6 + P.get(b).r * 1e3 + jitter.get(b);
+    const list = [...free].sort((a, b) => key(a) - key(b));
+    cut(list, order(["command", "habitation", "commerce", "research", "engineering", "industry", "docking"]), (b, z) => zoneOf.set(b, z));
+    subKey = (b, z) => (z === "docking" ? (P.get(b).edge ? 0 : 1e8) : 0) + key(b);
+  } else {
+    const a0 = rng() * Math.PI * 2;
+    const ang = (b) => (P.get(b).a - a0 + Math.PI * 4) % (Math.PI * 2);
+    const byR = [...free].sort((a, b) => P.get(a).r - P.get(b).r || jitter.get(a) - jitter.get(b));
+    const takeArea = (list, target, z) => { let acc = 0; const out = []; while (list.length && acc < target) { const b = list.shift(); zoneOf.set(b, z); acc += area(b); out.push(b); } return out; };
+    const inner = byR;
+    takeArea(inner, zoneT.command || 0, "command");
+    takeArea(inner, zoneT.commerce || 0, "commerce");
+    const outer = inner.reverse();
+    takeArea(outer, zoneT.docking || 0, "docking");
+    const mid = outer.sort((a, b) => ang(a) - ang(b));
+    cut(mid, order(["habitation", "research", "industry", "engineering"]), (b, z) => zoneOf.set(b, z));
+    subKey = (b, z) => (z === "command" || z === "commerce" ? ang(b) : z === "docking" ? ang(b) : ang(b));
+  }
+
+  // split each zone into its types, in section order
+  for (const z of Object.keys(ZONES)) {
+    const members = free.filter((b) => zoneOf.get(b) === z);
+    if (!members.length) continue;
+    const parts = zoneTypes[z].length ? zoneTypes[z] : [[ZONES[z][0], 1]];
+    members.sort((a, b) => subKey(a, z) - subKey(b, z));
+    cut(members, parts, (b, t) => { b.type = t; b.zone = z; });
+  }
+  for (const b of build) if (!b.zone) b.zone = b.type === "bridge" ? "command" : b.type === "engine" ? "engineering" : b.hub ? "engineering" : "habitation";
+
+  // big vessels scatter a few generators through the hull
+  if (isVessel && spec.lengthM > 240) {
+    const hull = free.filter((b) => ["habitation", "industry", "docking"].includes(b.zone)).sort((a, b) => a.x - b.x);
+    const n = Math.min(4, Math.floor(spec.lengthM / 300));
+    for (let i = 1; i <= n && hull.length; i++) { const b = hull[Math.floor((i / (n + 1)) * hull.length)]; b.type = "generator"; }
+  }
+
   // a hull with docks always has at least one hangar; crews always eat somewhere
-  const ensure = (t, when) => {
+  const ensure = (t, when, zone) => {
     if (!when || build.some((b) => b.type === t)) return;
-    const cand = build.filter((b) => !["bridge", "engine", "transit"].includes(b.type)).sort((a, b) => zone(t, pos(b), b) - zone(t, pos(a), a))[0];
+    const pool = build.filter((b) => b.zone === zone && !["bridge", "engine"].includes(b.type));
+    const cand = (pool.length ? pool : build.filter((b) => !["bridge", "engine"].includes(b.type))).sort((a, b) => area(b) - area(a))[0];
     if (cand) cand.type = t;
   };
-  ensure("hangar", spec.docks > 0 && build.length > 6);
-  ensure("dining", spec.population >= 6 && build.length > 4);
-  ensure("habitation", build.length > 3);
-  ensure("technical", build.length > 5);
+  ensure("hangar", spec.docks > 0 && build.length > 6, "docking");
+  ensure("dining", spec.population >= 6 && build.length > 4, "commerce");
+  ensure("habitation", build.length > 3, "habitation");
+  ensure("technical", build.length > 5, "engineering");
+}
+
+// Stacked twins (same rectangle on consecutive decks, same type) of a
+// tall-capable type merge into one two-deck block: hangars, reactors,
+// cargo holds, assembly bays, atria.
+function mergeTall(rng, blocks) {
+  const at = new Map(blocks.map((b) => [`${b.deck}:${b.x}:${b.y}:${b.w}:${b.h}`, b]));
+  const gone = new Set();
+  for (const b of [...blocks].sort((a, c) => a.deck - c.deck)) {
+    if (gone.has(b) || (b.span || 1) > 1 || !TALL[b.type]) continue;
+    const t = at.get(`${b.deck + 1}:${b.x}:${b.y}:${b.w}:${b.h}`);
+    if (!t || gone.has(t) || t.type !== b.type || (t.span || 1) > 1) continue;
+    if (rng() >= TALL[b.type]) continue;
+    b.span = 2; gone.add(t);
+  }
+  return blocks.filter((b) => !gone.has(b));
 }
 
 const NUMERAL = ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "P", "R", "S", "T", "V", "W", "X"];
@@ -504,8 +579,10 @@ function placeLifts(grid, module) {
 export function recomputeDoors(layout) {
   const byDeck = new Map();
   for (const b of layout.blocks) {
-    if (!byDeck.has(b.deck)) byDeck.set(b.deck, []);
-    byDeck.get(b.deck).push(b);
+    for (let z = b.deck; z < b.deck + (b.span || 1); z++) {
+      if (!byDeck.has(z)) byDeck.set(z, []);
+      byDeck.get(z).push(b);
+    }
   }
   const shared = (a, b) => {
     const ox0 = Math.max(a.x, b.x), ox1 = Math.min(a.x + a.w, b.x + b.w);
@@ -514,14 +591,15 @@ export function recomputeDoors(layout) {
     if (oy1 > oy0 && (a.x + a.w === b.x || b.x + b.w === a.x)) return { x: a.x + a.w === b.x ? b.x : a.x, y: (oy0 + oy1) / 2, side: a.x + a.w === b.x ? "e" : "w", len: oy1 - oy0 };
     return null;
   };
-  for (const list of byDeck.values()) {
+  for (const b of layout.blocks) b.doors = [];
+  for (const [z, list] of byDeck) {
     for (const b of list) {
-      b.doors = [];
       if (b.type === "transit") continue;
       const touching = list.filter((o) => o !== b).map((o) => ({ o, s: shared(b, o) })).filter((t) => t.s);
       const tr = touching.filter((t) => t.o.type === "transit").sort((p, q) => q.s.len - p.s.len).slice(0, 2);
       const pick = tr.length ? tr : touching.sort((p, q) => q.s.len - p.s.len).slice(0, 1);
-      b.doors = pick.map(({ o, s }) => ({ x: s.x, y: s.y, side: s.side, to: o.id }));
+      // doors carry their deck: a two-deck block opens on both
+      b.doors.push(...pick.map(({ o, s }) => ({ x: s.x, y: s.y, side: s.side, to: o.id, deck: z })));
     }
   }
   return layout;
@@ -530,7 +608,7 @@ export function recomputeDoors(layout) {
 function habitationCapacity(layout, spec) {
   const m2 = spec.kind === "ship" && spec.population < 60 ? 6 : M2_PER_PERSON[spec.purpose] || M2_PER_PERSON.default;
   const levels = layout.decks[0]?.levels || 1;
-  const area = layout.blocks.filter((b) => b.type === "habitation").reduce((a, b) => a + b.w * b.h, 0) * UNIT_M * UNIT_M * levels;
+  const area = layout.blocks.filter((b) => b.type === "habitation").reduce((a, b) => a + b.w * b.h * (b.span || 1), 0) * UNIT_M * UNIT_M * levels;
   return Math.round(area / m2);
 }
 
@@ -664,7 +742,10 @@ export function updateBlock(layout, id, patch) {
   const next = clone(layout);
   next.blocks = next.blocks.map((b) => (b.id === id ? { ...b, ...patch } : b));
   const b = next.blocks.find((x) => x.id === id);
-  if (b) { b.w = Math.max(1, Math.round(b.w)); b.h = Math.max(1, Math.round(b.h)); b.x = Math.round(b.x); b.y = Math.round(b.y); }
+  if (b) {
+    b.w = Math.max(1, Math.round(b.w)); b.h = Math.max(1, Math.round(b.h)); b.x = Math.round(b.x); b.y = Math.round(b.y);
+    b.span = Math.max(1, Math.min(layout.decks.length - b.deck, Math.round(b.span || 1)));
+  }
   if (patch.type && !["dining", "commercial", "recreation"].includes(patch.type)) next.shops = next.shops.filter((s) => s.blockId !== id);
   return recomputeDoors(next);
 }
@@ -709,7 +790,7 @@ export function removeShop(layout, id) {
 // Compact text-friendly summary (MCP, inspector).
 export function summarizeStation(layout) {
   const area = {};
-  for (const b of layout.blocks) area[b.type] = (area[b.type] || 0) + b.w * b.h * UNIT_M * UNIT_M * (layout.decks[0]?.levels || 1);
+  for (const b of layout.blocks) area[b.type] = (area[b.type] || 0) + b.w * b.h * (b.span || 1) * UNIT_M * UNIT_M * (layout.decks[0]?.levels || 1);
   return {
     archetype: layout.archetype,
     purpose: layout.purpose,
