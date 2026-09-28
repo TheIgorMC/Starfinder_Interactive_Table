@@ -2,7 +2,9 @@ name: starfinder-tool
 
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: sf-backend
     restart: unless-stopped
     environment:
@@ -30,7 +32,9 @@ services:
   # reverse proxy in front of it terminating TLS at MCP_PUBLIC_URL — this
   # container only speaks plain HTTP on its own port.
   mcp:
-    build: ./mcp-server
+    build:
+      context: .
+      dockerfile: mcp-server/Dockerfile
     container_name: sf-mcp
     restart: unless-stopped
     environment:
@@ -49,7 +53,9 @@ services:
         condition: service_started
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: sf-frontend
     restart: unless-stopped
     ports:

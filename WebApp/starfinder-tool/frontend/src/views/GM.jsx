@@ -7,6 +7,9 @@ import WealthLimitConfig from "../components/WealthLimitConfig.jsx";
 import MediaLibrary from "../components/MediaLibrary.jsx";
 import Campaign from "../components/Campaign.jsx";
 import Galaxy from "../components/Galaxy.jsx";
+
+// Only loaded when the GM opens the tab.
+const GalaxyEditor = React.lazy(() => import("../galaxy-editor/GalaxyEditor.jsx"));
 import Characters from "../components/Characters.jsx";
 import Sessions from "../components/Sessions.jsx";
 import { useAuth } from "../auth.jsx";
@@ -75,7 +78,9 @@ const TABS = [
   { key: "scene", label: "Scene & Mood" },
   { key: "media", label: "Media Library" },
   { key: "campaign", label: "Campaign" },
-  { key: "galaxy", label: "Galaxy" },
+  { key: "galaxymap", label: "Galaxy Map", fill: true },
+  { key: "galaxyeditor", label: "Galaxy Editor", fill: true },
+  { key: "galaxy", label: "Galaxy Data" },
   { key: "characters", label: "Characters" },
   { key: "sessions", label: "Sessions" },
   { key: "sources", label: "Sources" },
@@ -276,8 +281,9 @@ export default function GM() {
 
   return (
     <MusicPlayerProvider>
-    <div className="gm">
+    <div className={"gm" + (TABS.find((t) => t.key === tab)?.fill ? " fill" : "")}>
       <nav className="gm-topbar">
+        <a href="/" className="gm-apps-link" title="All apps / device views">⌂ APPS</a>
         <h2>GM Console</h2>
         <div className="gm-tabs">
           {TABS.map((t) => (
@@ -321,6 +327,12 @@ export default function GM() {
             focusEntryId={focusEntryId}
             onFocusHandled={() => setFocusEntryId(null)}
           />
+        )}
+        {tab === "galaxymap" && <iframe title="Galaxy map" src="/galaxy" className="gm-frame" />}
+        {tab === "galaxyeditor" && (
+          <React.Suspense fallback={<div className="gm-panel muted">Loading editor…</div>}>
+            <GalaxyEditor embedded />
+          </React.Suspense>
         )}
         {tab === "galaxy" && (
           <Galaxy onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }} />

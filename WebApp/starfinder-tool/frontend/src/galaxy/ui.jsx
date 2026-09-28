@@ -50,7 +50,7 @@ export function useRenderer(make, deps) {
 
 export function Status({ state, what = "GALAXY" }) {
   if (state.error) return <div className="gx-center-msg">COULD NOT LOAD {what} DATA<Link to="/">BACK TO HOME</Link></div>;
-  if (state.empty) return <div className="gx-center-msg">NO GALAXY IMPORTED YET<span style={{ fontSize: 12, letterSpacing: "0.12em", color: "#9a958b" }}>The GM imports a GalaxyGen project from the GM console → Galaxy tab.</span><Link to="/">BACK TO HOME</Link></div>;
+  if (state.empty) return <div className="gx-center-msg">NO GALAXY YET<span style={{ fontSize: 12, letterSpacing: "0.12em", color: "#9a958b" }}>The GM creates it in the Galaxy Editor (GM console → Galaxy Editor tab).</span><Link to="/">BACK TO HOME</Link></div>;
   return <div className="gx-center-msg">PLOTTING {what}…</div>;
 }
 export function NotFound({ what, back }) {

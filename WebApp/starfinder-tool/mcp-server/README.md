@@ -2,8 +2,11 @@
 
 A remote MCP server (Streamable HTTP + OAuth 2.1) that lets an AI client —
 primarily claude.ai's custom connector — import, edit and manage campaign
-data, the compendium hand-review workflow, characters, and the mood
-tablet/projector, through the same backend REST API the web UI uses.
+data, the compendium hand-review workflow, characters, the mood
+tablet/projector, and the **galaxy** (`galaxy_*` tools: every GalaxyGen
+generator/editing operation, run by the backend on the stored project —
+see `../galaxy-core/tools/README.md`), through the same backend REST API
+the web UI uses.
 
 ## How it fits together
 

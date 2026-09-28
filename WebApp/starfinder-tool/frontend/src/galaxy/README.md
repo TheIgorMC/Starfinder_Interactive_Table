@@ -1,6 +1,6 @@
 # Galaxy viewer
 
-Full-screen, Elite-style viewer for the imported GalaxyGen project, ported
+Full-screen, Elite-style viewer for the campaign's galaxy project, ported
 from the ARTS galaxy-viewer design handoff. Routes (any logged-in user):
 
 | Route | View |
@@ -22,10 +22,10 @@ ex, im, b bodies}`, `ln` = `[aIdx, bIdx, capacity 0|1|2, risk]`, bodies
 `{k kind, n, s, p parent, st status, au, auo, a, pd, r, t, sites, ...}`.
 Hidden districts are stripped server-side for players.
 
-`settlement.js` is shared verbatim with `GalaxyGen/src/lib/settlement.js`
-(the city layout editor) — keep the two copies identical.
+The settlement layout/renderer lives in `galaxy-core/lib/settlement.js`
+(vite alias `@galaxy-core`), shared with the Galaxy Editor's Cities tab.
 
-Settlement styles (`settlementStyle()` in `settlement.js`, see
+Settlement styles (`settlementStyle()` in `galaxy-core/lib/settlement.js`, see
 `Docs/15-settlement-generators.md`): only `outpost` (domes / floating
 platforms) is final. `city` and `station` render with the same layout
-flagged "provisional" until their GalaxyGen generators exist.
+flagged "provisional" until their Galaxy Editor generators exist.

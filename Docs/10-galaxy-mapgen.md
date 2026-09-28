@@ -1,5 +1,17 @@
 # Galaxy Map Generator ("MapGen") — Design Doc v1
 
+> **Update 2026-09 — merged into SIT.** The standalone `GalaxyGen/` app no
+> longer exists as a separate install. Its engine is `WebApp/starfinder-tool/galaxy-core/`
+> (generators, settlement layout, MCP tool definitions), its UI is the GM
+> console's **Galaxy Editor** tab (`frontend/src/galaxy-editor/`, also full
+> screen at `/galaxy-editor`), and it edits the campaign's stored galaxy in
+> place (versioned `PUT /api/galaxy/project`) instead of a local file that
+> gets re-imported. Its MCP tools are served by the SIT MCP server as
+> `galaxy_*`. Players see the result in the galaxy viewer (`/galaxy`).
+> Wherever this doc says `GalaxyGen/…`, read `galaxy-core/…` (engine) or
+> `frontend/src/galaxy-editor/…` (UI); `galaxy-core/FEATURES.md` is the old
+> GalaxyGen feature log.
+
 Status: **`GalaxyGen/` itself is built and in active use** — see its own
 `GalaxyGen/README.md` for the real, current phase-by-phase feature list,
 which has moved well past what this doc originally scoped (planet/body

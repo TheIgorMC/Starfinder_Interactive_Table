@@ -1,5 +1,17 @@
 import { z } from "zod";
 import { backendGet, backendJson, backendUploadTgn } from "./backend-client.js";
+import { setZod } from "../../galaxy-core/tools/zod.js";
+
+// Galaxy tools (galaxy-core/tools — the former standalone GalaxyGen MCP).
+// Their definitions (names, descriptions, zod shapes) are shared code; the
+// execution happens in the backend (POST /api/galaxy/tool/:name) against
+// the campaign's stored galaxy, which it saves in place — so the Galaxy
+// Editor, the viewer and this server always see the same galaxy.
+let galaxyDefs = [];
+export async function loadGalaxyTools() {
+  setZod(z); // must precede the import: the tool modules build zod shapes at load time
+  galaxyDefs = (await import("../../galaxy-core/tools/index.js")).collectTools();
+}
 
 const json = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
 const errorResult = (err) => ({ content: [{ type: "text", text: `Error: ${err.message}` }], isError: true });
@@ -24,6 +36,21 @@ const qs = (params) => {
 // logic lives here, so behavior always matches what the web UI does
 // (validation, WS broadcasts, etc.).
 export function registerTools(server) {
+  // --- Galaxy (GalaxyGen generators + editing, on the stored project) -
+  for (const t of galaxyDefs) {
+    server.registerTool(
+      `galaxy_${t.name}`,
+      { title: `Galaxy: ${t.name.replace(/_/g, " ")}`, description: t.description, inputSchema: t.shape },
+      async (args) => {
+        try {
+          return await backendJson("POST", `/api/galaxy/tool/${t.name}`, args || {});
+        } catch (err) {
+          return errorResult(err);
+        }
+      }
+    );
+  }
+
   // --- Compendium (read-only rules reference) -----------------------
   server.registerTool(
     "compendium_search",

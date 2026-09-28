@@ -5,7 +5,7 @@ import CharacterSheet from "../components/CharacterSheet.jsx";
 import CharacterCreationWizard from "../components/CharacterCreationWizard.jsx";
 
 export default function Player() {
-  const { user, logout, refresh } = useAuth();
+  const { user, refresh } = useAuth();
   const [char, setChar] = useState(null);
 
   const load = () => {
@@ -35,10 +35,6 @@ export default function Player() {
 
   return (
     <div className="player">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <span className="muted">{user.username}</span>
-        <button className="link" onClick={logout}>Sign out</button>
-      </div>
       <CharacterSheet character={char} patch={patch} />
     </div>
   );

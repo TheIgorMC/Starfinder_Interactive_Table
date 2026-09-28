@@ -17,7 +17,11 @@ import review from "./routes/review.js";
 import galaxy from "./routes/galaxy.js";
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+// The galaxy project (Galaxy Editor saves the whole thing, several MB) gets
+// its own larger limit; everything else stays small.
+const jsonSmall = express.json({ limit: "2mb" });
+const jsonGalaxy = express.json({ limit: "40mb" });
+app.use((req, res, next) => (req.path === "/api/galaxy/project" ? jsonGalaxy : jsonSmall)(req, res, next));
 app.use(attachUser); // parses the session cookie into req.user; never blocks
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));

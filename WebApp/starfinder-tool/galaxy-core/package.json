@@ -1,0 +1,7 @@
+{
+  "name": "galaxy-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared galaxy library: GalaxyGen generators, settlement layout, and the galaxy MCP tool definitions. Imported by path from frontend (vite alias @galaxy-core), backend and mcp-server — no dependencies of its own."
+}

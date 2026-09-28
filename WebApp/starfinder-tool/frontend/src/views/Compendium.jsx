@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+
 import { api } from "../api.js";
 import CategoryIcon from "../components/CategoryIcon.jsx";
 
@@ -603,7 +603,6 @@ export default function Compendium() {
   return (
     <div className="compendium">
       <header>
-        <Link className="link" to="/">← Home</Link>
         <h2>Compendium</h2>
         <span className="muted">{sortedRows.length} of {sectionTotal || rows.length} shown</span>
       </header>

@@ -2,12 +2,18 @@ import { Router } from "express";
 import multer from "multer";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
+import { z } from "zod";
 import { buildCompact } from "../galaxy-compact.js";
+import { broadcast } from "../ws.js";
+import { setZod } from "../../../galaxy-core/tools/zod.js";
+import { runTool, listTools } from "../../../galaxy-core/tools/runner.js";
 
-// GalaxyGen project import (Docs/10-galaxy-mapgen.md) — a read-only
-// reference layer SIT never writes back into. The GM re-imports the whole
-// project file to update it; only the most recently imported one is
-// "current". campaign_entries.galaxy_ref (migrations/020) is the only link
+setZod(z);
+
+// The campaign's galaxy project (Docs/10-galaxy-mapgen.md). Edited in place
+// by the Galaxy Editor (GM console) and the galaxy MCP tools — PUT /project
+// and POST /tool/:name, both versioned; a whole-file re-import still works
+// and starts a new "current" project. campaign_entries.galaxy_ref (migrations/020) is the only link
 // between this and the lore wiki — entities that only exist here never get
 // a campaign_entries row of their own.
 const r = Router();
@@ -87,6 +93,7 @@ r.post("/import", requireGM, uploadJson.single("file"), async (req, res) => {
     "INSERT INTO galaxy_projects (name, seed, data) VALUES ($1, $2, $3) RETURNING id, name, seed, imported_at",
     [name, data.seed || null, JSON.stringify(data)]
   );
+  broadcast("galaxy:updated", { id: rows[0].id, version: 1, source: "import" });
   res.status(201).json(rows[0]);
 });
 
@@ -171,13 +178,85 @@ r.get("/compact", requireAuth, async (req, res) => {
   const project = await currentProject();
   if (!project) return res.json(null);
   const gm = req.user.role === "gm";
-  const key = `${project.id}:${gm}`;
+  const key = `${project.id}:${project.version}:${gm}`;
   if (!compactCache.has(key)) {
-    for (const k of compactCache.keys()) if (!k.startsWith(`${project.id}:`)) compactCache.delete(k);
+    for (const k of compactCache.keys()) if (!k.startsWith(`${project.id}:${project.version}:`)) compactCache.delete(k);
     compactCache.set(key, JSON.stringify({ ...buildCompact(project.data, { gm }), name: project.name }));
   }
   res.setHeader("Content-Type", "application/json");
   res.send(compactCache.get(key));
 });
+
+// ---------------------------------------------------------------------------
+// Edit in place (Galaxy Editor + MCP tools)
+
+// Full project for the editor, plus the version the next save must be based on.
+r.get("/project", requireGM, async (req, res) => {
+  const project = await currentProject();
+  if (!project) return res.json(null);
+  res.json({ id: project.id, name: project.name, version: project.version, updated_at: project.updated_at, data: project.data });
+});
+
+async function saveProject(project, data, name) {
+  if (!project) {
+    const { rows } = await pool.query(
+      "INSERT INTO galaxy_projects (name, seed, data) VALUES ($1, $2, $3) RETURNING id, name, version, updated_at",
+      [name || "Galaxy", data.seed || null, JSON.stringify(data)]
+    );
+    return rows[0];
+  }
+  const { rows } = await pool.query(
+    `UPDATE galaxy_projects SET data = $2, seed = $3, name = COALESCE($4, name), version = version + 1, updated_at = now()
+     WHERE id = $1 AND version = $5 RETURNING id, name, version, updated_at`,
+    [project.id, JSON.stringify(data), data.seed || null, name || null, project.version]
+  );
+  return rows[0] || null; // null = someone saved in between
+}
+
+// Save the whole project. `baseVersion` = the version the client loaded;
+// a mismatch means someone else (another tab, an MCP tool) saved meanwhile → 409.
+r.put("/project", requireGM, async (req, res) => {
+  const { data, baseVersion, name } = req.body || {};
+  if (!data || !Array.isArray(data.systems) || !data.bounds) return res.status(400).json({ error: "not a galaxy project (missing systems/bounds)" });
+  const saved = await queue(async () => {
+    const project = await currentProject();
+    if (project && baseVersion !== project.version) return { conflict: project.version };
+    return saveProject(project, data, name);
+  });
+  if (!saved || saved.conflict) return res.status(409).json({ error: "the galaxy was changed elsewhere — reload before saving", version: saved?.conflict });
+  broadcast("galaxy:updated", { id: saved.id, version: saved.version, source: "editor" });
+  res.json(saved);
+});
+
+// Galaxy MCP tools (galaxy-core/tools), executed here against the stored
+// project so the MCP server stays a thin proxy like every other tool.
+r.get("/tools", requireGM, async (_req, res) => res.json(await listTools()));
+
+r.post("/tool/:name", requireGM, async (req, res) => {
+  try {
+    const out = await queue(async () => {
+      const project = await currentProject();
+      const { result, project: next, dirty } = await runTool(z, project?.data || null, req.params.name, req.body);
+      let saved = null;
+      if (dirty && next && !result?.isError) saved = await saveProject(project, next);
+      return { result, saved };
+    });
+    if (out.saved) broadcast("galaxy:updated", { id: out.saved.id, version: out.saved.version, source: "tool" });
+    res.json(out.result);
+  } catch (err) {
+    if (err?.name === "ZodError") return res.status(400).json({ error: "invalid arguments", issues: err.issues });
+    if (err?.status) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: err.message || "tool failed" });
+  }
+});
+
+// Every read-modify-write of the project goes through here, one at a time.
+let chain = Promise.resolve();
+function queue(fn) {
+  const run = chain.then(fn, fn);
+  chain = run.catch(() => {});
+  return run;
+}
 
 export default r;

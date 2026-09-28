@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+
 import { api } from "../api.js";
 
 // Manual hand-validation workbench over aon_entries. The AI import pipeline
@@ -126,7 +126,6 @@ export default function ReviewTool() {
   return (
     <div className="review-tool">
       <header>
-        <Link className="link" to="/">← Home</Link>
         <h2>Data Review</h2>
         <span className="muted">
           {totals.approved}/{totals.total} approved · {totals.flagged} flagged · {totals.unreviewed} unreviewed

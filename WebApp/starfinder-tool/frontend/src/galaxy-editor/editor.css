@@ -1,0 +1,343 @@
+/* ARTS "galactic cartography" look — same tokens as the SIT web app's
+   galaxy viewer (WebApp/starfinder-tool/frontend/src/galaxy/galaxy.css):
+   deep ground, amber accent, cyan for lanes/selection, Oxanium caps +
+   Barlow Semi Condensed body, square buttons, angled panel corners. */
+.gxe {
+  --gg-ground: #03050a;
+  --gg-panel: rgba(7, 11, 18, 0.92);
+  --gg-field: rgba(8, 12, 20, 0.86);
+  --gg-text: #ece6da;
+  --gg-muted: #9a958b;
+  --gg-muted-2: #b8b2a6;
+  --gg-amber: #ff9a3c;
+  --gg-amber-hi: #ffb866;
+  --gg-amber-dim: #c77a33;
+  --gg-cyan: #5fd3f3;
+  --gg-line: rgba(255, 154, 60, 0.28);
+  --gg-line-soft: rgba(255, 154, 60, 0.14);
+}
+.gxe, .gxe * { box-sizing: border-box; }
+.gxe {
+  font-family: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  font-size: 15px;
+  background: var(--gg-ground);
+  color: var(--gg-text);
+}
+
+.gxe button {
+  background: rgba(10, 15, 24, 0.78);
+  color: var(--gg-text);
+  border: 1px solid rgba(255, 154, 60, 0.22);
+  border-radius: 0;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: Oxanium, sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.gxe button:hover { background: rgba(255, 154, 60, 0.12); border-color: rgba(255, 154, 60, 0.5); }
+.gxe button:disabled { opacity: 0.5; cursor: not-allowed; }
+.gxe button.active { background: rgba(255, 154, 60, 0.2); border-color: var(--gg-amber); color: var(--gg-amber-hi); }
+.gxe button:focus-visible, .gxe input:focus-visible, .gxe select:focus-visible, .gxe textarea:focus-visible { outline: 2px solid var(--gg-cyan); outline-offset: 1px; }
+
+.gxe input, .gxe select, .gxe textarea {
+  background: var(--gg-field);
+  color: var(--gg-text);
+  border: 1px solid var(--gg-line);
+  border-radius: 0;
+  padding: 6px 8px;
+  margin: 2px 0 8px;
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+}
+.gxe select option { background: #0a0f18; }
+.gxe input[type="range"] { padding: 0; accent-color: var(--gg-amber); }
+.gxe input[type="checkbox"] { width: auto; padding: 0; margin: 0 6px 0 0; accent-color: var(--gg-amber); }
+.gxe ::-webkit-scrollbar { width: 8px; height: 8px; }
+.gxe ::-webkit-scrollbar-thumb { background: rgba(255, 154, 60, 0.3); }
+
+.gxe .muted { color: var(--gg-muted); }
+.gxe .small { font-size: 12px; margin: 2px 0 8px; }
+
+.gxe.galaxygen-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+/* inside the GM console tab (fills .gm.fill .gm-tab-content) */
+.gxe.galaxygen-app.embedded { height: 100%; }
+
+/* SIT integration: save status, conflict banner, empty state */
+.gxe .gg-save { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.14em; }
+.gxe .gg-save .dot { width: 8px; height: 8px; border-radius: 50%; background: #7fd09a; }
+.gxe .gg-save-pending .dot, .gxe .gg-save-saving .dot { background: var(--gg-amber); }
+.gxe .gg-save-conflict, .gxe .gg-save-error { color: #ff8a70; border-color: #6b2626; }
+.gxe .gg-save-conflict .dot, .gxe .gg-save-error .dot { background: #ff5a36; }
+.gxe .gg-headlink { font-family: Oxanium, sans-serif; font-size: 11px; letter-spacing: 0.14em; color: var(--gg-amber); text-decoration: none; padding: 6px 4px; }
+.gxe .gg-headlink:hover { color: var(--gg-amber-hi); }
+.gxe .gg-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; background: rgba(255, 90, 54, 0.12); border-bottom: 1px solid rgba(255, 90, 54, 0.4); font-size: 14px; }
+.gxe .gg-empty { margin: auto; max-width: 460px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; font-family: Oxanium, sans-serif; letter-spacing: 0.14em; color: var(--gg-amber); }
+.gxe .gg-empty h1 { font-size: 18px; letter-spacing: 0.22em; margin: 0; }
+.gxe .gg-empty p { font-family: "Barlow Semi Condensed", sans-serif; letter-spacing: 0; }
+
+.gxe .gg-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--gg-line-soft);
+  flex: 0 0 auto;
+}
+.gxe .gg-header h1 { font-family: Oxanium, sans-serif; font-weight: 600; font-size: 15px; letter-spacing: 0.22em; color: var(--gg-amber); margin: 0; }
+.gxe .gg-header .gg-sub { font-family: Oxanium, sans-serif; font-size: 11px; letter-spacing: 0.14em; color: var(--gg-muted); text-transform: uppercase; }
+
+.gxe .gg-body {
+  flex: 1 1 auto;
+  display: grid;
+  /* grid-template-columns is set inline from App.jsx's resizable panel state */
+  min-height: 0;
+}
+
+.gxe .gg-panel {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 16px;
+  min-width: 0;
+  background: var(--gg-panel);
+}
+
+.gxe .gg-resize-handle {
+  cursor: col-resize;
+  background: rgba(255, 154, 60, 0.12);
+  position: relative;
+}
+.gxe .gg-resize-handle:hover, .gxe .gg-resize-handle:active { background: var(--gg-amber); }
+/* Widen the actual hit area past the visible 6px column so the handle is
+   easy to grab without needing pixel-perfect aim. */
+.gxe .gg-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+.gxe .gg-panel section, .gxe .gg-panel > h3, .gxe .gg-panel .gg-section { margin-bottom: 18px; }
+.gxe .gg-panel h3, .gxe .gg-panel h4 {
+  font-family: Oxanium, sans-serif;
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--gg-amber-dim);
+  margin: 0 0 8px;
+}
+/* Every Draw/Generate/Project-panel section is a <details> now (a GM
+   flagged the panel as one long stacked list once Fleets/Companies joined
+   it) — each collapses independently instead of always showing everything
+   at once. `summary` gets the same look the old plain <h3> heading had. */
+.gxe .gg-panel .gg-section > summary {
+  font-family: Oxanium, sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--gg-amber-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.gxe .gg-panel .gg-section[open] > summary { margin-bottom: 8px; }
+.gxe .gg-panel .gg-section > summary::marker { color: var(--gg-amber-dim); }
+
+.gxe .gg-tool-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.gxe .gg-tool-row button { flex: 1 1 auto; }
+
+.gxe .gg-checkbox { display: flex; align-items: center; font-size: 13px; margin-bottom: 8px; cursor: pointer; }
+
+.gxe .gg-new-form {
+  background: rgba(255, 154, 60, 0.04);
+  border: 1px solid var(--gg-line-soft);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.gxe .gg-canvas-wrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.gxe .gg-canvas-wrap canvas { display: block; cursor: crosshair; outline: none; }
+
+.gxe .gg-sector-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gxe .gg-sector-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 15, 24, 0.6);
+  border: 1px solid var(--gg-line-soft);
+  padding: 4px 6px;
+}
+.gxe .gg-sector-list li.active { border-color: var(--gg-amber); background: rgba(255, 154, 60, 0.1); }
+.gxe .gg-sector-list select { margin: 0; width: auto; flex: 1 1 auto; font-size: 12px; }
+.gxe .gg-sector-select {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--gg-text);
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gxe .gg-danger { color: #e6a3a3; border-color: #6b2626; padding: 2px 8px; }
+.gxe .gg-danger:hover { background: #3a1a1a; }
+
+.gxe .gg-link {
+  background: none;
+  border: none;
+  color: var(--gg-amber);
+  font-family: inherit;
+  letter-spacing: 0;
+  text-decoration: underline;
+  font-size: 12px;
+  padding: 2px 0;
+  margin: 2px 0 6px;
+}
+.gxe .gg-link:hover { color: var(--gg-amber-hi); background: none; }
+
+/* The app's single top-level mode switcher — Draw/Generate/entity tabs/AI/
+   Project all live here now, replacing what used to be one long-scrolling
+   left sidebar (every section stacked at once) plus a second, separate tab
+   row buried inside the right sidebar. Selection state (system/faction/
+   actor/org) is independent of this and persists across every tab — see
+   SectorList.jsx's unconditional selection cards. */
+.gxe .gg-tabbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--gg-line-soft);
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+.gxe .gg-tabbar button {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.gxe .gg-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.gxe .gg-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(95, 211, 243, 0.1);
+  border: 1px solid rgba(95, 211, 243, 0.25);
+  color: #bfeefa;
+  padding: 2px 4px 2px 10px;
+  font-size: 12px;
+}
+.gxe .gg-tag button {
+  background: none;
+  border: none;
+  color: #e6a3a3;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.gxe .gg-diff-box {
+  background: rgba(10, 15, 24, 0.6);
+  border: 1px solid var(--gg-line-soft);
+  padding: 6px 8px;
+  margin: 6px 0;
+}
+.gxe .gg-diff-box p { margin: 2px 0; }
+
+.gxe .gg-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gxe .gg-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gxe .gg-chat-header .gg-link { margin: 0; }
+.gxe .gg-chat-header > .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gxe .gg-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 260px;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: var(--gg-ground);
+  border: 1px solid var(--gg-line-soft);
+  padding: 10px;
+}
+
+.gxe .gg-chat-msg {
+  max-width: 92%;
+  border-radius: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--gg-line-soft);
+}
+.gxe .gg-chat-msg p { margin: 2px 0; }
+.gxe .gg-chat-msg p:first-child { margin-top: 0; }
+.gxe .gg-chat-msg p:last-child { margin-bottom: 0; }
+.gxe .gg-chat-msg.user {
+  align-self: flex-end;
+  background: rgba(255, 154, 60, 0.12);
+  border-color: rgba(255, 154, 60, 0.35);
+}
+.gxe .gg-chat-msg.assistant {
+  align-self: flex-start;
+  background: rgba(10, 15, 24, 0.7);
+  border-color: var(--gg-line-soft);
+}
+.gxe .gg-chat-msg.assistant.status { border-style: dashed; }
+.gxe .gg-chat-msg.assistant.error { border-color: #6b2626; background: #1e1414; }
+
+.gxe .gg-chat-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.gxe .gg-chat-input-row textarea { margin: 0; flex: 1 1 auto; resize: vertical; }
+.gxe .gg-chat-input-row button { flex: 0 0 auto; }
+
+/* ---------- City layout editor (CityEditor.jsx) ---------- */
+.gxe .gg-city { display: flex; flex-direction: column; gap: 8px; }
+.gxe .gg-city-preview { position: relative; height: 340px; border: 1px solid var(--gg-line); background: #0b120d; margin: 6px 0 10px; clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
+.gxe .gg-city-preview canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.gxe .gg-city-preview .gg-city-hint { position: absolute; left: 8px; bottom: 6px; font-family: Oxanium, sans-serif; font-size: 10px; letter-spacing: 0.14em; color: var(--gg-muted); pointer-events: none; }
+.gxe .gg-city-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+.gxe .gg-district { border: 1px solid var(--gg-line-soft); padding: 6px 8px 2px; margin-bottom: 6px; background: rgba(10, 15, 24, 0.5); }
+.gxe .gg-district.active { border-color: var(--gg-amber); background: rgba(255, 154, 60, 0.08); }
+.gxe .gg-district-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.gxe .gg-district-head input { margin: 0; }
+.gxe .gg-swatch { width: 10px; height: 10px; flex: 0 0 auto; transform: rotate(45deg); }
+.gxe .gg-pin { font-family: Oxanium, sans-serif; font-size: 10px; letter-spacing: 0.1em; color: var(--gg-amber); white-space: nowrap; }
+.gxe .gg-transit-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.gxe .gg-stub-badge { display: inline-block; padding: 3px 8px; font-family: Oxanium, sans-serif; font-size: 10px; letter-spacing: 0.14em; color: var(--gg-amber); border: 1px dashed var(--gg-line); margin: 0 0 8px; }
+.gxe .gg-stub-list { margin: 0 0 10px; padding-left: 18px; color: var(--gg-muted-2); }

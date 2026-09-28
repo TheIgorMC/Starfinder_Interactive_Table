@@ -128,29 +128,41 @@ links.
 
 ## Galaxy
 
-The GM console's **Galaxy** tab imports a project exported by the offline
-`GalaxyGen/` tool (see `Docs/10-galaxy-mapgen.md`) — a whole procedurally
-generated galaxy (systems, sectors, factions, actors, hyperlanes) as one
-JSON file — and is deliberately **separate** from the Campaign wiki: a real
-galaxy has far more background content (hundreds of systems, a thousand+
-procedural actors) than should ever become individual lore entries on
-their own. The only bridge is an explicit per-entity link
-(`campaign_entries.galaxy_ref`) to an existing (or newly created) Campaign
-entry, set by hand or via a **"Suggest links"** tool that name-matches
-unlinked galaxy entities against unlinked lore entries for one-click batch
-review. A **Map** view renders the imported sectors/hyperlanes/systems as a
-pan-and-zoom SVG, faction-colored, clickable straight into the same link
-picker. The current project can also be downloaded back out (byte-
-identical) for local mass-editing in GalaxyGen before re-importing.
+One tool for the whole galaxy (the former standalone `GalaxyGen/` app was
+merged in — see `Docs/10-galaxy-mapgen.md`):
+
+- **Galaxy Editor** (GM console tab, or `/galaxy-editor` full screen, GM
+  only) — the procedural generator/editor: sectors, density fields,
+  systems, bodies, hyperlanes, factions, actors, organizations, ships,
+  events, surface sites + city layouts (Cities tab). It edits the
+  campaign's stored galaxy **in place** (`GET/PUT /api/galaxy/project`,
+  debounced autosave, versioned: a save based on an older version is
+  refused with a reload-or-overwrite choice instead of silently clobbering
+  edits made elsewhere).
+- **Galaxy Map** (`/galaxy`, any login; also a GM tab) — the Elite-style
+  viewer: galaxy → system → planet → settlement, desktop and mobile
+  (`frontend/src/galaxy/README.md`). Hidden districts never reach players.
+- **Galaxy Data** tab — import/download a whole project file, and link
+  galaxy entities to Campaign lore entries (`campaign_entries.galaxy_ref`,
+  by hand or via the name-match **"Suggest links"** tool). The galaxy stays
+  deliberately separate from the Campaign wiki: hundreds of systems and a
+  thousand+ background actors should never all become lore entries.
+- **MCP**: every generator/editing operation is also a `galaxy_*` tool on
+  the SIT MCP server, executed by the backend on the same stored project.
+
+The generators, settlement layout and MCP tool definitions live once in
+`galaxy-core/` (no dependencies; imported by path from frontend via the
+`@galaxy-core` vite alias, from backend and mcp-server by relative path).
+Docker builds therefore use the stack root as build context.
 
 ## AI-driven management (MCP server)
 
 `WebApp/starfinder-tool/mcp-server/` is a separate service exposing a
 remote MCP server (Streamable HTTP + OAuth 2.1) so an AI client (primarily
 a claude.ai custom connector) can read/edit campaign data, the Compendium
-review workflow, characters, and the mood tablet/projector, through the
-same backend REST API the web UI uses — see its own README for the OAuth
-setup and available tools.
+review workflow, characters, the mood tablet/projector and the galaxy
+(`galaxy_*` tools), through the same backend REST API the web UI uses —
+see its own README for the OAuth setup and available tools.
 
 ## Importing characters from Hephaistos
 
@@ -203,8 +215,16 @@ full automation.
 
 ## Device roles
 
+`/` is an **app launcher**: players pick an app (Character, Galaxy Map,
+Compendium) and each app has a slim bar to switch or go back; the GM gets
+everything as tabs in the GM console plus the full-screen/device views as
+tiles. The list is one registry, `frontend/src/apps.jsx`.
+
 | Route | Device |
 |---|---|
+| `/` | Any — app launcher (tiles depend on role; shared displays always listed). |
+| `/galaxy` | Any device — galaxy viewer (map → system → planet → settlement), desktop + mobile layouts. **Any login required.** |
+| `/galaxy-editor` | GM PC — Galaxy Editor full screen (also a GM-console tab). **GM login required.** |
 | `/gm` | PC — GM console + "Connect tracker" button (Web Serial, Chrome/Edge). **GM login required.** |
 | `/player` | Player tablet / mobile — character sheet, scoped to the logged-in player's own character. **Player login required.** |
 | `/tablet` | GM tablet — mood board (scenario art, featured characters), driven from `/gm`. No login (shared screen). |
@@ -321,3 +341,8 @@ sections do the explaining.
   an AI client manage campaign data, the Data Review workflow, characters,
   and the mood tablet/projector through the same backend REST API
   (`mcp-server/src/`, own README, own OAuth token tables)
+- [x] Galaxy unified into SIT: GalaxyGen's editor as a GM tab editing the
+  stored project in place (versioned saves), shared `galaxy-core/`, galaxy
+  MCP tools on the SIT MCP server, galaxy viewer for everyone, app launcher
+  navigation, ARTS look app-wide (`021_galaxy_edit_in_place.sql`,
+  `frontend/src/galaxy-editor/`, `frontend/src/apps.jsx`)

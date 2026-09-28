@@ -270,20 +270,6 @@ function SuggestLinksPanel({ proposals, onClose, onApplied }) {
   );
 }
 
-// The map is the full-screen galaxy viewer (src/galaxy/, route /galaxy),
-// embedded here so the GM doesn't have to leave the console; "Open full
-// screen" gives it the whole window (and is the link players use too).
-function MapView() {
-  return (
-    <div className="galaxy-map">
-      <div className="row" style={{ justifyContent: "flex-end", padding: "6px 10px" }}>
-        <a href="/galaxy" target="_blank" rel="noreferrer">Open full screen ↗</a>
-      </div>
-      <iframe title="Galaxy map" src="/galaxy" className="galaxy-map-frame" />
-    </div>
-  );
-}
-
 export default function Galaxy({ onOpenCampaignEntry }) {
   const [project, setProject] = useState(null);
   const [index, setIndex] = useState([]);
@@ -292,7 +278,6 @@ export default function Galaxy({ onOpenCampaignEntry }) {
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
   const [showBackground, setShowBackground] = useState(false);
-  const [view, setView] = useState("list");
   const [proposals, setProposals] = useState(null);
 
   const load = () => {
@@ -320,7 +305,7 @@ export default function Galaxy({ onOpenCampaignEntry }) {
     return (
       <div className="galaxy-view">
         <h2>Galaxy</h2>
-        <p className="muted">No GalaxyGen project imported yet.</p>
+        <p className="muted">No galaxy yet — create one in the Galaxy Editor tab, or import a GalaxyGen project file.</p>
         <ImportPanel project={project} onImported={load} />
       </div>
     );
@@ -330,14 +315,8 @@ export default function Galaxy({ onOpenCampaignEntry }) {
     <div className="galaxy-view">
       <h2>Galaxy</h2>
       <ImportPanel project={project} onImported={load} />
-      <div className="tab-row">
-        <button className={view === "list" ? "active" : ""} onClick={() => setView("list")}>List</button>
-        <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}>Map</button>
-      </div>
-
-      {view === "map" ? (
-        <MapView />
-      ) : (
+      <p className="muted small">The map and the editor are their own tabs (Galaxy Map, Galaxy Editor). This tab links galaxy entities to campaign lore entries.</p>
+      {(
         <>
           <div className="row galaxy-toolbar">
             <input placeholder="Search…" value={query} onChange={(e) => setQuery(e.target.value)} />

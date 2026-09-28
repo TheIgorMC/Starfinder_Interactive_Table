@@ -1,8 +1,8 @@
 # 15 — Settlement generators: outposts, cities, stations
 
 Status: **design note + scaffolding** (2026-09). The current district layout
-(`settlement.js`, shared by the SIT galaxy viewer and GalaxyGen's Cities
-tab) is only right for **small outposts**. Cities and stations get their own
+(`galaxy-core/lib/settlement.js`, shared by the galaxy viewer and the Galaxy
+Editor's Cities tab) is only right for **small outposts**. Cities and stations get their own
 generators later; this doc records the split so the code doesn't drift into
 one renderer pretending to fit all three.
 
@@ -11,12 +11,12 @@ one renderer pretending to fit all three.
 | Style | Where | Look | Generator | Status |
 |---|---|---|---|---|
 | `outpost` | small settlements on moons / rocky / ice worlds, extraction sites, gas-giant platforms | districts as **domes** ("bubbles") joined by tunnels/rail/shuttles; floating platforms on gas giants | `layoutSettlement()` in `settlement.js` (seeded relaxation + MST transit) | **done** — this is the current system, kept as is |
-| `city` | real cities on planets, city-planets (ecumenopolis), capitals | own functional, procedural design (street grid / blocks / zoning / arteries) | GalaxyGen **City Gen** tab → `GalaxyGen/src/lib/cityGen.js` | **skeleton only** — until it exists, cities render with the outpost layout, flagged as *provisional* |
-| `station` | orbital stations (incl. ring stations) | own procedural station generator (modules, rings, spokes, docks), then split into zones with the same district logic | GalaxyGen **Station Gen** tab → `GalaxyGen/src/lib/stationGen.js` | **skeleton only** |
+| `city` | real cities on planets, city-planets (ecumenopolis), capitals | own functional, procedural design (street grid / blocks / zoning / arteries) | Galaxy Editor **City Gen** tab → `galaxy-core/lib/cityGen.js` | **skeleton only** — until it exists, cities render with the outpost layout, flagged as *provisional* |
+| `station` | orbital stations (incl. ring stations) | own procedural station generator (modules, rings, spokes, docks), then split into zones with the same district logic | Galaxy Editor **Station Gen** tab → `galaxy-core/lib/stationGen.js` | **skeleton only** |
 
 ## How a site picks its style
 
-`settlementStyle(body, site)` in `settlement.js` (both copies):
+`settlementStyle(body, site)` in `galaxy-core/lib/settlement.js`:
 
 1. an explicit `site.style` (`"outpost" | "city" | "station"`, set in the Cities tab) wins;
 2. a body of kind `orbital station` → `station`;
@@ -56,9 +56,9 @@ player redaction keep working unchanged:
 
 ## Scaffolding in place
 
-- `settlementStyle()` + style dispatch in `settlement.js` (web app + GalaxyGen copies).
+- `settlementStyle()` + style dispatch in `galaxy-core/lib/settlement.js`.
 - Cities tab: per-site **Layout style** selector (auto / outpost / city / station).
-- GalaxyGen tabs **City Gen** and **Station Gen** (placeholders describing
+- Galaxy Editor tabs **City Gen** and **Station Gen** (placeholders describing
   inputs/outputs) and stub modules `cityGen.js` / `stationGen.js` exporting
   the entry points above (they return `null` for now).
 - Viewer: settlement panel shows the style and a "provisional layout" note for city/station.

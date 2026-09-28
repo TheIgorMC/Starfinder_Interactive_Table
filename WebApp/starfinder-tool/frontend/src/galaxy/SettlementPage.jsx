@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { SettlementView, layoutSettlement, SETTLEMENT_TRANSIT, SETTLEMENT_NOTE, SETTLEMENT_STYLES } from "./settlement.js";
+import { SettlementView, layoutSettlement, SETTLEMENT_TRANSIT, SETTLEMENT_NOTE, SETTLEMENT_STYLES } from "@galaxy-core/lib/settlement.js";
 import { planetSites } from "./planet-view.js";
 import { fmtDeg, hasSurface } from "./common.js";
 import { useGalaxyData, useIsMobile, useRenderer, Status, NotFound, Icon, Sheet, Toggle } from "./ui.jsx";

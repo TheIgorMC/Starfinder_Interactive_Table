@@ -1,5 +1,7 @@
 # Visual design system — "Holo Deck"
 
+> **Update 2026-09:** the app-wide look is now the ARTS "galactic cartography" style of the galaxy viewer — deep ground, amber accent (`#ff9a3c`), cyan secondary (`#5fd3f3`), Oxanium caps + Barlow Semi Condensed body, near-square corners. It was applied by swapping the `:root` tokens in `frontend/src/styles.css` (same variable names), so component CSS below still applies; colour/font values quoted in this doc are the old "Holo Deck" ones. Reference tokens: `frontend/src/galaxy/galaxy.css`.
+
 The frontend's look (fonts, colors, cards, nav, buttons) was replaced
 wholesale, sourced from a Claude Design mockup exploration
 (`SIT Mockups.dc.html`, project `da25e4eb-c6bb-4aad-bd10-4111c61851cc`) that

@@ -8,7 +8,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { ensureSchema } from "./db.js";
 import { PgOAuthProvider } from "./oauth-provider.js";
 import { loginRouter } from "./login.js";
-import { registerTools } from "./tools.js";
+import { registerTools, loadGalaxyTools } from "./tools.js";
 
 const PORT = Number(process.env.PORT || 3100);
 const PUBLIC_URL = process.env.MCP_PUBLIC_URL;
@@ -31,6 +31,7 @@ function buildMcpServer() {
 
 async function main() {
   await ensureSchema();
+  await loadGalaxyTools();
 
   const app = express();
   app.set("trust proxy", true); // behind a reverse proxy (see .env.example / docker-compose.yml)
