@@ -1,3 +1,4 @@
+import { Logo } from "../apps.jsx";
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
@@ -29,7 +30,10 @@ export default function Login() {
   return (
     <div className="login">
       <form className="login-card" onSubmit={submit}>
-        <h1>Starfinder Companion</h1>
+        <div className="login-logo">
+          <Logo s={40} />
+          <h1>Starfinder Interactive Table</h1>
+        </div>
         <p className="muted">Sign in to continue</p>
         <input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
         <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />

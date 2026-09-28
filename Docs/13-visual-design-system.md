@@ -1,6 +1,6 @@
 # Visual design system — "Holo Deck"
 
-> **Update 2026-09:** the app-wide look is now the ARTS "galactic cartography" style of the galaxy viewer — deep ground, amber accent (`#ff9a3c`), cyan secondary (`#5fd3f3`), Oxanium caps + Barlow Semi Condensed body, near-square corners. It was applied by swapping the `:root` tokens in `frontend/src/styles.css` (same variable names), so component CSS below still applies; colour/font values quoted in this doc are the old "Holo Deck" ones. Reference tokens: `frontend/src/galaxy/galaxy.css`.
+> **Update 2026-09 — superseded.** The whole app now uses the ARTS "galactic cartography" design of the galaxy viewer; `frontend/src/styles.css` was rewritten around it (its header comment is the current spec): near-black ground, amber accent `#ff9a3c` (hi `#ffb866`, dim `#c77a33`), cyan `#5fd3f3` secondary, violet `#c7a4ff`; Oxanium (headings, labels, buttons, numbers — caps, letter-spaced) + Barlow Semi Condensed (body), self-hosted via `frontend/src/fonts.js`; square corners, notched `clip-path` corners on large panels; section labels 10–11px Oxanium caps in dim amber. The "Holo Deck" blue/violet glass described below is historical.
 
 The frontend's look (fonts, colors, cards, nav, buttons) was replaced
 wholesale, sourced from a Claude Design mockup exploration

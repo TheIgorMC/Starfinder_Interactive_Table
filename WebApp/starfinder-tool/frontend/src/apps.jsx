@@ -38,7 +38,7 @@ const ICONS = {
   display: <svg {...sv}><rect x="3" y="4" width="18" height="12" /><path d="M8 20h8M12 16v4" /></svg>,
 };
 
-const Logo = ({ s = 30 }) => (
+export const Logo = ({ s = 30 }) => (
   <svg width={s} height={s} viewBox="0 0 34 34" fill="none" stroke="#ff9a3c" strokeWidth="1.4" aria-hidden>
     <circle cx="17" cy="17" r="15" strokeOpacity=".45" />
     <ellipse cx="17" cy="17" rx="15" ry="5.5" transform="rotate(-28 17 17)" />

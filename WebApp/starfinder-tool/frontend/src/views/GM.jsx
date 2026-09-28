@@ -13,6 +13,7 @@ const GalaxyEditor = React.lazy(() => import("../galaxy-editor/GalaxyEditor.jsx"
 import Characters from "../components/Characters.jsx";
 import Sessions from "../components/Sessions.jsx";
 import { useAuth } from "../auth.jsx";
+import { Logo } from "../apps.jsx";
 import { useActiveSession, filterToSession } from "../lib/sessionFilter.js";
 import { MusicPlayerProvider, useMusicPlayer } from "../lib/musicPlayer.jsx";
 
@@ -283,8 +284,10 @@ export default function GM() {
     <MusicPlayerProvider>
     <div className={"gm" + (TABS.find((t) => t.key === tab)?.fill ? " fill" : "")}>
       <nav className="gm-topbar">
-        <a href="/" className="gm-apps-link" title="All apps / device views">⌂ APPS</a>
-        <h2>GM Console</h2>
+        <a href="/" className="gm-brand" title="All apps / device views">
+          <Logo s={26} />
+          <h2>GM Console</h2>
+        </a>
         <div className="gm-tabs">
           {TABS.map((t) => (
             <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>

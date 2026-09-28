@@ -14,6 +14,7 @@ import PlanetPage from "./galaxy/PlanetPage.jsx";
 import SettlementPage from "./galaxy/SettlementPage.jsx";
 import { AuthProvider, RequireAuth } from "./auth.jsx";
 import { Launcher, AppFrame } from "./apps.jsx";
+import "./fonts.js";
 import "./styles.css";
 import "./galaxy/galaxy.css";
 
