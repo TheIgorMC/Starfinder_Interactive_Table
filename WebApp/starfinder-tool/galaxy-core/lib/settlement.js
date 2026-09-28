@@ -70,6 +70,21 @@ export function settlementStyle(body, site) {
   if (!def && site.id === "cap") return "city";
   return "outpost";
 }
+// Procedural district list for a generated city: size follows the site's
+// population (`site.pop`), so a megalopolis isn't five domes.
+const CITY_POOL = [
+  "Administration", "Habitation North", "Commerce", "Industry", "Habitation South", "Hydroponics", "Power Plant",
+  "Transit Hub", "Market District", "Arcology Ring", "Medical Center", "University", "Foundries", "Residential Spires",
+  "Old Town", "Entertainment Strip", "Water Works", "Security Precinct", "Data Exchange", "Habitation East", "Habitation West",
+];
+function cityDistricts(site, r) {
+  const n = site.pop || (site.id === "cap" ? 3e5 : 3e4);
+  const count = n < 1e4 ? 5 : n < 1e5 ? 6 : n < 1e6 ? 8 : n < 1e7 ? 10 : n < 1e8 ? 12 : n < 1e9 ? 14 : 17;
+  const port = site.id === "cap" || n >= 1e6 ? "Spaceport" : "Landing Field";
+  const pool = CITY_POOL.slice();
+  for (let i = pool.length - 1; i > 3; i--) { const j = 3 + Math.floor(r() * (i - 2)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return [port, ...pool.slice(0, count - 1)];
+}
 const pinned = (d) => typeof d.x === "number" && typeof d.y === "number";
 
 // body: { s: slug, k: kind, t?: tags } · site: { id, type, def? } where def
@@ -81,10 +96,10 @@ export function layoutSettlement(body, site) {
   const defs = def ? def.districts || [] : null;
   const names = defs ? defs.map((x) => x.name)
     : isX ? (gas ? ["Harvester Deck", "Refinery", "Crew Quarters", "Shuttle Pad"] : ["Processing Plant", "Drill Field", "Crew Habitat", "Landing Pad", "Ore Storage"])
-    : site.id === "cap" ? ["Spaceport", "Administration", "Habitation North", "Habitation South", "Commerce", "Industry", "Hydroponics", "Power Plant"]
-    : ["Landing Field", "Habitation", "Market", "Workshops", "Hydroponics"];
-  const col0 = (n) => /port|landing|pad/i.test(n) ? "#ff9a3c" : /Habitation|Crew|Quarters/.test(n) ? "#5fd3f3" : /Hydroponics/.test(n) ? "#7fd09a"
-    : /Industry|Workshops|Plant|Refinery|Drill|Storage|Deck|Power/.test(n) ? "#d9a066" : "#c9c1ff";
+    : cityDistricts(site, r);
+  const col0 = (n) => /port|landing|pad/i.test(n) ? "#ff9a3c" : /Habitation|Crew|Quarters|Residential|Arcology/.test(n) ? "#5fd3f3" : /Hydroponics|Water/.test(n) ? "#7fd09a"
+    : /Industry|Workshops|Plant|Refinery|Drill|Storage|Deck|Power|Foundries/.test(n) ? "#d9a066"
+    : /Administration|Security/.test(n) ? "#ffd27a" : /University|Medical|Data/.test(n) ? "#9fe6f8" : "#c9c1ff";
   // Each district draws its randoms from its own name-seeded stream and its
   // spiral slot counts visible districts only, so stripping hidden districts
   // (players never receive them) leaves every other district exactly where

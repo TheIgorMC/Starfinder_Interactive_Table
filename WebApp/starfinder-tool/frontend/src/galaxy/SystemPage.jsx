@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { SystemView } from "./system-view.js";
-import { KCOL, KLAB, POPL, counts, short, cap, starColor, hasSurface } from "./common.js";
+import { KCOL, KLAB, POPL, counts, short, cap, starColor, hasSurface, bodyPop, fmtPop, systemPop } from "./common.js";
 import { useGalaxyData, useIsMobile, useRenderer, Status, NotFound, Icon, Sheet } from "./ui.jsx";
 
 function bodyTree(s) {
@@ -28,7 +28,8 @@ function details(D, s, b, kids) {
       kind: s.st.toUpperCase(), name: s.n,
       badges: [{ t: (POPL[s.pop] || "").toUpperCase(), bg: "rgba(255,154,60,.16)", fg: "#ffc58c" }]
         .concat(lead && D.fBySlug[lead] ? [{ t: (s.ow ? "CONTROLLED · " : "LEADING · ") + D.fBySlug[lead].n.toUpperCase(), bg: "rgba(95,211,243,.12)", fg: "#bfeefa" }] : []),
-      stats: [["PLANETS", n.planet], ["MOONS", n.moon], ["BELTS", n.belt], ["STATIONS", n.station], ["SECURITY", Math.round(s.sd * 100) + "%"], ["WAR RISK", Math.round(s.war * 100) + "%"]],
+      stats: [["PLANETS", n.planet], ["MOONS", n.moon], ["BELTS", n.belt], ["STATIONS", n.station], ["SECURITY", Math.round(s.sd * 100) + "%"], ["WAR RISK", Math.round(s.war * 100) + "%"]]
+        .concat(systemPop(s) ? [["INHABITANTS", fmtPop(systemPop(s))]] : []),
       lists: [["EXPORTS", s.ex.length ? s.ex : ["—"]], ["IMPORTS", s.im.length ? s.im : ["—"]]],
       surface: false,
     };
@@ -50,7 +51,7 @@ function details(D, s, b, kids) {
     if (b.au != null) stats.push(["ORBIT", b.au + (b.auo ? " – " + b.auo : "") + " AU"]);
     if (b.pd) stats.push(["YEAR", num(b.pd) + " days"]);
     if (par) stats.push(["ORBITING", short(par.n, s.n)]);
-    if (b.pp != null) stats.push(["POPULATION", num(b.pp)]);
+    if (b.pc != null || b.pp != null) stats.push(["POPULATION", bodyPop(b)]);
     if (b.res && b.res.length) lists.push(["RESOURCES", b.res]);
     if (b.sites) lists.push(["SURFACE SITES", b.sites.map((x) => x.name)]);
     const inOrbit = (kids[b.s] || []).filter((x) => x.k === "orbital station").map((x) => x.n);

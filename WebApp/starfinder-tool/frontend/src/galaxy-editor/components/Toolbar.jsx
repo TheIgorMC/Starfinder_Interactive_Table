@@ -146,6 +146,8 @@ export function GeneratePanel({
   onGenerateBackgroundActors,
   onRedistributeSystems,
   onGeneratePlanets,
+  onSettleGalaxy,
+  settleStatus,
   shipModelCount,
   onGenerateShipModels,
   companyCount,
@@ -199,6 +201,17 @@ export function GeneratePanel({
         <button disabled={systemCount === 0} onClick={onGeneratePlanets}>
           Generate planets
         </button>
+        <p className="small muted">
+          Apply settlement rules to the current bodies without re-rolling them:
+          golden-zone worlds colonized, real headcounts (billions in core
+          systems), stations scaled to the economy, at least 3 planets per
+          system and a colony or commercial outpost everywhere. Additive and
+          repeatable; locked systems are skipped.
+        </p>
+        <button disabled={systemCount === 0} onClick={onSettleGalaxy}>
+          Apply settlement rules
+        </button>
+        {settleStatus && <p className="small muted">{settleStatus}</p>}
       </details>
 
       <details className="gg-section">

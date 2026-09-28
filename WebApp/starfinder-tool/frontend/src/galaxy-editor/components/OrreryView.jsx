@@ -512,6 +512,14 @@ function BodyEditor({ body, bodies, onChange, onDelete }) {
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
+              <label className="small muted">Inhabitants (exact headcount; drives cities in the viewer)</label>
+              <input
+                type="number"
+                min={0}
+                value={body.inhabitants ?? ""}
+                placeholder="unset — derived from the band"
+                onChange={(e) => onChange({ inhabitants: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })}
+              />
             </>
           )}
 

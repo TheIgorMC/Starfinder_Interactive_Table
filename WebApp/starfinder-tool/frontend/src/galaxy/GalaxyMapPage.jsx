@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { GalaxyMap } from "./galaxy-map.js";
-import { MODES, POPL, counts, secRGB, css, secLabel, sectorName } from "./common.js";
+import { MODES, POPL, counts, secRGB, css, secLabel, sectorName, systemPop, fmtPop } from "./common.js";
 import { useGalaxyData, useIsMobile, useRenderer, Status, Icon, Sheet, Toggle } from "./ui.jsx";
 
 const MODE_KEYS = ["factions", "security", "conflict", "sectors", "population", "trade"];
@@ -51,6 +51,7 @@ function useSystemInfo(D, sel) {
       control: s.ow ? "CONTROLLED" : s.cb.length ? "CONTESTED" : "UNCLAIMED",
       shares: s.cb.map(([f, share]) => ({ name: D.fBySlug[f]?.n || f, color: D.fBySlug[f]?.c || "#888", pct: Math.round(share * 100) + "%" })),
       counts: [[n.planet, "PLANETS"], [n.moon, "MOONS"], [n.belt, "BELTS"], [n.station, "STATIONS"]],
+      inhabitants: systemPop(s),
       neighbors: s.nb.map((j) => D.sys[j]).sort((a, b) => b.prio - a.prio),
     };
   }, [D, sel]);
@@ -232,7 +233,7 @@ export default function GalaxyMapPage() {
                 <button className="gx-gbtn" aria-label="Close details" onClick={() => select(-1)} style={{ width: 44, height: 44, margin: "-10px -12px -10px 0", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.close()}</button>
               </div>
               <h2>{info.s.n}</h2>
-              <div className="sub">{sectorName(info.s.sc)} · {POPL[info.s.pop] || "Unknown population"} · {info.control}</div>
+              <div className="sub">{sectorName(info.s.sc)} · {info.inhabitants ? `${fmtPop(info.inhabitants)} people` : POPL[info.s.pop] || "Unknown population"} · {info.control}</div>
             </div>
             <div className="gx-mrow">
               <button className="gx-cta" onClick={openSystem}>OPEN SYSTEM{Icon.arrowR()}</button>
@@ -286,7 +287,7 @@ export default function GalaxyMapPage() {
               <button className="gx-gbtn" aria-label="Close details" onClick={() => select(-1)} style={{ width: 44, height: 44, margin: "-12px -12px -12px 0", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.close()}</button>
             </div>
             <h2>{info.s.n}</h2>
-            <div className="sub">{sectorName(info.s.sc)} · {POPL[info.s.pop] || "Unknown population"}</div>
+            <div className="sub">{sectorName(info.s.sc)} · {info.inhabitants ? `${fmtPop(info.inhabitants)} inhabitants` : POPL[info.s.pop] || "Unknown population"}</div>
           </div>
           <SysSections info={info} onPick={(i) => select(i, true)} />
           <div style={{ padding: "4px 22px 22px" }}>

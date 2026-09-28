@@ -9,6 +9,28 @@ const TW = 512, TH = 256;
 function v3(la, lo) { return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)]; }
 const isEcu = (b) => (b.t || []).includes("ecumenopolis");
 
+// Headcount for a colonized body: the real number when the data has one
+// (`pc`), otherwise a representative value for its band label (older data).
+const BAND_POP = [["core world", 5e8], ["major colony", 1e7], ["small colony", 1e4], ["colony", 3e5], ["outpost", 300]];
+export function bodyInhabitants(b) {
+  if (typeof b.pc === "number") return b.pc;
+  if (typeof b.pp === "number") return b.pp;
+  const hit = BAND_POP.find(([k]) => String(b.pp || "").startsWith(k));
+  return hit ? hit[1] : b.st === "colonized" ? 5000 : 0;
+}
+// How many cities a world of that size shows on its globe.
+function cityCount(n) {
+  return n < 5e3 ? 1 : n < 1e5 ? 2 : n < 1e6 ? 3 : n < 1e7 ? 4 : n < 1e8 ? 6 : n < 1e9 ? 8 : n < 1e10 ? 11 : 14;
+}
+const SYL_A = ["Ver", "Ald", "Cor", "Mar", "Tes", "Nov", "Kel", "Dra", "Syl", "Or", "Val", "Ist", "Pra", "Hel", "Zan", "Quo", "Bel", "Tor", "Lum", "Ser"];
+const SYL_B = ["ana", "eth", "ora", "ium", "ace", "enta", "ova", "ar", "is", "enna", "ide", "ussa", "or", "ea", "iro", "ante"];
+const SYL_C = ["", "", "", " Prime", " Nova", " Deep", " Heights", " Harbour", " Reach", "polis", " Gate", " Spire"];
+function cityName(r) { return SYL_A[(r() * SYL_A.length) | 0] + SYL_B[(r() * SYL_B.length) | 0] + SYL_C[(r() * SYL_C.length) | 0]; }
+function cityType(n, gas) {
+  if (gas) return n >= 1e8 ? "Cloud metropolis" : "Floating city";
+  return n >= 1e9 ? "Megalopolis" : n >= 1e8 ? "Metropolis" : n >= 1e6 ? "City" : n >= 1e5 ? "Town" : "Settlement";
+}
+
 // Surface sites for a body — pure and deterministic, so the settlement view
 // can rebuild the exact same list from just the URL. Authored `sites` win;
 // otherwise settled bodies get a capital + settlements, extraction bodies
@@ -31,14 +53,24 @@ export function planetSites(b) {
     }
     return [0, rnd() * 6.28];
   };
-  const code = b.s.split("-").map((w) => w[0]).join("").toUpperCase().slice(0, 3);
   if (b.sites && b.sites.length) {
     b.sites.forEach((x) => sites.push({ id: x.slug, name: x.name, type: x.type || "", color: x.kind === "government" ? "#ffd27a" : "#5fd3f3", lat: (x.lat * Math.PI) / 180, lon: (x.lon * Math.PI) / 180, def: x }));
   } else if (settled) {
-    const p = place();
-    sites.push({ id: "cap", name: gas ? "Cloud City Prime" : "Capital Port", type: gas ? "Floating city · starport" : "Starport · settlement", color: "#5fd3f3", lat: p[0], lon: p[1] });
-    const n = 2 + ((rnd() * 2) | 0);
-    for (let i = 0; i < n; i++) { const q = place(); sites.push({ id: "set" + i, name: (gas ? "Aerostat " : "Settlement ") + code + "-" + (i + 1), type: gas ? "Floating habitat" : "Settlement", color: "#9fe6f8", lat: q[0], lon: q[1] }); }
+    // Crowded worlds get many cities: count and sizes follow the headcount
+    // (capital ~25-35%, the rest a Zipf-like tail).
+    const total = bodyInhabitants(b) || 5000;
+    const n = cityCount(total), nr = rng(seed ^ 0xc17e);
+    const w = Array.from({ length: n }, (_, i) => (i === 0 ? 2.2 + nr() : 1 / (i + 0.6 + nr() * 0.8)));
+    const ws = w.reduce((a, x) => a + x, 0);
+    for (let i = 0; i < n; i++) {
+      const q = place(), pop = Math.round((total * w[i]) / ws);
+      const name = cityName(nr);
+      sites.push({
+        id: i === 0 ? "cap" : "set" + (i - 1), name, pop,
+        type: i === 0 ? `Capital · ${cityType(pop, gas).toLowerCase()}` : cityType(pop, gas),
+        color: i === 0 ? "#5fd3f3" : "#9fe6f8", lat: q[0], lon: q[1],
+      });
+    }
   }
   if (b.st === "extraction" && !(b.sites && b.sites.length)) {
     const res = b.res && b.res.length ? b.res : ["raw materials"];
@@ -66,10 +98,13 @@ export function planetNet(b, sites) {
   return E.map((e, i) => ({ a: e.a, b: e.b, om: e.d, mode: modes[i], ph: rng(seed + i)() }));
 }
 
-function buildTexture(b) {
+function buildTexture(b, sites = []) {
   const seed = hash(b.s), fb = noiseGen(seed), fc = noiseGen(seed ^ 0x9e3779b9), k = b.k;
   const tex = new Uint8ClampedArray(TW * TH * 3), cl = new Uint8ClampedArray(TW * TH), lights = new Uint8ClampedArray(TW * TH);
   const settled = b.st === "colonized" || b.pp, ecu = isEcu(b);
+  // more people, more night-side lights
+  const lp = Math.max(0, Math.log10(bodyInhabitants(b) || 1) - 4);
+  const lightThr = 0.74 - Math.min(0.2, lp * 0.035), lightSpread = Math.min(0.15, lp * 0.025);
   for (let y = 0; y < TH; y++) {
     const lat = (0.5 - (y + 0.5) / TH) * Math.PI, cl0 = Math.cos(lat), sl = Math.sin(lat);
     for (let x = 0; x < TW; x++) {
@@ -93,7 +128,7 @@ function buildTexture(b) {
           if (h < sea) col = mixc([10, 34, 66], [26, 82, 118], (h - 0.25) / 0.25);
           else { const e = (h - sea) / 0.35; col = mixc(mixc([58, 112, 62], [122, 110, 72], e * 1.4), [190, 180, 165], (e - 0.7) * 3); col = mixc(col, [150, 130, 90], d * 0.3); }
           if (Math.abs(sl) > 0.86 + (d - 0.5) * 0.1) col = mixc(col, [236, 242, 248], 0.9);
-          if (settled && h > sea + 0.02 && h < sea + 0.2 && fc(px * 26, py * 26, pz * 26, 2) > 0.72) lights[i] = 150;
+          if (settled && h > sea + 0.02 && h < sea + 0.2 + lightSpread && fc(px * 26, py * 26, pz * 26, 2) > lightThr) lights[i] = 150;
         } else if (k === "ice world") {
           col = mixc([150, 190, 214], [240, 246, 250], h * 1.3 - 0.2); col = mixc(col, [110, 150, 190], Math.max(0, d - 0.6) * 2.5);
         } else {
@@ -105,6 +140,17 @@ function buildTexture(b) {
       }
       tex[i * 3] = col[0]; tex[i * 3 + 1] = col[1]; tex[i * 3 + 2] = col[2];
       if (k === "terrestrial world") { const c2 = fc(px * 3 + 2, py * 5, pz * 3, 5); cl[i] = Math.max(0, Math.min(255, (c2 - 0.52) * 900)); }
+    }
+  }
+  // each city glows at night, sized by its population
+  for (const st of sites) {
+    if (!st.pop) continue;
+    const cx = ((((st.lon / (Math.PI * 2)) % 1) + 1) % 1) * TW, cy = (0.5 - st.lat / Math.PI) * TH;
+    const R = 1.5 + Math.max(0, Math.log10(st.pop) - 3) * 1.4, r2 = rng(hash(b.s + st.id));
+    for (let dy = -Math.ceil(R); dy <= R; dy++) for (let dx = -Math.ceil(R * 1.6); dx <= R * 1.6; dx++) {
+      const d = Math.hypot(dx / 1.6, dy) / R; if (d > 1 || r2() > 0.85 - d * 0.4) continue;
+      const x = (((Math.round(cx + dx)) % TW) + TW) % TW, y = Math.round(cy + dy); if (y < 0 || y >= TH) continue;
+      lights[y * TW + x] = Math.max(lights[y * TW + x], Math.round(230 * (1 - d * 0.6)));
     }
   }
   return { tex, cl, lights, atm: k === "terrestrial world" ? [110, 170, 255] : k === "gas giant" ? [240, 200, 150] : k === "ice world" ? [180, 220, 255] : null };
@@ -127,8 +173,8 @@ export class PlanetView {
   destroy() { this.stop(); this.input.detach(); }
   setFlag(k, v) { this.flags[k] = v; }
   setBody(sys, b) {
-    this.body = b; this.T = buildTexture(b);
-    this.sites = planetSites(b); this.net = planetNet(b, this.sites);
+    this.body = b; this.sites = planetSites(b);
+    this.T = buildTexture(b, this.sites); this.net = planetNet(b, this.sites);
     this.stations = sys.b.filter((x) => x.p === b.s && x.k === "orbital station");
     this.site = null; this.off = null;
   }

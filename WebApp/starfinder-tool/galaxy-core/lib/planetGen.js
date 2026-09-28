@@ -117,16 +117,18 @@ const COLONIZED_BANDS = POPULATION_BANDS.filter((b) => !b.stationOnly);
 // one in a frontier outpost system) via scaleInRange below. `tier` gates
 // which classes even become candidates at low population bands (a
 // megastation has no business existing off a small colony's economy).
+// Populations are for a setting where the colonized systems are *crowded*:
+// a core-world trade station is a small city, a megastation a big one.
 export const STATION_CLASSES = [
-  { value: "refueling outpost", tier: 0, population: [4, 60], docks: [1, 2], lengthM: [60, 180] },
-  { value: "waystation", tier: 1, population: [60, 500], docks: [2, 4], lengthM: [180, 400] },
-  { value: "mining platform", tier: 1, population: [80, 800], docks: [2, 5], lengthM: [220, 500] },
-  { value: "research outpost", tier: 1, population: [30, 300], docks: [1, 3], lengthM: [150, 350] },
-  { value: "trade station", tier: 2, population: [500, 8000], docks: [4, 10], lengthM: [400, 900] },
-  { value: "cargo terminal", tier: 2, population: [300, 4000], docks: [6, 16], lengthM: [500, 1100] },
-  { value: "orbital shipyard", tier: 2, population: [400, 5000], docks: [3, 9], lengthM: [500, 1300] },
-  { value: "orbital fortress", tier: 2, population: [600, 6000], docks: [3, 8], lengthM: [400, 1000] },
-  { value: "megastation", tier: 3, population: [8000, 250000], docks: [14, 50], lengthM: [1300, 4500] },
+  { value: "refueling outpost", tier: 0, population: [20, 900], docks: [2, 6], lengthM: [80, 300] },
+  { value: "waystation", tier: 1, population: [400, 25000], docks: [4, 14], lengthM: [250, 900] },
+  { value: "mining platform", tier: 1, population: [600, 30000], docks: [4, 16], lengthM: [300, 1200] },
+  { value: "research outpost", tier: 1, population: [200, 12000], docks: [2, 8], lengthM: [200, 800] },
+  { value: "trade station", tier: 2, population: [8000, 400000], docks: [12, 60], lengthM: [800, 3000] },
+  { value: "cargo terminal", tier: 2, population: [5000, 150000], docks: [20, 120], lengthM: [1000, 4000] },
+  { value: "orbital shipyard", tier: 2, population: [10000, 300000], docks: [8, 40], lengthM: [1200, 6000] },
+  { value: "orbital fortress", tier: 2, population: [6000, 200000], docks: [8, 30], lengthM: [900, 3500] },
+  { value: "megastation", tier: 3, population: [300000, 12000000], docks: [60, 400], lengthM: [4000, 30000] },
 ];
 const STATION_NAME_SUFFIX = {
   "refueling outpost": "Fuel Depot",
@@ -202,7 +204,7 @@ function sampleN(rng, list, n) {
 // range) plus randomness, so two "trade station"s don't come out
 // identical just because they picked the same class.
 function scaleInRange(rng, [lo, hi], bandIndex) {
-  const t = Math.min(1, Math.max(0, 0.1 + (bandIndex / 5) * 0.55 + rng() * 0.35));
+  const t = Math.min(1, Math.max(0, (bandIndex / 5) * 0.65 + rng() * 0.35));
   return lo + t * (hi - lo);
 }
 
@@ -214,9 +216,9 @@ function pickStationClass(rng, system, host) {
   // filter it out rather than let a lucky roll plant one over a backwater.
   const candidates = table.filter(([value]) => {
     const cls = STATION_CLASSES.find((c) => c.value === value);
-    return !(cls.tier === 3 && bandIndex < 4);
+    return !(cls.tier === 3 && bandIndex < 4) && !(cls.tier === 2 && bandIndex === 0);
   });
-  const pool = candidates.length > 0 ? candidates : table;
+  const pool = candidates.length > 0 ? candidates : [["waystation", 60], ["refueling outpost", 40]];
   const value = weightedPick(rng, pool.map(([v, weight]) => ({ value: v, weight })));
   return STATION_CLASSES.find((c) => c.value === value);
 }
@@ -224,11 +226,13 @@ function pickStationClass(rng, system, host) {
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
 const MOON_LETTERS = "abcdefgh";
 
+// Charted primaries only (the map shows bodies that matter, not every
+// rock): 3-8, centred on 4-6, one more for major-colony/core systems.
 function primaryCount(rng, system) {
   const bandIndex = POPULATION_BANDS.findIndex((b) => b.value === system.population);
-  const base = 2 + Math.floor(rng() * rng() * 5); // skewed toward 2-4, occasional up to 6
-  const bonus = bandIndex >= 4 ? 1 : 0; // major colony / core world systems get one more on average
-  return Math.max(1, Math.min(7, base + bonus));
+  const base = 3 + Math.floor((rng() + rng()) * 2.5); // 3-7, triangular around 5
+  const bonus = bandIndex >= 4 && rng() < 0.6 ? 1 : 0;
+  return Math.max(3, Math.min(8, base + bonus));
 }
 
 // Log-spaced from minOrbit out to a system-wide outer edge well past the
@@ -264,6 +268,15 @@ function rollOrbits(rng, count, zones) {
     orbits.push(Math.max(minOrbit, base * jitter));
   }
   orbits.sort((a, b) => a - b);
+  // Every (non-remnant) star gets at least one body in its golden zone:
+  // the orbit closest to the HZ centre is moved into it.
+  if (zones.hzOuter > zones.minOrbit && !orbits.some((o) => o >= zones.hzInner && o <= zones.hzOuter)) {
+    const mid = Math.sqrt(Math.max(zones.hzInner, zones.minOrbit) * zones.hzOuter);
+    let best = 0;
+    orbits.forEach((o, i) => { if (Math.abs(Math.log(o / mid)) < Math.abs(Math.log(orbits[best] / mid))) best = i; });
+    orbits[best] = mid * (0.9 + rng() * 0.2);
+    orbits.sort((a, b) => a - b);
+  }
   for (let i = 1; i < orbits.length; i++) {
     if (orbits[i] < orbits[i - 1] * 1.15) orbits[i] = orbits[i - 1] * 1.15;
   }
@@ -290,9 +303,9 @@ function pickKind(rng, orbitAU, zones, remnant) {
   }
   if (inHZ) {
     return weightedPick(rng, [
-      { value: "terrestrial world", weight: 55 },
-      { value: "rocky planet", weight: 35 },
-      { value: "asteroid belt", weight: 6 },
+      { value: "terrestrial world", weight: 70 },
+      { value: "rocky planet", weight: 24 },
+      { value: "asteroid belt", weight: 2 },
       { value: "gas giant", weight: 4 }, // rare "hot Jupiter parked in the HZ" edge case
     ]);
   }
@@ -315,8 +328,8 @@ function rollHabitable(rng, kind, orbitAU, zones, remnant) {
   if (remnant) return false;
   const inHZ = orbitAU >= zones.hzInner && orbitAU <= zones.hzOuter;
   if (!inHZ) return false;
-  if (kind === "terrestrial world") return rng() < 0.55;
-  if (kind === "rocky planet") return rng() < 0.18;
+  if (kind === "terrestrial world") return rng() < 0.85;
+  if (kind === "rocky planet") return rng() < 0.35;
   return false;
 }
 
@@ -337,8 +350,8 @@ function rollColonization(rng, body, system, coreProximity = 0.5) {
     return "untouched";
   }
   if (body.habitable) {
-    const coreFactor = 0.3 + 0.7 * Math.max(0, Math.min(1, coreProximity));
-    const chance = (0.12 + bandIndex * 0.15) * coreFactor;
+    const coreFactor = 0.7 + 0.3 * Math.max(0, Math.min(1, coreProximity));
+    const chance = Math.min(0.97, (0.45 + bandIndex * 0.12) * coreFactor);
     if (rng() < chance) return "colonized";
     if (body.resourceRich && rng() < 0.5) return "extraction";
     return "untouched";
@@ -397,7 +410,7 @@ function rollPrimary(rng, system, zones, remnant, starMass, index, coreProximity
 // giants get more moon slots than rocky/terrestrial worlds; belts and
 // ice-world edge cases get none, matching real-solar-system proportions
 // loosely (Jupiter/Saturn have dozens; Earth/Mars have one or two).
-const MOON_SLOTS = { "gas giant": 3, "terrestrial world": 2, "rocky planet": 2, "ice world": 1 };
+const MOON_SLOTS = { "gas giant": 4, "terrestrial world": 2, "rocky planet": 2, "ice world": 1 };
 
 function rollMoons(rng, primary, zones, remnant) {
   if (remnant) return [];
@@ -518,7 +531,200 @@ export function generateBodies(rng, system, coreProximity = 0.5) {
     }
   }
 
+  settleSystem(rng, system, bodies, z, coreProximity);
   return bodies;
+}
+
+// ---------------------------------------------------------------------------
+// Settlement pass — the rules that make every charted system worth charting.
+// Run at the end of generateBodies, and on its own (settleExistingSystems) to
+// upgrade an already-generated galaxy without re-rolling its bodies:
+//
+// 1. Golden zone: habitable bodies in the HZ of an inhabited system are
+//    colonized (almost always in core/major systems).
+// 2. Crowded space: populated systems also settle non-habitable solid
+//    bodies (domes, arcologies, underground) and gas giants (cloud cities),
+//    more the higher the band.
+// 3. Real headcounts: `inhabitants` (a number) on every colonized body, drawn
+//    from a system total that matches its band — core worlds run to tens of
+//    billions. `population` keeps the band label for compatibility.
+// 4. Orbital infrastructure scaled to the economy (1-5 stations).
+// 5. Relevance: no charted system is left with only barren rocks — at least
+//    one colonized world or a commercial outpost (station) is guaranteed.
+//
+// Never removes or renames anything; only statuses/populations/stations.
+const BAND_TOTAL = [
+  [0, 0], // uninhabited / automated only: stations only
+  [80, 500], // outpost
+  [5e3, 5e4], // small colony
+  [2e5, 1e6], // colony
+  [5e6, 5e7], // major colony
+  [2e9, 8e10], // core world: tens of billions across the system
+];
+const COLONY_EXTRA = [0, 0, 0.1, 0.2, 0.35, 0.55]; // chance a non-habitable solid body is settled anyway
+const CLOUD_CITY = [0, 0, 0.05, 0.12, 0.25, 0.45]; // gas giant floating cities
+const STATION_TARGET = [[1, 1], [1, 1], [1, 2], [1, 2], [1, 3], [2, 4]]; // [min, max] per band
+
+// Per-key deterministic randomness: the settlement pass decides each body's
+// fate from its own slug, so running it again never changes its mind.
+function keyRng(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  let st = h >>> 0;
+  return () => { st = (st * 1664525 + 1013904223) >>> 0; return st / 4294967296; };
+}
+
+function logUniform(rng, lo, hi) { return Math.exp(Math.log(lo) + rng() * (Math.log(hi) - Math.log(lo))); }
+
+function bandForCount(n) {
+  if (n >= 5e7) return COLONIZED_BANDS[3].value;
+  if (n >= 1e6) return COLONIZED_BANDS[2].value;
+  if (n >= 5e4) return COLONIZED_BANDS[1].value;
+  return COLONIZED_BANDS[0].value;
+}
+function roundNice(n) {
+  if (n < 1000) return Math.round(n);
+  const p = 10 ** (Math.floor(Math.log10(n)) - 2);
+  return Math.round(n / p) * p;
+}
+
+// A charted system has at least 3 primaries and (for a real star) at least
+// one of them in the golden zone. Additive: missing ones are appended with
+// the next free numeral, nothing is renamed or moved.
+function ensurePrimaries(rng, system, bodies, zones, profile, coreProximity, inHZ) {
+  const prim = () => bodies.filter((b) => !b.parent);
+  const add = (orbitAU, hzKind) => {
+    const n = prim().length;
+    const z2 = { ...zones, orbits: [orbitAU] };
+    const b = rollPrimary(rng, system, z2, false, profile.mass, 0, coreProximity);
+    if (hzKind) { b.kind = hzKind; Object.assign(b, rollSize(rng, hzKind)); b.habitable = rollHabitable(rng, hzKind, orbitAU, zones, false) || hzKind === "terrestrial world"; }
+    let k = n;
+    const slugOf = (i) => `${system.slug}-${slugify(ROMAN[i] || String(i + 1))}`;
+    while (bodies.some((x) => x.slug === slugOf(k))) k++;
+    b.slug = slugOf(k);
+    b.name = `${system.name} ${ROMAN[k] || k + 1}`;
+    b.orbitPeriodDays = b.kind === "asteroid belt" ? null : orbitalPeriodDays(orbitAU, profile.mass);
+    b.orbitAUOuter = b.kind === "asteroid belt" ? Number((orbitAU * 1.12).toFixed(3)) : null;
+    bodies.push(b);
+    return b;
+  };
+  if (!prim().some(inHZ) && zones.hzOuter > zones.minOrbit) {
+    const mid = Math.sqrt(Math.max(zones.hzInner, zones.minOrbit) * zones.hzOuter) * (0.9 + rng() * 0.2);
+    add(mid, rng() < 0.8 ? "terrestrial world" : "rocky planet");
+  }
+  let guard = 0;
+  while (prim().length < 3 && guard++ < 6) {
+    const outer = Math.max(...prim().map((b) => b.orbitAUOuter || b.orbitAU || zones.minOrbit), zones.minOrbit);
+    add(Math.max(outer * (1.6 + rng()), zones.frostLine * (0.8 + rng() * 0.6)));
+  }
+}
+
+function settleSystem(rng, system, bodies, zones, coreProximity = 0.5) {
+  const profile = getStarProfile(system.starType);
+  if (profile.remnant && !bodies.length) return bodies;
+  const band = Math.max(0, POPULATION_BANDS.findIndex((b) => b.value === system.population));
+  const populated = !system.stationOnly && band >= 2;
+  const bySlug = new Map(bodies.map((b) => [b.slug, b]));
+  const orbitOf = (b) => (b.parent ? bySlug.get(b.parent)?.orbitAU : b.orbitAU) ?? null;
+  const inHZ = (b) => { const o = orbitOf(b); return o != null && o >= zones.hzInner && o <= zones.hzOuter; };
+  const solid = (b) => ["terrestrial world", "rocky planet", "moon", "ice world"].includes(b.kind);
+  const colonize = (b) => { if (b.status !== "colonized") { b.status = "colonized"; b.tags = (b.tags || []).filter((t) => t !== "automated-or-minimal-crew"); } };
+
+  if (!profile.remnant) ensurePrimaries(rng, system, bodies, zones, profile, coreProximity, inHZ);
+
+  if (populated && !profile.remnant) {
+    for (const b of bodies) {
+      if (b.kind === "orbital station" || b.kind === "asteroid belt") continue;
+      const r = keyRng(`settle:${b.slug}`)();
+      if (b.habitable && inHZ(b)) {
+        if (r < [0, 0, 0.9, 1, 1, 1][band]) colonize(b);
+      } else if (solid(b) && b.status !== "colonized") {
+        if (r < COLONY_EXTRA[band] * (inHZ(b) ? 1.8 : 1)) colonize(b);
+      } else if (b.kind === "gas giant" && b.status !== "colonized") {
+        if (r < CLOUD_CITY[band]) colonize(b);
+      }
+    }
+  }
+
+  // relevance: a populated system always has a colonized world
+  let colonies = bodies.filter((b) => b.status === "colonized" && b.kind !== "orbital station");
+  if (populated && !colonies.length) {
+    const score = (b) => (b.habitable ? 100 : 0) + (inHZ(b) ? 50 : 0) + (b.kind === "terrestrial world" ? 20 : 0) + (solid(b) ? 10 : 0) + (b.kind === "gas giant" ? 5 : 0) + (b.radiusKm || 0) / 10000;
+    const cand = bodies.filter((b) => b.kind !== "orbital station" && b.kind !== "asteroid belt").sort((a, b) => score(b) - score(a))[0];
+    if (cand) { colonize(cand); colonies = [cand]; }
+  }
+
+  // headcounts: split the system total, habitable garden worlds take the lion's share
+  if (colonies.length) {
+    const [lo, hi] = BAND_TOTAL[band] || BAND_TOTAL[2];
+    const tr = keyRng(`total:${system.slug}`);
+    const total = hi > 0 ? logUniform(tr, lo || 50, hi) : 0;
+    const weight = (b) => (b.habitable ? 12 : 1) * (b.kind === "terrestrial world" ? 2 : 1) * (0.5 + keyRng(`w:${b.slug}`)());
+    const ws = colonies.map(weight), sum = ws.reduce((a, x) => a + x, 0);
+    colonies.forEach((b, i) => {
+      if (typeof b.inhabitants === "number" && b.inhabitants > 0) return; // keep hand-set numbers
+      const n = total > 0 ? roundNice(Math.max(50, (total * ws[i]) / sum)) : 0;
+      if (!n) return;
+      b.inhabitants = n;
+      b.population = bandForCount(n);
+      // the very biggest garden worlds become city-planets
+      if (n > 2.5e10 && b.kind === "terrestrial world" && !(b.tags || []).includes("ecumenopolis") && rng() < 0.5) b.tags = [...(b.tags || []), "ecumenopolis"];
+    });
+  }
+
+  // stations generated under the old, tiny crew ranges are scaled up to the
+  // current ones (deterministic per station)
+  for (const st of bodies) {
+    if (st.kind !== "orbital station") continue;
+    const cls = STATION_CLASSES.find((c) => c.value === st.sizeClass);
+    const n = Number(st.population);
+    if (!cls || (Number.isFinite(n) && n >= cls.population[0])) continue;
+    const r = keyRng(`crew:${st.slug}`);
+    st.population = Math.round(scaleInRange(r, cls.population, band));
+    if ((st.docks ?? 0) < cls.docks[0]) st.docks = Math.round(scaleInRange(r, cls.docks, band));
+    if ((st.lengthM ?? 0) < cls.lengthM[0]) st.lengthM = Math.round(scaleInRange(r, cls.lengthM, band));
+  }
+
+  // orbital infrastructure
+  if (!profile.remnant || bodies.length) {
+    const [minS, maxS] = STATION_TARGET[band] || [1, 2];
+    const existing = bodies.filter((b) => b.kind === "orbital station");
+    const want = Math.max(minS, Math.min(maxS, minS + Math.floor(keyRng(`stations:${system.slug}`)() * (maxS - minS + 1))));
+    if (existing.length >= want) return bodies;
+    const hostScore = (b) => (b.status === "colonized" ? 100 + Math.log10(b.inhabitants || 10) : 0) + (b.status === "extraction" ? 40 : 0) + (b.kind === "gas giant" ? 25 : 0) + (b.kind === "asteroid belt" ? 15 : 0);
+    const hosts = bodies.filter((b) => !b.parent && b.kind !== "orbital station").sort((a, b) => hostScore(b) - hostScore(a));
+    let i = 0;
+    while (existing.length < want && hosts.length) {
+      const host = hosts[i % hosts.length];
+      const siblings = bodies.filter((b) => b.parent === host.slug).length;
+      const st = rollStation(rng, host, system, siblings);
+      while (bodies.some((b) => b.slug === st.slug)) st.slug += "x";
+      bodies.push(st);
+      existing.push(st);
+      i++;
+    }
+  }
+  return bodies;
+}
+
+// Upgrade an existing galaxy in place (bodies are kept; only statuses,
+// headcounts and extra stations are added). Locked systems and systems with
+// hand-authored surface sites are left untouched. Returns the new systems
+// array plus a small report.
+export function settleExistingSystems(project, rngFor, coreProximityOf = () => 0.5) {
+  let changed = 0;
+  const systems = project.systems.map((s) => {
+    if (s.locked || (s.bodies || []).some((b) => b.sites?.length)) return s;
+    const bodies = (s.bodies || []).map((b) => ({ ...b, tags: [...(b.tags || [])] }));
+    const before = JSON.stringify(bodies);
+    const profile = getStarProfile(s.starType);
+    if (!bodies.length && !profile.remnant) return s;
+    settleSystem(rngFor(s), s, bodies, starZones(profile), coreProximityOf(s));
+    if (JSON.stringify(bodies) === before) return s;
+    changed++;
+    return { ...s, bodies };
+  });
+  return { systems, changed };
 }
 
 // Exposed for the orrery view (SectorList.jsx) so it can draw the

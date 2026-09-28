@@ -4,7 +4,7 @@ import { generateSystemName } from "./names.js";
 import { GRID_SIZE, sampleBilinear } from "./grid.js";
 import { slugify } from "./slug.js";
 import { pointInPolygon, centroid } from "./geometry.js";
-import { generateBodies } from "./planetGen.js";
+import { settleExistingSystems, generateBodies } from "./planetGen.js";
 import { POPULATION_BANDS } from "./populationBands.js";
 import { STAR_TYPES } from "./starTypes.js";
 
@@ -454,4 +454,19 @@ export function regeneratePlanets(project) {
           ),
         },
   );
+}
+
+// Apply the planetGen.js settlement rules (golden-zone colonies, real
+// headcounts, stations, "every charted system matters") to an existing
+// galaxy without re-rolling any body — see settleExistingSystems. Locked
+// systems and ones with hand-authored surface sites are skipped. Seeded per
+// system, so running it twice on the same data gives the same result.
+export function settleGalaxy(project) {
+  const coreCenter = coreCenterOf(project);
+  const { systems, changed } = settleExistingSystems(
+    project,
+    (s) => createRng(`${project.seed}:settle:${s.slug}`),
+    (s) => coreProximityFor(s.position, coreCenter, project.bounds),
+  );
+  return { systems, changed };
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { SettlementView, layoutSettlement, SETTLEMENT_TRANSIT, SETTLEMENT_NOTE, SETTLEMENT_STYLES } from "@galaxy-core/lib/settlement.js";
 import { planetSites } from "./planet-view.js";
-import { fmtDeg, hasSurface } from "./common.js";
+import { fmtDeg, hasSurface, bodyPop, fmtPop } from "./common.js";
 import { useGalaxyData, useIsMobile, useRenderer, Status, NotFound, Icon, Sheet, Toggle } from "./ui.jsx";
 
 const KLAB = { "gas giant": "Gas giant", "rocky planet": "Rocky planet", "ice world": "Ice world", "terrestrial world": "Terrestrial world", moon: "Moon" };
@@ -44,7 +44,7 @@ export default function SettlementPage() {
     ["BODY", ((b.t || []).includes("ecumenopolis") ? "City-planet" : KLAB[b.k] || b.k) + " · " + b.n],
     ["ENVIRONMENT", env],
     ["LOCATION", site.lat != null ? `${fmtDeg(site.lat, "lat")} ${fmtDeg(site.lon, "lon")}` : "—"],
-    ["POPULATION", (site.id === "cap" || site.def) && b.pp ? String(b.pp) : "Not recorded"],
+    ["POPULATION", site.pop ? fmtPop(site.pop) : site.def && bodyPop(b) ? bodyPop(b) : "Not recorded"],
     ["LAYOUT", SETTLEMENT_STYLES[L.style].n + (SETTLEMENT_STYLES[L.style].final ? "" : " · provisional")],
   ];
   const links = L.ds.map(() => 0);

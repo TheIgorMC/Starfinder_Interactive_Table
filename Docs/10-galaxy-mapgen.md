@@ -11,6 +11,24 @@
 > Wherever this doc says `GalaxyGen/…`, read `galaxy-core/…` (engine) or
 > `frontend/src/galaxy-editor/…` (UI); `galaxy-core/FEATURES.md` is the old
 > GalaxyGen feature log.
+>
+> **Update 2026-09 — settlement rules (§8).** The body generator was far too
+> conservative for this setting (in the ARTS data: 18 colonized worlds in
+> 374 systems, 272 systems with no colony or station, "core world" systems
+> of barren rock). `galaxy-core/lib/planetGen.js` now ends every system with
+> a **settlement pass** (`settleSystem`): 3–8 charted primaries with at least
+> one in the habitable zone; habitable golden-zone worlds colonized in every
+> inhabited system; populated systems also settle non-habitable bodies
+> (domes/arcologies) and gas giants (cloud cities); a numeric `inhabitants`
+> on every colonized body drawn from a band total (core systems: 2–80
+> billion; `population` keeps the band label); 1–4 stations scaled to the
+> economy with much larger crews; and at least one colony or commercial
+> outpost in every charted system. The same pass runs non-destructively on
+> an existing galaxy (Generate tab → **Apply settlement rules**, MCP
+> `galaxy_settle_galaxy`): it keeps every body, is deterministic per body so
+> re-running changes nothing, and skips locked/hand-authored systems. The
+> viewer turns `inhabitants` into cities (1–14 per world, capital ~30%),
+> night lights and district counts (5–17).
 
 Status: **`GalaxyGen/` itself is built and in active use** — see its own
 `GalaxyGen/README.md` for the real, current phase-by-phase feature list,

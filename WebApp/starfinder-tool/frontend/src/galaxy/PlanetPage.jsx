@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PlanetView, planetSites, planetNet } from "./planet-view.js";
-import { TRANSIT, cap, fmtDeg, hasSurface } from "./common.js";
+import { TRANSIT, cap, fmtDeg, hasSurface, bodyPop, fmtPop } from "./common.js";
 import { useGalaxyData, useIsMobile, useRenderer, Status, NotFound, Icon, Sheet, Toggle } from "./ui.jsx";
 
 const KLAB = { "gas giant": "GAS GIANT", "rocky planet": "ROCKY PLANET", "ice world": "ICE WORLD", "terrestrial world": "TERRESTRIAL WORLD", moon: "MOON" };
@@ -61,7 +61,7 @@ export default function PlanetPage() {
   const enter = () => selSite && nav(`/galaxy/system/${s.s}/${b.s}/${encodeURIComponent(selSite.id)}`);
   const kind = (KLAB[b.k] || b.k.toUpperCase()) + (b.hab ? " · HABITABLE" : "");
   const stats = [["SIZE CLASS", cap(b.sz || "—")], ["STATUS", b.st === "colonized" ? "Settled" : b.st === "extraction" ? "Extraction" : "Untouched"],
-    ["POPULATION", b.pp != null ? (typeof b.pp === "number" ? b.pp.toLocaleString("en-US") : b.pp) : "—"], ["RESOURCES", b.res && b.res.length ? b.res.map(cap).join(", ") : "None surveyed"]];
+    ["POPULATION", bodyPop(b) || "—"], ["RESOURCES", b.res && b.res.length ? b.res.map(cap).join(", ") : "None surveyed"]];
   const back = <Link className={"gx-back" + (mobile ? " icon" : "")} to={`/galaxy/system/${s.s}?body=${b.s}`} aria-label="System map">{Icon.arrowL()}{!mobile && "SYSTEM MAP"}</Link>;
   const title = (
     <div className="gx-titleblock">
@@ -73,7 +73,7 @@ export default function PlanetPage() {
     <button key={x.id} className={"gx-tbtn gx-row" + (site === x.id ? " on" : "")} style={{ minHeight: 52, height: "auto", padding: "0 12px", fontFamily: "inherit", letterSpacing: 0 }} onClick={() => setSite(x.id)}>
       <span className="gx-diamond" style={{ background: x.color }} />
       <span className="t"><span className="a">{x.name}</span><span className="b" style={{ color: "#9a958b" }}>{x.type}</span></span>
-      <span className="r">{fmtDeg(x.lat, "lat")} {fmtDeg(x.lon, "lon")}</span>
+      <span className="r">{x.pop ? fmtPop(x.pop) : `${fmtDeg(x.lat, "lat")} ${fmtDeg(x.lon, "lon")}`}</span>
     </button>
   ));
   const enterCta = selSite && <button className="gx-cta" onClick={enter}>ENTER {selSite.name.toUpperCase()}{Icon.arrowR()}</button>;
@@ -124,7 +124,7 @@ export default function PlanetPage() {
         <Sheet full={sheetFull} peekH={270} fullH={640} onToggle={() => setSheetFull(!sheetFull)} label="Surface details">
           <div className="gx-head">
             <div className="gx-kind">{kind}</div>
-            <div style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cap(b.sz || "")}{b.r ? ` · ${b.r.toLocaleString("en-US")} km` : ""}{b.pp ? ` · ${b.pp}` : ""}</div>
+            <div style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cap(b.sz || "")}{b.r ? ` · ${b.r.toLocaleString("en-US")} km` : ""}{bodyPop(b) ? ` · ${bodyPop(b)}` : ""}</div>
           </div>
           {sites.length > 0 && (
             <div className="gx-pills gx-noscroll">

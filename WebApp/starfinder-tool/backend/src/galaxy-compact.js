@@ -52,7 +52,7 @@ export function buildCompact(d, { gm = true } = {}) {
         k: b.kind, n: b.name, s: b.slug, p: b.parent, st: b.status,
         au: b.orbitAU, auo: b.orbitAUOuter, a: b.orbitAngleDeg, pd: b.orbitPeriodDays,
         r: b.radiusKm, hab: b.habitable, res: b.resources, sz: b.sizeClass,
-        pp: b.population, sv: b.services, dk: b.docks, dc: b.dockClass,
+        pp: b.population, pc: b.inhabitants, sv: b.services, dk: b.docks, dc: b.dockClass,
         gh: b.goodsHandled, lm: b.lengthM,
         t: (b.tags || []).filter((t) => KEEP_BODY_TAGS.has(t)),
         sites: compactSites(b.sites, gm),

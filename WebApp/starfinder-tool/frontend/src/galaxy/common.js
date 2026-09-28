@@ -229,3 +229,20 @@ export function startLoop(fn) {
   raf = requestAnimationFrame(loop);
   return () => cancelAnimationFrame(raf);
 }
+
+// Headcounts: colonized bodies carry `pc` (inhabitants, a number); older
+// data only has the band label in `pp`.
+export function fmtPop(n) {
+  if (n == null || n === "") return null;
+  if (typeof n !== "number") return String(n);
+  if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} billion`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} million`;
+  return n.toLocaleString("en-US");
+}
+export function bodyPop(b) { return fmtPop(b.pc ?? b.pp); }
+// Known headcount of a whole system: colonized bodies + station crews.
+export function systemPop(s) {
+  let n = 0;
+  for (const b of s.b) n += Number(b.k === "orbital station" ? b.pp : b.pc) || 0;
+  return n;
+}

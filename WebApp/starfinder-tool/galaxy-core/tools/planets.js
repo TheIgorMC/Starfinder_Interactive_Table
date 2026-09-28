@@ -1,6 +1,6 @@
 import { z } from "./zod.js";
 import { generateBodies, getSystemZones, STATION_CLASSES } from "../lib/planetGen.js";
-import { regeneratePlanets } from "../lib/systemGen.js";
+import { regeneratePlanets, settleGalaxy } from "../lib/systemGen.js";
 import { createRng } from "../lib/rng.js";
 import { slugify } from "../lib/slug.js";
 import * as state from "./state.js";
@@ -31,6 +31,18 @@ export function register(server) {
       state.setProject({ ...project, systems });
       const rerolled = systems.filter((s) => !s.locked).length;
       return { rerolledSystems: rerolled, lockedSystemsSkipped: systems.length - rerolled };
+    }),
+  );
+
+  server.tool(
+    "settle_galaxy",
+    "Applies the settlement rules to every unlocked system without re-rolling bodies: habitable golden-zone worlds colonized, numeric `inhabitants` on every colonized body (tens of billions in core systems), undersized stations scaled up, 1-4 stations per system by economy, at least 3 primaries with one in the habitable zone, and at least one colony or commercial outpost per system. Additive and idempotent (running it twice changes nothing); locked systems and systems with authored surface sites are skipped.",
+    {},
+    tool(() => {
+      const project = state.requireProject();
+      const { systems, changed } = settleGalaxy(project);
+      if (changed) state.setProject({ ...project, systems });
+      return { changedSystems: changed };
     }),
   );
 

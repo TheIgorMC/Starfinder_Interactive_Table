@@ -12,7 +12,7 @@ import { createDefaultProject, normalizeProject, FIELD_DEFS } from "@galaxy-core
 import { GRID_SIZE, paintGrid } from "@galaxy-core/lib/grid.js";
 import { pointInPolygon } from "@galaxy-core/lib/geometry.js";
 import { slugify } from "@galaxy-core/lib/slug.js";
-import { generateSystems, placeSystemAt, redistributeSystems, regeneratePlanets } from "@galaxy-core/lib/systemGen.js";
+import { generateSystems, placeSystemAt, redistributeSystems, regeneratePlanets, settleGalaxy } from "@galaxy-core/lib/systemGen.js";
 import { generateHyperlanes, buildEdge } from "@galaxy-core/lib/hyperlaneGen.js";
 import { resolveFactions } from "@galaxy-core/lib/factionGen.js";
 import { generateBackgroundActors } from "@galaxy-core/lib/actorGen.js";
@@ -384,6 +384,13 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
     }
     setProject((p) => ({ ...p, systems: regeneratePlanets(p) }));
   }, [project.systems.length]);
+
+  const [settleStatus, setSettleStatus] = useState("");
+  const handleSettleGalaxy = useCallback(() => {
+    const { systems, changed } = settleGalaxy(project);
+    setSettleStatus(changed ? `Updated ${changed} system(s).` : "Nothing to change — every system already follows the rules.");
+    if (changed) setProject((p) => ({ ...p, systems }));
+  }, [project]);
 
   const handleGenerateHyperlanes = useCallback(() => {
     if (project.systems.length < 2) return;
@@ -981,6 +988,8 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
               onGenerateSystems={handleGenerateSystems}
               onRedistributeSystems={handleRedistributeSystems}
               onGeneratePlanets={handleGeneratePlanets}
+              onSettleGalaxy={handleSettleGalaxy}
+              settleStatus={settleStatus}
               hyperlaneCount={project.hyperlanes.length}
               onGenerateHyperlanes={handleGenerateHyperlanes}
               factionCount={project.factions.length}
