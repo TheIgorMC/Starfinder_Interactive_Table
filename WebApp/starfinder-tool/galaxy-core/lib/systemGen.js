@@ -151,7 +151,7 @@ export function generateSystems(project, options = {}) {
   // Locked systems (renamed, hand-tuned importance, or explicitly locked
   // in the inspector) survive a regen untouched — generation only places
   // new systems around them, respecting the same minimum spacing.
-  const lockedSystems = project.systems.filter((s) => s.locked).map((s) => ({ ...s }));
+  const lockedSystems = project.systems.filter((s) => s.locked || s.scriptLocked).map((s) => ({ ...s }));
   const lockedBySector = new Map();
   for (const s of lockedSystems) {
     if (!lockedBySector.has(s.sector)) lockedBySector.set(s.sector, []);
@@ -371,8 +371,8 @@ export function redistributeSystems(project, options = {}) {
   const positions = new Map(); // system id -> new {x, y}
   for (const sector of project.sectors) {
     const systemsInSector = bySector.get(sector.slug) || [];
-    const locked = systemsInSector.filter((s) => s.locked);
-    const unlocked = systemsInSector.filter((s) => !s.locked);
+    const locked = systemsInSector.filter((s) => s.locked || s.scriptLocked);
+    const unlocked = systemsInSector.filter((s) => !s.locked && !s.scriptLocked);
     if (unlocked.length === 0) continue;
 
     // Obstacles the new positions must clear, seeded with locked systems
@@ -443,7 +443,7 @@ export function redistributeSystems(project, options = {}) {
 export function regeneratePlanets(project) {
   const coreCenter = coreCenterOf(project);
   return project.systems.map((s) =>
-    s.locked
+    s.locked || s.scriptLocked
       ? s
       : {
           ...s,
@@ -458,15 +458,17 @@ export function regeneratePlanets(project) {
 
 // Apply the planetGen.js settlement rules (golden-zone colonies, real
 // headcounts, stations, "every charted system matters") to an existing
-// galaxy without re-rolling any body — see settleExistingSystems. Locked
-// systems and ones with hand-authored surface sites are skipped. Seeded per
-// system, so running it twice on the same data gives the same result.
-export function settleGalaxy(project) {
+// galaxy without re-rolling any body — see settleExistingSystems.
+// Script-locked systems are never touched; curated ones (locked / authored
+// sites) only with `integrateCurated`, additively. Seeded per system, so
+// running it twice on the same data gives the same result.
+export function settleGalaxy(project, { integrateCurated = false } = {}) {
   const coreCenter = coreCenterOf(project);
   const { systems, changed } = settleExistingSystems(
     project,
     (s) => createRng(`${project.seed}:settle:${s.slug}`),
     (s) => coreProximityFor(s.position, coreCenter, project.bounds),
+    { integrateCurated },
   );
   return { systems, changed };
 }

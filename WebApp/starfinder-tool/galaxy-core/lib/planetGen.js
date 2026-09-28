@@ -565,6 +565,22 @@ const COLONY_EXTRA = [0, 0, 0.1, 0.2, 0.35, 0.55]; // chance a non-habitable sol
 const CLOUD_CITY = [0, 0, 0.05, 0.12, 0.25, 0.45]; // gas giant floating cities
 const STATION_TARGET = [[1, 1], [1, 1], [1, 2], [1, 2], [1, 3], [2, 4]]; // [min, max] per band
 
+// Key systems — the organizational heart of a realm (e.g. the Dominion's
+// administrative worlds) run to several tens of billions regardless of band,
+// the seat of government even more. A system is "key" when flagged
+// (`keySystem`), tagged as a capital, or at importance ≥ 0.95; "important"
+// (≥ 0.6) systems get a raised floor. Returns [lo, hi] or null.
+const CAPITAL_TAGS = ["dominion-capital", "capital", "seat-of-government", "capital-of-colonized-systems"];
+const KEY_TOTAL = { capital: [8e10, 2.5e11], key: [4e10, 1.2e11], important: [1e10, 8e10] };
+export function keyTier(system) {
+  const tags = [...(system.tags || []), ...(system.extraTags || [])];
+  const bodyCapital = (system.bodies || []).some((b) => (b.tags || []).some((t) => CAPITAL_TAGS.includes(t)));
+  if (tags.some((t) => CAPITAL_TAGS.includes(t)) || (system.keySystem && bodyCapital)) return "capital";
+  if (system.keySystem || (system.important ?? 0) >= 0.95) return "key";
+  if ((system.important ?? 0) >= 0.6) return "important";
+  return null;
+}
+
 // Per-key deterministic randomness: the settlement pass decides each body's
 // fate from its own slug, so running it again never changes its mind.
 function keyRng(key) {
@@ -619,10 +635,14 @@ function ensurePrimaries(rng, system, bodies, zones, profile, coreProximity, inH
   }
 }
 
-function settleSystem(rng, system, bodies, zones, coreProximity = 0.5) {
+// `curated`: the system was hand-curated — integrate it additively only
+// (no new primaries, no rescaled crews, hand-set headcounts never touched).
+function settleSystem(rng, system, bodies, zones, coreProximity = 0.5, { curated = false } = {}) {
   const profile = getStarProfile(system.starType);
   if (profile.remnant && !bodies.length) return bodies;
-  const band = Math.max(0, POPULATION_BANDS.findIndex((b) => b.value === system.population));
+  let band = Math.max(0, POPULATION_BANDS.findIndex((b) => b.value === system.population));
+  const tier = system.stationOnly ? null : keyTier({ ...system, bodies });
+  if (tier === "capital" || tier === "key") band = Math.max(band, 5);
   const populated = !system.stationOnly && band >= 2;
   const bySlug = new Map(bodies.map((b) => [b.slug, b]));
   const orbitOf = (b) => (b.parent ? bySlug.get(b.parent)?.orbitAU : b.orbitAU) ?? null;
@@ -630,7 +650,7 @@ function settleSystem(rng, system, bodies, zones, coreProximity = 0.5) {
   const solid = (b) => ["terrestrial world", "rocky planet", "moon", "ice world"].includes(b.kind);
   const colonize = (b) => { if (b.status !== "colonized") { b.status = "colonized"; b.tags = (b.tags || []).filter((t) => t !== "automated-or-minimal-crew"); } };
 
-  if (!profile.remnant) ensurePrimaries(rng, system, bodies, zones, profile, coreProximity, inHZ);
+  if (!profile.remnant && !curated) ensurePrimaries(rng, system, bodies, zones, profile, coreProximity, inHZ);
 
   if (populated && !profile.remnant) {
     for (const b of bodies) {
@@ -654,28 +674,44 @@ function settleSystem(rng, system, bodies, zones, coreProximity = 0.5) {
     if (cand) { colonize(cand); colonies = [cand]; }
   }
 
-  // headcounts: split the system total, habitable garden worlds take the lion's share
+  // headcounts: split the system total, habitable garden worlds (and the
+  // capital world of a key system) take the lion's share
   if (colonies.length) {
-    const [lo, hi] = BAND_TOTAL[band] || BAND_TOTAL[2];
+    let [lo, hi] = BAND_TOTAL[band] || BAND_TOTAL[2];
+    const key = tier && band >= (tier === "important" ? 3 : 2) ? KEY_TOTAL[tier] : null;
+    if (key) { lo = Math.max(lo, key[0]); hi = Math.max(hi, key[1]); }
     const tr = keyRng(`total:${system.slug}`);
     const total = hi > 0 ? logUniform(tr, lo || 50, hi) : 0;
-    const weight = (b) => (b.habitable ? 12 : 1) * (b.kind === "terrestrial world" ? 2 : 1) * (0.5 + keyRng(`w:${b.slug}`)());
+    const capital = (b) => (b.tags || []).some((t) => CAPITAL_TAGS.includes(t));
+    const weight = (b) => (b.habitable ? 12 : 1) * (b.kind === "terrestrial world" ? 2 : 1) * (capital(b) ? 8 : 1) * ((b.tags || []).includes("ecumenopolis") ? 6 : 1) * (0.5 + keyRng(`w:${b.slug}`)());
     const ws = colonies.map(weight), sum = ws.reduce((a, x) => a + x, 0);
-    colonies.forEach((b, i) => {
-      if (typeof b.inhabitants === "number" && b.inhabitants > 0) return; // keep hand-set numbers
-      const n = total > 0 ? roundNice(Math.max(50, (total * ws[i]) / sum)) : 0;
-      if (!n) return;
+    const setN = (b, n) => {
       b.inhabitants = n;
       b.population = bandForCount(n);
       // the very biggest garden worlds become city-planets
-      if (n > 2.5e10 && b.kind === "terrestrial world" && !(b.tags || []).includes("ecumenopolis") && rng() < 0.5) b.tags = [...(b.tags || []), "ecumenopolis"];
+      if (n > 2.5e10 && b.kind === "terrestrial world" && !(b.tags || []).includes("ecumenopolis") && keyRng(`ecu:${b.slug}`)() < (capital(b) ? 1 : 0.5)) b.tags = [...(b.tags || []), "ecumenopolis"];
+    };
+    colonies.forEach((b, i) => {
+      if (typeof b.inhabitants === "number" && b.inhabitants > 0) return; // keep hand-set numbers
+      const n = total > 0 ? roundNice(Math.max(50, (total * ws[i]) / sum)) : 0;
+      if (n) setN(b, n);
     });
+    // a key system settled earlier under the plain band ranges is raised to
+    // its tier (proportionally, so the split between worlds is kept) —
+    // never for curated systems, whose numbers are the GM's
+    if (key && !curated) {
+      const cur = colonies.reduce((a, b) => a + (Number(b.inhabitants) || 0), 0);
+      if (cur > 0 && cur < key[0] * 0.98) {
+        const f = total / cur;
+        colonies.forEach((b) => { if (b.inhabitants > 0) setN(b, roundNice(b.inhabitants * f)); });
+      }
+    }
   }
 
   // stations generated under the old, tiny crew ranges are scaled up to the
   // current ones (deterministic per station)
   for (const st of bodies) {
-    if (st.kind !== "orbital station") continue;
+    if (curated || st.kind !== "orbital station") continue;
     const cls = STATION_CLASSES.find((c) => c.value === st.sizeClass);
     const n = Number(st.population);
     if (!cls || (Number.isFinite(n) && n >= cls.population[0])) continue;
@@ -708,18 +744,22 @@ function settleSystem(rng, system, bodies, zones, coreProximity = 0.5) {
 }
 
 // Upgrade an existing galaxy in place (bodies are kept; only statuses,
-// headcounts and extra stations are added). Locked systems and systems with
-// hand-authored surface sites are left untouched. Returns the new systems
-// array plus a small report.
-export function settleExistingSystems(project, rngFor, coreProximityOf = () => 0.5) {
+// headcounts and extra stations are added). Script-locked systems
+// (`scriptLocked`) are never touched. Curated systems (`locked`, or with
+// hand-authored surface sites) are skipped unless `integrateCurated`, in
+// which case they're integrated additively (see settleSystem's `curated`).
+// Returns the new systems array plus a small report.
+export function settleExistingSystems(project, rngFor, coreProximityOf = () => 0.5, { integrateCurated = false } = {}) {
   let changed = 0;
   const systems = project.systems.map((s) => {
-    if (s.locked || (s.bodies || []).some((b) => b.sites?.length)) return s;
+    if (s.scriptLocked) return s;
+    const curated = !!s.locked || (s.bodies || []).some((b) => b.sites?.length);
+    if (curated && !integrateCurated) return s;
     const bodies = (s.bodies || []).map((b) => ({ ...b, tags: [...(b.tags || [])] }));
     const before = JSON.stringify(bodies);
     const profile = getStarProfile(s.starType);
     if (!bodies.length && !profile.remnant) return s;
-    settleSystem(rngFor(s), s, bodies, starZones(profile), coreProximityOf(s));
+    settleSystem(rngFor(s), s, bodies, starZones(profile), coreProximityOf(s), { curated });
     if (JSON.stringify(bodies) === before) return s;
     changed++;
     return { ...s, bodies };

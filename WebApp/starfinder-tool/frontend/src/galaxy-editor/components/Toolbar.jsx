@@ -154,6 +154,7 @@ export function GeneratePanel({
   onGenerateCompanies,
   hasSectors,
 }) {
+  const [integrateCurated, setIntegrateCurated] = useState(true);
   return (
     <>
       <details className="gg-section" open>
@@ -205,10 +206,16 @@ export function GeneratePanel({
           Apply settlement rules to the current bodies without re-rolling them:
           golden-zone worlds colonized, real headcounts (billions in core
           systems), stations scaled to the economy, at least 3 planets per
-          system and a colony or commercial outpost everywhere. Additive and
-          repeatable; locked systems are skipped.
+          system and a colony or commercial outpost everywhere; key systems
+          (flagged, capitals, importance ≥ 0.95) get tens of billions.
+          Additive and repeatable. Script-locked systems are never touched.
         </p>
-        <button disabled={systemCount === 0} onClick={onSettleGalaxy}>
+        <label className="gg-checkbox">
+          <input type="checkbox" checked={integrateCurated} onChange={(e) => setIntegrateCurated(e.target.checked)} />
+          Integrate curated systems too (only fills gaps: missing headcounts,
+          colonies, stations — never overwrites hand-set values or adds planets)
+        </label>
+        <button disabled={systemCount === 0} onClick={() => onSettleGalaxy(integrateCurated)}>
           Apply settlement rules
         </button>
         {settleStatus && <p className="small muted">{settleStatus}</p>}

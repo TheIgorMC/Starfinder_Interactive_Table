@@ -240,7 +240,7 @@ function applySetSystemStatus(project, effect) {
     // result, same as a full regen would.
     const factionsBySlug = new Map(project.factions.map((f) => [f.slug, f]));
     systems = systems.map((s) => {
-      if (!neighborSlugs.has(s.slug)) return s;
+      if (!neighborSlugs.has(s.slug) || s.scriptLocked) return s; // script-locked: keep as set
       const shares = computeControlShares(s.position.x, s.position.y, project.factions);
       const control = resolveControl(shares);
       const factionSecurity = factionSecurityFor(shares, factionsBySlug);

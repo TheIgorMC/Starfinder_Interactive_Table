@@ -25,6 +25,8 @@ export function register(server) {
         population: s.population,
         position: s.position,
         locked: s.locked,
+        scriptLocked: s.scriptLocked || undefined,
+        keySystem: s.keySystem || undefined,
         bodyCount: s.bodies?.length || 0,
         control: s.control?.owner ?? null,
       }));
@@ -88,11 +90,13 @@ export function register(server) {
 
   server.tool(
     "update_system",
-    "Rename a system, toggle its lock, adjust its importance (0-1), or set extraTags — the hand-curation fields, not the rolled generation output (use reroll_system_bodies for bodies).",
+    "Rename a system, toggle its flags, adjust its importance (0-1), or set extraTags — the hand-curation fields, not the rolled generation output (use reroll_system_bodies for bodies). `locked` = curated (kept by Generate systems/planets, skipped by settle_galaxy unless integrateCurated). `scriptLocked` = no bulk/script pass ever modifies it (generation, settlement, factions, hyperlanes, event side effects) — targeted edits like this tool still work. `keySystem` = organizational heart of a realm: the settlement pass gives it tens of billions of inhabitants.",
     {
       slug: z.string(),
       name: z.string().optional(),
       locked: z.boolean().optional(),
+      scriptLocked: z.boolean().optional(),
+      keySystem: z.boolean().optional(),
       important: z.number().min(0).max(1).optional(),
       extraTags: z.array(z.string()).optional(),
     },

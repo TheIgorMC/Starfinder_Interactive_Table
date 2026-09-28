@@ -29,6 +29,22 @@
 > re-running changes nothing, and skips locked/hand-authored systems. The
 > viewer turns `inhabitants` into cities (1–14 per world, capital ~30%),
 > night lights and district counts (5–17).
+>
+> **Key systems, curated, script-locked.** Key systems — the organizational
+> heart of the realm — get their own headcount tiers regardless of band:
+> *capital* (`dominion-capital`/`capital`/`seat-of-government` tag) 80–250
+> billion, *key* (inspector flag `keySystem`, or importance ≥ 0.95) 40–120
+> billion, *important* (≥ 0.6, colony band or higher) 10–80 billion; capital
+> worlds take ×8 of the split and become ecumenopolises (`keyTier()` in
+> planetGen.js). Two system flags: **Curated** (`locked`, as before — kept by
+> Generate systems/planets; the settlement pass integrates it only with
+> *Integrate curated systems* / MCP `integrateCurated: true`, additively:
+> missing headcounts, colonies and stations only, never overwriting hand-set
+> values or adding planets) and **Locked — no scripts** (`scriptLocked`): no
+> bulk pass touches it — system/planet generation, redistribute, settlement,
+> factions, hyperlanes (its lanes are kept as they are), event side effects.
+> Manual editor edits and targeted MCP tools (`update_system`, body tools…)
+> still work.
 
 Status: **`GalaxyGen/` itself is built and in active use** — see its own
 `GalaxyGen/README.md` for the real, current phase-by-phase feature list,

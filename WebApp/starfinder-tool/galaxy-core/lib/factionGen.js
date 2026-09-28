@@ -253,6 +253,8 @@ export function resolveFactions(project, authoredFactions) {
   );
 
   const systems = project.systems.map((s) => {
+    // script-locked systems keep their control/security/war chance as set
+    if (s.scriptLocked) return s;
     const homeFaction = homeFactionBySystemSlug.get(s.slug);
     if (homeFaction) {
       return {

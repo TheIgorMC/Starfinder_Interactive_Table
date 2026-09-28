@@ -29,18 +29,18 @@ export function register(server) {
       const before = new Map(project.systems.map((s) => [s.slug, s.bodies?.length || 0]));
       const systems = regeneratePlanets(project);
       state.setProject({ ...project, systems });
-      const rerolled = systems.filter((s) => !s.locked).length;
+      const rerolled = systems.filter((s) => !s.locked && !s.scriptLocked).length;
       return { rerolledSystems: rerolled, lockedSystemsSkipped: systems.length - rerolled };
     }),
   );
 
   server.tool(
     "settle_galaxy",
-    "Applies the settlement rules to every unlocked system without re-rolling bodies: habitable golden-zone worlds colonized, numeric `inhabitants` on every colonized body (tens of billions in core systems), undersized stations scaled up, 1-4 stations per system by economy, at least 3 primaries with one in the habitable zone, and at least one colony or commercial outpost per system. Additive and idempotent (running it twice changes nothing); locked systems and systems with authored surface sites are skipped.",
-    {},
-    tool(() => {
+    "Applies the settlement rules without re-rolling bodies: habitable golden-zone worlds colonized, numeric `inhabitants` on every colonized body (tens of billions in core systems; key systems — keySystem flag, capital tags or importance ≥ 0.95 — several tens of billions, capitals up to ~250 billion), undersized stations scaled up, 1-4 stations per system by economy, at least 3 primaries with one in the habitable zone, and at least one colony or commercial outpost per system. Additive and idempotent. Script-locked systems are never touched. Curated systems (locked, or with authored surface sites) are skipped unless `integrateCurated: true`, which integrates them additively only (fills missing headcounts/colonies/stations, never overwrites hand-set values, adds no planets).",
+    { integrateCurated: z.boolean().optional() },
+    tool(({ integrateCurated } = {}) => {
       const project = state.requireProject();
-      const { systems, changed } = settleGalaxy(project);
+      const { systems, changed } = settleGalaxy(project, { integrateCurated: !!integrateCurated });
       if (changed) state.setProject({ ...project, systems });
       return { changedSystems: changed };
     }),

@@ -386,8 +386,8 @@ function EditorApp({ initialProject, initialVersion, embedded }) {
   }, [project.systems.length]);
 
   const [settleStatus, setSettleStatus] = useState("");
-  const handleSettleGalaxy = useCallback(() => {
-    const { systems, changed } = settleGalaxy(project);
+  const handleSettleGalaxy = useCallback((integrateCurated) => {
+    const { systems, changed } = settleGalaxy(project, { integrateCurated });
     setSettleStatus(changed ? `Updated ${changed} system(s).` : "Nothing to change — every system already follows the rules.");
     if (changed) setProject((p) => ({ ...p, systems }));
   }, [project]);

@@ -450,8 +450,26 @@ function SystemCard({ system, actors, onClose, onUpdate }) {
               checked={!!system.locked}
               onChange={(e) => onUpdate(system.id, { locked: e.target.checked })}
             />
-            Locked (survives "Generate systems" — position, name, everything
-            stays put; new systems just fill in around it)
+            Curated (survives "Generate systems"/"Generate planets" — position,
+            name, bodies stay put; the settlement pass only integrates it if asked)
+          </label>
+          <label className="gg-checkbox">
+            <input
+              type="checkbox"
+              checked={!!system.scriptLocked}
+              onChange={(e) => onUpdate(system.id, { scriptLocked: e.target.checked })}
+            />
+            Locked — no scripts (no generator, settlement, faction, hyperlane or
+            event pass ever changes it; manual and MCP edits still work)
+          </label>
+          <label className="gg-checkbox">
+            <input
+              type="checkbox"
+              checked={!!system.keySystem}
+              onChange={(e) => onUpdate(system.id, { keySystem: e.target.checked })}
+            />
+            Key system (organizational heart of the realm — the settlement pass
+            gives it several tens of billions of inhabitants)
           </label>
           <label className="small muted">
             Importance ({(Number(system.important) || 0).toFixed(2)}) — higher

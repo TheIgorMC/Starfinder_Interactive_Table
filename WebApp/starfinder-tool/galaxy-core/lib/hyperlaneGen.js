@@ -115,7 +115,17 @@ export function generateHyperlanes(project) {
       capacity,
     });
   }
-  const edges = [...edgeMap.values()];
+  // Script-locked systems keep exactly the lanes they had: generated edges
+  // touching one are dropped, its existing edges carried over as they are.
+  const frozen = new Set(systems.filter((s) => s.scriptLocked).map((s) => s.id));
+  let edges = [...edgeMap.values()];
+  if (frozen.size) {
+    const ids = new Set(systems.map((s) => s.id));
+    edges = edges.filter((e) => !frozen.has(e.a) && !frozen.has(e.b));
+    for (const e of project.hyperlanes || []) {
+      if ((frozen.has(e.a) || frozen.has(e.b)) && ids.has(e.a) && ids.has(e.b)) edges.push(e);
+    }
+  }
 
   const neighborSlugs = new Map(systems.map((s) => [s.id, new Set()]));
   for (const e of edges) {
