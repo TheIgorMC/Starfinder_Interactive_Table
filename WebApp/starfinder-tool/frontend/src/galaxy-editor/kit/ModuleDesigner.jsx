@@ -18,7 +18,7 @@ const ZONES = Object.keys(ZONE_COLORS);
 const SNAPS = [0.5, 0.25, 0.05];
 const round = (v) => Math.round(v * 1000) / 1000;
 
-export default function ModuleDesigner({ project, setProject }) {
+export default function ModuleDesigner({ project, setProject, active = true }) {
   const lib = useMemo(() => libraryFor(project), [project.stationKit]); // eslint-disable-line react-hooks/exhaustive-deps
   const [fam, setFam] = useState("");
   const [q, setQ] = useState("");
@@ -114,7 +114,7 @@ export default function ModuleDesigner({ project, setProject }) {
       </nav>
 
       <section className="ge-stmain">
-        {block ? <Canvas block={block} part={part} setPart={setPart} snap={snap} onChange={patch} /> : <div className="gx-center-msg">PICK A MODULE</div>}
+        {block ? <Canvas block={block} part={part} setPart={setPart} snap={snap} onChange={patch} active={active} /> : <div className="gx-center-msg">PICK A MODULE</div>}
       </section>
 
       {block && (
@@ -271,7 +271,7 @@ function Checks({ block }) {
 }
 
 // drawing canvas: grid, rulers, the plan; drag to move, corner to resize
-function Canvas({ block, part, setPart, snap, onChange }) {
+function Canvas({ block, part, setPart, snap, onChange, active }) {
   const svgRef = useRef(null);
   const [W, D] = block.size;
   const pad = 1;
@@ -313,14 +313,14 @@ function Canvas({ block, part, setPart, snap, onChange }) {
   const up = () => { const d = drag.current; drag.current = null; if (d?.moved && ghost) onChange(ghost); setGhost(null); };
   useEffect(() => {
     const onKey = (e) => {
-      if (!part || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+      if (!active || !part || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const key = { zone: "zones", item: "items", part: "parts", conn: "conns" }[part.kind];
       onChange({ ...block, [key]: (block[key] || []).filter((_, j) => j !== part.i) }); setPart(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [part, block, onChange, setPart]);
+  }, [active, part, block, onChange, setPart]);
 
   const selRect = part && (part.kind === "zone" || part.kind === "item") ? shown[part.kind === "zone" ? "zones" : "items"][part.i]?.r : null;
   const cols = [...Array(W).keys()], rows = [...Array(D).keys()];

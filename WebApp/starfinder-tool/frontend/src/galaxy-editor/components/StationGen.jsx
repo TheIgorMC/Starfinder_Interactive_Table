@@ -24,13 +24,22 @@ const SHOP_KIND_LIST = [...new Set([...SHOP_KINDS.dining, ...SHOP_KINDS.commerci
 const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
 export const stationKey = (kind, owner, slug) => `${kind}|${owner}|${slug}`;
 
-export default function StationGen({ project, setProject, initialTarget }) {
+export default function StationGen({ project, setProject, initialTarget, active = true }) {
   const [mode, setMode] = useState(initialTarget?.startsWith("ship|") ? "ships" : "stations");
   const [targetKey, setTargetKey] = useState(initialTarget || null);
   const [ownerPick, setOwnerPick] = useState(() => initialTarget?.split("|")[1] || "");
   const [opts, setOpts] = useState({ archetype: "auto", purpose: "auto", seed: "" });
   const [deck, setDeck] = useState(0);
   const [sel, setSel] = useState(null);
+  // extra blocks picked with Shift+click, on top of the primary `sel`
+  const [extra, setExtra] = useState([]);
+  const select = useCallback((id) => { setSel(id); setExtra([]); }, []);
+  const pick = useCallback((id, add) => {
+    if (!add || !id) { select(id); return; }
+    if (id === sel) { setSel(extra[0] || null); setExtra(extra.slice(1)); return; }
+    if (extra.includes(id)) { setExtra(extra.filter((x) => x !== id)); return; }
+    if (!sel) setSel(id); else setExtra([...extra, id]);
+  }, [sel, extra, select]);
   const [shopQuery, setShopQuery] = useState("");
   useEffect(() => { if (initialTarget) { setTargetKey(initialTarget); setOwnerPick(initialTarget.split("|")[1]); setMode(initialTarget.startsWith("ship|") ? "ships" : "stations"); } }, [initialTarget]);
 
@@ -71,7 +80,7 @@ export default function StationGen({ project, setProject, initialTarget }) {
       : { ...p, companies: p.companies.map((c) => (c.slug !== owner ? c : { ...c, notableShips: c.notableShips.map((s) => (s.slug === slug ? put(s) : s)) })) }));
   }, [target, setProject]);
 
-  useEffect(() => { setSel(null); setDeck(layout ? Math.floor(layout.decks.length / 2) : 0); }, [targetKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { select(null); setDeck(layout ? Math.floor(layout.decks.length / 2) : 0); }, [targetKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (layout && deck >= layout.decks.length) setDeck(0); }, [layout, deck]);
 
   const spec = useMemo(() => (target ? stationSpec(target.genInput, { archetype: opts.archetype, purpose: opts.purpose === "auto" ? undefined : opts.purpose, seed: opts.seed || `station:${target.slug}` }) : null), [target, opts]);
@@ -85,10 +94,26 @@ export default function StationGen({ project, setProject, initialTarget }) {
     setOpts((o) => ({ ...o, seed }));
     writeLayout(l);
     setDeck(Math.floor(l.decks.length / 2));
-    setSel(null);
+    select(null);
   };
 
   const selBlock = layout?.blocks.find((b) => b.id === sel) || null;
+
+  // Canc / Backspace deletes every selected block, Esc clears the selection
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!active || !layout || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable) return;
+      if (e.key === "Escape") { select(null); return; }
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const ids = [sel, ...extra].filter(Boolean);
+      if (!ids.length) return;
+      e.preventDefault();
+      writeLayout(ids.reduce((l, id) => removeBlock(l, id), layout));
+      select(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, layout, sel, extra, select, writeLayout]);
   const summary = useMemo(() => (layout ? summarizeStation(layout) : null), [layout]);
   const allShops = useMemo(() => {
     if (!summary) return [];
@@ -208,15 +233,16 @@ export default function StationGen({ project, setProject, initialTarget }) {
               lib={lib}
               deck={deck}
               sel={sel}
-              onSelect={setSel}
+              extra={extra}
+              onSelect={pick}
               onMove={(id, rect) => writeLayout(updateBlock(layout, id, rect))}
               onAdd={() => {
                 const s = layout.module * 2;
                 const { layout: next, block } = addBlock(layout, deck, { x: layout.footprint.w / 2 - s / 2, y: layout.footprint.h / 2 - s / 2, w: s, h: s }, "habitation");
-                writeLayout(next); setSel(block.id);
+                writeLayout(next); select(block.id);
               }}
             />
-            <Section layout={layout} deck={deck} sel={selBlock} onPick={(b) => { setDeck(b.deck); setSel(b.id); }} onDeck={setDeck} />
+            <Section layout={layout} deck={deck} sel={selBlock} onPick={(b) => { setDeck(b.deck); select(b.id); }} onDeck={setDeck} />
           </>
         )}
       </section>
@@ -228,9 +254,9 @@ export default function StationGen({ project, setProject, initialTarget }) {
             <BlockInspector
               layout={layout}
               block={selBlock}
-              onClose={() => setSel(null)}
+              onClose={() => select(null)}
               onChange={(patch) => writeLayout(updateBlock(layout, selBlock.id, patch))}
-              onDelete={() => { writeLayout(removeBlock(layout, selBlock.id)); setSel(null); }}
+              onDelete={() => { writeLayout(removeBlock(layout, selBlock.id)); select(null); }}
               onAddShop={() => writeLayout(addShop(layout, selBlock.id, selBlock.type === "dining" ? "bar" : selBlock.type === "recreation" ? "gym" : "general store"))}
               onShop={(id, patch) => writeLayout(updateShop(layout, id, patch))}
               onRemoveShop={(id) => writeLayout(removeShop(layout, id))}
@@ -242,7 +268,7 @@ export default function StationGen({ project, setProject, initialTarget }) {
                 <input className="ge-in" type="search" placeholder="Search: pub, bar, weapons…" value={shopQuery} onChange={(e) => setShopQuery(e.target.value)} />
                 <div className="ge-rows" style={{ maxHeight: "none" }}>
                   {allShops.slice(0, 250).map((s) => (
-                    <button key={s.id} className="gx-gbtn gx-row" onClick={() => { const b = layout.blocks.find((x) => x.id === s.blockId); if (b) { setDeck(b.deck); setSel(b.id); } }}>
+                    <button key={s.id} className="gx-gbtn gx-row" onClick={() => { const b = layout.blocks.find((x) => x.id === s.blockId); if (b) { setDeck(b.deck); select(b.id); } }}>
                       <span className="gx-diamond" style={{ width: 8, height: 8, background: BLOCK_TYPES[layout.blocks.find((x) => x.id === s.blockId)?.type]?.color || "#888" }} />
                       <span className="t"><span className="a">{s.name}</span><span className="b" style={{ color: "#9a958b" }}>{s.kind} · {s.where}</span></span>
                     </button>
@@ -321,7 +347,7 @@ function BlockInspector({ layout, block, onClose, onChange, onDelete, onAddShop,
 // drag background = pan, drag a block = move (grid snap), corner = resize,
 // double-click = zoom onto a block. Blocks big enough on screen show their
 // interior (blockDetail) — the dynamic level of detail.
-function Plan({ layout, deck, sel, onSelect, onMove, onAdd, lib }) {
+function Plan({ layout, deck, sel, extra = [], onSelect, onMove, onAdd, lib }) {
   const svgRef = useRef(null);
   const fit = useCallback(() => {
     const pad = Math.max(layout.footprint.w, layout.footprint.h) * 0.06;
@@ -371,8 +397,8 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd, lib }) {
     svgRef.current.setPointerCapture(e.pointerId);
     // dragging pans, except on the block that is already selected (that one
     // moves); a click without dragging selects
-    const moving = b && (handle || b.id === sel) ? b : null;
-    drag.current = { b: moving, tap: b, handle, start: toUnits(e), vb0: vb, cx: e.clientX, cy: e.clientY, k: upp, moved: false };
+    const moving = b && !e.shiftKey && (handle || b.id === sel) ? b : null;
+    drag.current = { b: moving, tap: b, handle, add: e.shiftKey, start: toUnits(e), vb0: vb, cx: e.clientX, cy: e.clientY, k: upp, moved: false };
   };
   const raf = useRef(0);
   const panTo = (next) => {
@@ -397,7 +423,7 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd, lib }) {
     const d = drag.current;
     drag.current = null;
     if (d?.b && d.moved && ghost) onMove(d.b.id, { x: ghost.x, y: ghost.y, w: ghost.w, h: ghost.h });
-    if (d && !d.b && !d.moved) onSelect(d.tap ? d.tap.id : null);
+    if (d && !d.b && !d.moved) onSelect(d.tap ? d.tap.id : null, d.add);
     setGhost(null);
   };
   const zoomTo = (b) => {
@@ -477,6 +503,9 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd, lib }) {
             <path d={`M ${l.x + l.w * 0.3} ${l.y + l.h * 0.42} L ${l.x + l.w / 2} ${l.y + l.h * 0.22} L ${l.x + l.w * 0.7} ${l.y + l.h * 0.42} M ${l.x + l.w * 0.3} ${l.y + l.h * 0.58} L ${l.x + l.w / 2} ${l.y + l.h * 0.78} L ${l.x + l.w * 0.7} ${l.y + l.h * 0.58}`} fill="none" stroke="#5fd3f3" strokeWidth={upp * 1.4} />
           </g>
         ))}
+        {blocks.filter((b) => extra.includes(b.id)).map((b) => (
+          <rect key={`x${b.id}`} x={b.x - upp * 3} y={b.y - upp * 3} width={b.w + upp * 6} height={b.h + upp * 6} fill="rgba(95,211,243,.08)" stroke="#5fd3f3" strokeWidth={upp * 2} strokeDasharray={`${upp * 6} ${upp * 4}`} pointerEvents="none" />
+        ))}
         {selB && (() => {
           const b = selB, c = upp * 14, g = upp * 5;
           const corner = (x, y, dx, dy) => `M ${x + dx * c} ${y} L ${x} ${y} L ${x} ${y + dy * c}`;
@@ -494,7 +523,7 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd, lib }) {
         <button className="gx-mbtn" aria-label="Fit" onClick={() => setVb(fit())}>{Icon.reset()}</button>
         <button className="gx-mbtn" aria-label="Add block" onClick={onAdd} title="Add a block on this deck">＋<span>BLOCK</span></button>
       </div>
-      <div className="gx-hint" style={{ bottom: 12 }}>{layout.unitM} M GRID · DRAG TO PAN · CLICK TO SELECT · DRAG A SELECTED BLOCK TO MOVE · DOUBLE-CLICK TO ZOOM</div>
+      <div className="gx-hint" style={{ bottom: 12 }}>{layout.unitM} M GRID · DRAG TO PAN · CLICK TO SELECT · SHIFT+CLICK TO ADD · DEL TO DELETE · DRAG A SELECTED BLOCK TO MOVE · DOUBLE-CLICK TO ZOOM</div>
     </div>
   );
 }

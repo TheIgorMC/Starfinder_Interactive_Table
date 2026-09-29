@@ -938,6 +938,19 @@ function EditorApp({ initialProject, initialVersion, embedded, active = true }) 
       const t = TOOLS.find((x) => x.key1.toLowerCase() === e.key.toLowerCase());
       if (t) { setTool(t.key); return; }
       if (e.key === "Enter" && pendingPoints?.length >= 3 && !pendingClosed) handleCloseSectorDraft();
+      if ((e.key === "Delete" || e.key === "Backspace") && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) {
+        const sec = selectedSectorId && project.sectors.find((x) => x.id === selectedSectorId);
+        const fac = !sec && selectedFactionId && project.factions.find((x) => x.id === selectedFactionId);
+        if (sec) {
+          e.preventDefault();
+          const n = project.systems.filter((x) => x.sector === sec.slug).length;
+          if (window.confirm(`Delete sector "${sec.name}"${n ? ` and its ${n} systems` : ""}?`)) { handleDeleteSector(sec.id); clearSelection(); }
+        } else if (fac) {
+          e.preventDefault();
+          if (window.confirm(`Delete faction "${fac.name}"?`)) { handleDeleteFaction(fac.id); clearSelection(); }
+        }
+        return;
+      }
       if (e.key === "Escape") {
         if (pendingPoints) handleCancelSectorDraft();
         else if (pendingFactionSeed) handleCancelFactionSeed();
@@ -948,7 +961,7 @@ function EditorApp({ initialProject, initialVersion, embedded, active = true }) 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, workspace, tool, pendingPoints, pendingClosed, pendingFactionSeed, laneFrom, setTool, clearSelection, handleCloseSectorDraft, handleCancelSectorDraft, handleCancelFactionSeed]);
+  }, [active, workspace, tool, pendingPoints, pendingClosed, pendingFactionSeed, laneFrom, setTool, clearSelection, handleCloseSectorDraft, handleCancelSectorDraft, handleCancelFactionSeed, selectedSectorId, selectedFactionId, project.sectors, project.factions, project.systems, handleDeleteSector, handleDeleteFaction]);
 
   const flyTo = (id) => { selectOnly("system", id); setWorkspace("map"); setTimeout(() => mapRef.current?.focusSystemId(id), 0); };
   const openSystem = (id) => { if (id) selectOnly("system", id); setWorkspace("system"); };
@@ -1189,8 +1202,8 @@ function EditorApp({ initialProject, initialVersion, embedded, active = true }) 
           onOpenStation={openStation}
           systemInspector={systemInspector && React.cloneElement(systemInspector, { inWorkspace: true, onClose: undefined })} />
       )}
-      {workspace === "stations" && <StationGen project={project} setProject={setProject} initialTarget={stationTarget} />}
-      {workspace === "modules" && <ModuleDesigner project={project} setProject={setProject} />}
+      {workspace === "stations" && <StationGen project={project} setProject={setProject} initialTarget={stationTarget} active={active} />}
+      {workspace === "modules" && <ModuleDesigner project={project} setProject={setProject} active={active} />}
     </div>
   );
 }
