@@ -3,8 +3,9 @@ import {
   generateStation, stationSpec, blockDetail, summarizeStation, BLOCK_TYPES, SHOP_KINDS, UNIT_M,
   updateBlock, addBlock, removeBlock, addShop, updateShop, removeShop,
 } from "@galaxy-core/lib/stationGen.js";
-import { blockInterior, KIT_ZONE_COLORS, kitModule } from "@galaxy-core/lib/stationInterior.js";
-import { KIT_PLANS } from "@galaxy-core/lib/stationKitPlans.js";
+import { blockInterior, stationWealth } from "@galaxy-core/lib/stationInterior.js";
+import { libraryFor, ZONE_COLORS } from "@galaxy-core/lib/stationLibrary.js";
+import KitPlan, { placeTransform } from "../kit/KitPlan.jsx";
 import { Icon } from "../../galaxy/ui.jsx";
 import { Head } from "../shell/Inspectors.jsx";
 
@@ -59,6 +60,7 @@ export default function StationGen({ project, setProject, initialTarget }) {
   }, [targetKey, project.systems, project.companies, models]);
 
   const layout = target?.entity.layout || null;
+  const lib = useMemo(() => libraryFor(project), [project.stationKit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const writeLayout = useCallback((next) => {
     if (!target) return;
@@ -159,6 +161,14 @@ export default function StationGen({ project, setProject, initialTarget }) {
                 </select>
               </label>
             </div>
+            {layout && (
+              <label className="ge-lbl">Wealth (interiors)
+                <select className="ge-in" value={layout.wealth || ""} onChange={(e) => writeLayout({ ...layout, wealth: e.target.value || undefined })}>
+                  <option value="">auto · {stationWealth({ ...layout, wealth: undefined })}</option>
+                  <option value="poor">poor</option><option value="std">standard</option><option value="rich">rich</option>
+                </select>
+              </label>
+            )}
             {spec && <div className="gx-lore">{fmt(spec.lengthM)} m long · {fmt(spec.population)} aboard{spec.passengers ? ` (${fmt(spec.passengers)} passengers)` : ""}</div>}
             <button className="gx-cta" onClick={() => generate(false)}>{layout ? "REGENERATE" : "GENERATE LAYOUT"}</button>
             <div className="ge-row">
@@ -195,6 +205,7 @@ export default function StationGen({ project, setProject, initialTarget }) {
             <Plan
               key={`${targetKey}:${layout.seed}:${layout.footprint.w}`}
               layout={layout}
+              lib={lib}
               deck={deck}
               sel={sel}
               onSelect={setSel}
@@ -310,7 +321,7 @@ function BlockInspector({ layout, block, onClose, onChange, onDelete, onAddShop,
 // drag background = pan, drag a block = move (grid snap), corner = resize,
 // double-click = zoom onto a block. Blocks big enough on screen show their
 // interior (blockDetail) — the dynamic level of detail.
-function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
+function Plan({ layout, deck, sel, onSelect, onMove, onAdd, lib }) {
   const svgRef = useRef(null);
   const fit = useCallback(() => {
     const pad = Math.max(layout.footprint.w, layout.footprint.h) * 0.06;
@@ -454,7 +465,7 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
             </g>
           );
         })}
-        {detailed.map((b) => <Interior key={`d${b.id}`} layout={layout} block={b} upp={upp} view={view} deck={deck} kit={pxPerU >= 4} />)}
+        {detailed.map((b) => <Interior key={`d${b.id}`} layout={layout} block={b} upp={upp} view={view} deck={deck} kit={pxPerU >= 4} lib={lib} />)}
         {blocks.flatMap((b) => (b.doors || []).filter((d) => d.deck == null || d.deck === deck).map((d, i) => {
           const s = Math.max(upp * 5, Math.min(2, b.w, b.h) * 0.5);
           const v = d.side === "e" || d.side === "w";
@@ -488,22 +499,23 @@ function Plan({ layout, deck, sel, onSelect, onMove, onAdd }) {
   );
 }
 
-// kit interior of one block (or generic rooms when the kit has no modules for its type)
-const MOD_COLOR = {};
-function modColor(id) {
-  if (MOD_COLOR[id]) return MOD_COLOR[id];
-  const m = kitModule(id); let best = null, ba = -1;
-  for (const z of m?.zones || []) { const a = z.rect[2] * z.rect[3]; if (a > ba) { ba = a; best = z.zone; } }
-  return (MOD_COLOR[id] = KIT_ZONE_COLORS[best] || "#262b30");
+// library interior of one block (or generic rooms when no module fits its type)
+const MOD_COLOR = new WeakMap();
+function modColor(b) {
+  if (!b) return "#262b30";
+  if (MOD_COLOR.has(b)) return MOD_COLOR.get(b);
+  let best = null, ba = -1;
+  for (const z of b.zones || []) { const a = z.r[2] * z.r[3]; if (a > ba) { ba = a; best = z.z; } }
+  const c = ZONE_COLORS[best] || "#262b30"; MOD_COLOR.set(b, c); return c;
 }
-function Interior({ layout, block, upp, view, deck, kit }) {
+function Interior({ layout, block, upp, view, deck, kit, lib }) {
   // clip snapped to 16U so panning doesn't regenerate every frame
   const q = 16, cx = Math.floor(view.x / q) * q, cy = Math.floor(view.y / q) * q;
   const cw = Math.ceil((view.x + view.w - cx) / q) * q, ch = Math.ceil((view.y + view.h - cy) / q) * q;
-  const r = useMemo(() => (kit ? blockInterior(layout, block, { x: cx, y: cy, w: cw, h: ch }) : null), [kit, layout, block, cx, cy, cw, ch]);
+  const r = useMemo(() => (kit ? blockInterior(layout, block, { x: cx, y: cy, w: cw, h: ch }, lib) : null), [kit, layout, block, cx, cy, cw, ch, lib]);
   const plans = 1 / upp >= 14;
   const uppQ = 2 ** Math.round(Math.log2(upp)); // stroke/label scale, quantised so panning doesn't re-render
-  const drawn = useMemo(() => (r ? <InteriorMarkup r={r} block={block} layout={layout} plans={plans} upp={uppQ} /> : null), [r, block, layout, plans, uppQ]);
+  const drawn = useMemo(() => (r ? <InteriorMarkup r={r} block={block} layout={layout} plans={plans} upp={uppQ} lib={lib} /> : null), [r, block, layout, plans, uppQ, lib]);
   if (!r) return <Detail layout={layout} block={block} upp={upp} />;
   if (deck > block.deck) {
     // lower level of a two-deck block: open to the level above (hangar floor, reactor pit, atrium)
@@ -512,22 +524,24 @@ function Interior({ layout, block, upp, view, deck, kit }) {
   return drawn;
 }
 
-function InteriorMarkup({ r, block, layout, plans, upp }) {
+const VENUE_FAMILIES = new Set(["F", "L"]);
+function InteriorMarkup({ r, block, layout, plans, upp, lib }) {
   const shops = (layout.shops || []).filter((s) => s.blockId === block.id);
   let si = 0;
   return (
     <g pointerEvents="none">
       <rect x={block.x} y={block.y} width={block.w} height={block.h} fill="#0e1316" />
-      {r.halls.map((h, i) => <rect key={`h${i}`} x={h.x} y={h.y} width={h.w} height={h.h} fill={KIT_ZONE_COLORS.CIRC} />)}
-      {r.fillers.map((f, i) => <rect key={`f${i}`} x={f.x} y={f.y} width={f.w} height={f.h} fill={KIT_ZONE_COLORS[f.zone] || "#262b30"} opacity=".6" />)}
+      {r.halls.map((h, i) => <rect key={`h${i}`} x={h.x} y={h.y} width={h.w} height={h.h} fill={ZONE_COLORS.CIRC} />)}
+      {r.fillers.map((f, i) => <rect key={`f${i}`} x={f.x} y={f.y} width={f.w} height={f.h} fill={ZONE_COLORS[f.zone] || "#262b30"} opacity=".6" />)}
       {r.modules.map((m, i) => {
-        const venue = ["F2-CANTEEN", "F1-MESS", "L1-BAR", "L2-GYM", "L0-NOOK"].includes(m.id) ? shops[si++] : null;
-        const [W0, H0] = kitModule(m.id).footprint_U;
-        const t = m.k === 1 ? `translate(${m.x + H0} ${m.y}) rotate(90)` : m.k === 2 ? `translate(${m.x + W0} ${m.y + H0}) rotate(180)` : m.k === 3 ? `translate(${m.x} ${m.y + W0}) rotate(270)` : `translate(${m.x} ${m.y})`;
+        const def = lib.byId.get(m.id);
+        const venue = VENUE_FAMILIES.has(m.family) && !/^(F0|F3|F4|L0-CHAPEL)/.test(m.id) ? shops[si++] : null;
+        if (!def) return null;
         return (
           <g key={i}>
-            {plans ? <g transform={t} dangerouslySetInnerHTML={{ __html: KIT_PLANS[m.id] || "" }} />
-              : <rect x={m.x + 0.05} y={m.y + 0.05} width={m.w - 0.1} height={m.h - 0.1} fill={modColor(m.id)} stroke="#e6ecef" strokeOpacity=".45" strokeWidth={upp} />}
+            {plans ? <g transform={placeTransform(m.x, m.y, def.size[0], def.size[1], m.k)}><KitPlan block={def} labels={1 / upp >= 22} /></g>
+              : <rect x={m.x + 0.05} y={m.y + 0.05} width={m.w - 0.1} height={m.h - 0.1} fill={modColor(def)} stroke="#e6ecef" strokeOpacity=".45" strokeWidth={upp} />}
+            {!plans && m.height > 1 && m.w / upp > 26 && <text x={m.x + m.w - upp * 4} y={m.y + upp * 12} fontSize={upp * 10} textAnchor="end" fill="#ffb866" style={{ fontFamily: "Oxanium, sans-serif" }}>{m.height}U</text>}
             {venue && (
               <text x={m.x + m.w / 2} y={m.y + m.h / 2} fontSize={Math.max(upp * 12, 0.35)} textAnchor="middle" dominantBaseline="middle" fill="#ffb866" stroke="#0e1316" strokeWidth={upp * 3} paintOrder="stroke" style={{ fontFamily: "Oxanium, sans-serif" }}>{venue.name}</text>
             )}

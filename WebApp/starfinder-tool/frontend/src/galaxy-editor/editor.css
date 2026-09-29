@@ -222,3 +222,10 @@
   .ge .ge-stats { display: none; }
   .ge-stmain { left: 320px; right: 412px; }
 }
+
+/* MODULES workspace */
+.ge-mthumb { width: 34px; height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.ge-mthumb svg { width: 34px; height: 30px; }
+.ge-mdws .ge-stmain { bottom: 20px; }
+.ge-mdcanvas { flex: 1 1 auto; }
+.ge-partbox { background: rgba(95, 211, 243, 0.05); border-left: 2px solid var(--gx-cyan); }

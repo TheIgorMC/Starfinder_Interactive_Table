@@ -1,18 +1,23 @@
-# Station Interiors — export v0.1
+# Station Interiors — block library
 
-20 modules in 5 families (Housing H, Food F, Technical T, Leisure L, Circulation V) plus 2 system sheets.
+`blocks.json` (schema `station-interiors/blocks v0.2`) is the library the
+station generator fills station blocks with: 150 modules in 9 families
+(H housing, F food, T technical, L leisure, V circulation, D docking,
+C command, K cargo, P processing), each described by primitives — zones,
+items (box/bed/round/cross/dash/solid), partitions, connectors, utility
+spine, hull face — in U (1U = 2 m cube; origin NW corner, x east, y south).
+`height` is in U too; modules taller than a station block (one drawn deck ≈
+2U, more for two-deck blocks and multi-level decks) are never placed there.
 
-| Folder / file | Use |
-|---|---|
-| `modules.json` | Machine-readable spec for the generator: footprint, height, connectors (face + cells + width), utility spine, trunk level, zone rectangles in U, requirements, exclusions, variants. Also the unit conventions, zone colours, scale ladder, trunk hierarchy, placement rules and housing mix weights. |
-| `plans_svg/` | Plan drawings only, vector, one per module (dark background). Coordinates inside are in U, scaled by the group transform. |
-| `boards_png/` | Full boards at 2× (plan + spec panel), for reference. |
-| `Station-Interiors-catalog.pdf` | All 22 boards in one PDF, one per page. |
-| `source_dc/` | Original editable board sources (.dc.html) from the design canvas. |
+`blocks_generator.py` builds `blocks.json`. After regenerating, rebuild the
+JS module the app loads:
 
-Coordinate conventions (also in `modules.json → conventions`):
-- 1U = 2 m cube; interior sub-grid 0.5U; deck pitch 1U.
-- Origin = north-west corner; x → east, y → south; rects are `[x, y, w, h]` in U.
-- Cells `[col, row]` zero-based (board label A1 = `[0, 0]`).
-- Personnel connectors are 1 m wide, centred on the listed cell edge; cargo/plaza connectors span all listed cells.
-- `"TBD"` marks values still to decide (reactor output, lift capacity, stock days…).
+```bash
+python3 blocks_generator.py            # writes out/blocks.json
+cp out/blocks.json blocks.json
+node -e 'const d=require("./blocks.json");require("fs").writeFileSync("../../lib/stationKitBlocks.js","// generated from data/station-interiors/blocks.json\nexport const KIT_BLOCKS = "+JSON.stringify(d)+";\n")'
+```
+
+GM edits and new designs made in the Galaxy Editor (MODULES workspace) are
+stored in the galaxy project (`project.stationKit`), not here; the
+workspace's EXPORT JSON writes the merged library in this same format.

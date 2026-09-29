@@ -131,3 +131,33 @@ player redaction keep working unchanged:
   kit's plan drawings from ~14 px/U; venues label their mess/bar/gym. Drag
   pans (a block only moves once selected); pan uses screen deltas and one
   update per frame.
+
+### v3 (2026-09): block library v0.2 + module designer
+
+- **Library.** `galaxy-core/data/station-interiors/blocks.json` (built by
+  `blocks_generator.py`, loaded as `lib/stationKitBlocks.js`) replaces the v0.1
+  kit: 150 modules in 9 families (H housing, F food, T technical, L leisure,
+  V circulation, D docking, C command, K cargo, P processing), each made of
+  primitives (zones, items, partitions, connectors, spine, hull), with
+  `scale` / `wealth` tags and a `height` in U. Plans are drawn from the
+  primitives (`frontend/src/galaxy-editor/kit/KitPlan.jsx`), not from images.
+- **GM designs.** `lib/stationLibrary.js → libraryFor(project)` merges the
+  library with `project.stationKit = { blocks: {id: block}, disabled: [id] }`:
+  a project block with a library id replaces that design, any other id adds a
+  new one; disabled ids are skipped by the generator.
+- **MODULES workspace** (Galaxy Editor): browse/search by family, edit a
+  module on its U grid (snap 0.5 / 0.25 / 0.05U) — drag zones, items, walls
+  and doors, resize from the corner, Del removes — and every property
+  (size, height, capacity, spine, hull, scale, wealth, description, tags);
+  checks as in the generator script; New / Duplicate / Reset to library /
+  Disable in generator; EXPORT JSON (same schema) and IMPORT.
+- **Generator.** `blockInterior(layout, block, clip, lib)` maps block types
+  to families (habitation→H, dining→F, recreation→L, commercial→markets,
+  diners, bars, casinos…, technical/generator→T, hangar→D, cargo→K,
+  factory→P + fab halls, bridge→C, security/research/medical → picked ids),
+  filters by the station's scale and wealth (auto from its purpose, or set
+  per layout in STATIONS → Wealth) and by **height**: the block allows
+  `span × levels × 2U` (one drawn deck ≈ 2U), so 4U reactor halls, 6U atria
+  and 8U flight decks only appear in tall/two-deck blocks. Modules of ≥48U²
+  are placed as anchors at the head of the block, the rest in hall-facing
+  bands; tall modules show their height.

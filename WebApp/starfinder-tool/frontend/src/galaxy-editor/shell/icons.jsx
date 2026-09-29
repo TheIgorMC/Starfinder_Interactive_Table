@@ -23,6 +23,7 @@ export const EIcon = {
   // workspaces
   map: () => <svg {...sv}><circle cx="10" cy="10" r="7.5" strokeOpacity=".5" /><ellipse cx="10" cy="10" rx="7.5" ry="2.8" transform="rotate(-28 10 10)" /><circle cx="10" cy="10" r="1.6" fill="currentColor" /></svg>,
   orrery: () => <svg {...sv}><circle cx="10" cy="10" r="2.2" fill="currentColor" /><circle cx="10" cy="10" r="5.5" strokeOpacity=".6" /><circle cx="10" cy="10" r="8.5" strokeOpacity=".35" /><circle cx="15.5" cy="10" r="1.3" fill="currentColor" /></svg>,
+  modules: () => <svg {...sv}><rect x="2.5" y="2.5" width="7" height="6" /><rect x="11.5" y="2.5" width="6" height="9" /><rect x="2.5" y="10.5" width="7" height="7" /><rect x="11.5" y="13.5" width="6" height="4" /></svg>,
   station: () => <svg {...sv}><rect x="7" y="7" width="6" height="6" /><path d="M1 10h6M13 10h6M10 1v6M10 13v6" /><rect x="1" y="8" width="3" height="4" /><rect x="16" y="8" width="3" height="4" /></svg>,
   back: () => <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M13 8H3M7 4L3 8l4 4" /></svg>,
   close: () => <svg width="14" height="14" viewBox="0 0 14 14" stroke="#b8b2a6" strokeWidth="1.6" aria-hidden><path d="M2 2l10 10M12 2L2 12" /></svg>,

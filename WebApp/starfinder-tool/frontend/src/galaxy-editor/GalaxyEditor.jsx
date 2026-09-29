@@ -6,6 +6,7 @@ import { ProjectPanel } from "./components/Toolbar.jsx";
 import SectorList, { PendingSectorForm, PendingFactionForm, FactionCard, ActorCard, OrgCard, CompanyCard } from "./components/SectorList.jsx";
 import AIPanel from "./components/AIPanel.jsx";
 import StationGen, { stationKey } from "./components/StationGen.jsx";
+import ModuleDesigner from "./kit/ModuleDesigner.jsx";
 import { EditorMap } from "./map/editor-map.js";
 import BuildPanel from "./shell/BuildPanel.jsx";
 import SystemWorkspace from "./shell/SystemWorkspace.jsx";
@@ -1090,7 +1091,7 @@ function EditorApp({ initialProject, initialVersion, embedded, active = true }) 
           </div>
         </a>
         <div role="tablist" aria-label="Workspace" className="gx-group ge-ws">
-          {[["map", "MAP", EIcon.map()], ["system", "SYSTEM", EIcon.orrery()], ["stations", "STATIONS", EIcon.station()]].map(([k, l, ic]) => (
+          {[["map", "MAP", EIcon.map()], ["system", "SYSTEM", EIcon.orrery()], ["stations", "STATIONS", EIcon.station()], ["modules", "MODULES", EIcon.modules()]].map(([k, l, ic]) => (
             <button key={k} role="tab" aria-selected={workspace === k} className={"gx-tbtn" + (workspace === k ? " on" : "")} onClick={() => setWorkspace(k)}>{ic}{l}</button>
           ))}
         </div>
@@ -1189,6 +1190,7 @@ function EditorApp({ initialProject, initialVersion, embedded, active = true }) 
           systemInspector={systemInspector && React.cloneElement(systemInspector, { inWorkspace: true, onClose: undefined })} />
       )}
       {workspace === "stations" && <StationGen project={project} setProject={setProject} initialTarget={stationTarget} />}
+      {workspace === "modules" && <ModuleDesigner project={project} setProject={setProject} />}
     </div>
   );
 }
