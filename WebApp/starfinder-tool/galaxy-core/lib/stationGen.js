@@ -144,10 +144,19 @@ export function generateStation(target, options = {}) {
   // (widest) deck and reused on every deck where they fit, so decks stack
   // cleanly; leftovers are merged per deck.
   const rects = [];
-  const maxSpan = spec.archetype === "mining" || N >= 20 ? 3 : 2;
+  const maxSpan = grid.small ? grid.H : spec.archetype === "mining" || N >= 20 ? 3 : 2;
   const refDeck = grid.decks.reduce((best, c, z) => (count(c) > count(grid.decks[best]) ? z : best), 0);
   const refRects = mergeCells(rng, grid.decks[refDeck], 0, "B", maxSpan);
-  grid.decks.forEach((cells, z) => {
+  if (grid.small) {
+    // small craft: full-width compartments bow → stern, 2-4 units long
+    const cuts = [];
+    for (let x = 0; x < grid.W;) {
+      let len = 2 + Math.floor(rng() * (grid.W < 12 ? 2 : 3));
+      if (grid.W - (x + len) < 2) len = grid.W - x;
+      cuts.push([x, len]); x += len;
+    }
+    grid.decks.forEach((_, z) => { for (const [x, len] of cuts) rects.push({ kind: "B", z, x, y: 0, w: len, h: grid.H }); });
+  } else grid.decks.forEach((cells, z) => {
     rects.push(...mergeCells(rng, cells, z, "T", 999));
     rects.push(...mergeCells(rng, cells, z, "H", 3).map((r) => ({ ...r, hub: true })));
     const left = cells.map((row) => row.slice());
@@ -222,11 +231,15 @@ function emptyGrid(W, H) { return Array.from({ length: H }, () => new Array(W).f
 function vesselGrid(rng, N, spec) {
   const L = N;
   const ratio = spec.purpose === "cargo" || spec.purpose === "colony" ? 0.24 : spec.purpose === "military" ? 0.18 : 0.2;
-  const Wmax = Math.max(2, Math.round(L * ratio * (0.85 + rng() * 0.3)));
+  // small hulls (Tiny / Small frames): at least 3 units (6 m) across, no
+  // taper below 2 units, and no spine corridor under 5 units — compartments
+  // span the hull and open into each other, as on a real small craft
+  const small = L < 20;
+  const Wmax = Math.max(small ? 3 : 2, Math.round(L * ratio * (0.85 + rng() * 0.3)));
   const { decks, levels } = deckCount(spec, spec.lengthM * ratio * 0.75);
   const mid = Math.floor(Wmax / 2);
   // corridor rows: spine + parallels every 3; cross corridors every 5-7
-  const rowIsT = (y) => Wmax >= 3 && (y === mid || (Wmax >= 7 && Math.abs(y - mid) % (Wmax >= 9 ? 4 : 3) === 0));
+  const rowIsT = (y) => Wmax >= (small ? 5 : 3) && (y === mid || (Wmax >= 7 && Math.abs(y - mid) % (Wmax >= 9 ? 4 : 3) === 0));
   const crossEvery = 5 + Math.floor(rng() * 3);
   const colIsT = (x) => L >= 10 && x > 1 && x < L - 2 && x % crossEvery === 0;
   const out = [];
@@ -238,13 +251,13 @@ function vesselGrid(rng, N, spec) {
       const f = x / (L - 1 || 1);
       // tapered bow (first 18%), full body, slight stern narrowing
       let w = f < 0.18 ? Wmax * (0.45 + (f / 0.18) * 0.55) : f > 0.94 ? Wmax * 0.85 : Wmax;
-      w = Math.max(1, Math.round(w) - edge * 2);
+      w = Math.max(small ? Math.min(Wmax, 2) : 1, Math.round(w) - edge * 2);
       const y0 = Math.floor((Wmax - w) / 2);
       for (let y = y0; y < y0 + w; y++) cells[y][x] = rowIsT(y) || (colIsT(x) && w >= 3) ? "T" : "B";
     }
     out.push(cells);
   }
-  return { W: L, H: Wmax, decks: out, levels };
+  return { W: L, H: Wmax, decks: out, levels, small };
 }
 
 function miningGrid(rng, N, spec) {
@@ -403,7 +416,7 @@ function assignTypes(rng, blocks, grid, spec, module) {
   // fixed placements: engines at the stern, the hub, the bridge
   let bridge = null;
   for (const b of build) {
-    if (isVessel && P.get(b).f > 0.9 && b.x + b.w >= W - module * 1.5) { b.type = "engine"; continue; }
+    if (isVessel && (P.get(b).f > 0.9 || grid.small) && b.x + b.w >= W - module * 1.5) { b.type = "engine"; continue; }
     if (b.hub) { b.type = b.deck === Math.floor(nDecks / 2) && !bridge ? "bridge" : "technical"; if (b.type === "bridge") bridge = b; }
   }
   if (!bridge) {
@@ -597,7 +610,8 @@ export function recomputeDoors(layout) {
       if (b.type === "transit") continue;
       const touching = list.filter((o) => o !== b).map((o) => ({ o, s: shared(b, o) })).filter((t) => t.s);
       const tr = touching.filter((t) => t.o.type === "transit").sort((p, q) => q.s.len - p.s.len).slice(0, 2);
-      const pick = tr.length ? tr : touching.sort((p, q) => q.s.len - p.s.len).slice(0, 1);
+      // no corridor (small craft): compartments open into their neighbours
+      const pick = tr.length ? tr : touching.sort((p, q) => q.s.len - p.s.len).slice(0, 2);
       // doors carry their deck: a two-deck block opens on both
       b.doors.push(...pick.map(({ o, s }) => ({ x: s.x, y: s.y, side: s.side, to: o.id, deck: z })));
     }

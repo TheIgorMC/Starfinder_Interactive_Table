@@ -161,3 +161,16 @@ player redaction keep working unchanged:
   and 8U flight decks only appear in tall/two-deck blocks. Modules of ≥48U²
   are placed as anchors at the head of the block, the rest in hall-facing
   bands; tall modules show their height.
+
+### Small craft (2026-09)
+
+Vessels under 20 units (≈40 m: Tiny and short Small frames) no longer go through the corridor grid. At 1-unit modules that grid produced 1×1 and 1×2 blocks that no kit module fits in, so every block ended up holding just a ladder. They are now cut into **full-width compartments**, 2–4 units long, running bow → stern: the bridge at the bow, the drive section at the stern. There is no spine corridor below 5 units of beam. Each compartment gets hatches to both neighbours, and its interior walkway runs fore-aft.
+
+Interior rules changed with it:
+- A stair core is placed only when there is another deck to reach (more than one deck, `levels` > 1, or a two-deck block) and only in blocks at least 8 U long.
+- A T0 service node is placed only in blocks of 64 U² or more.
+- When nothing from a block's own kit fits, a per-type list of compact modules is tried in order (`FALLBACK` in `stationInterior.js`: cockpit, hot bunk, closet, ...). Cargo is left as open stowage.
+
+Existing layouts keep their old blocks until they are regenerated. The interiors pick up the new rules straight away, since they are derived at render time.
+
+Editor saving is manual now: the SAVE button or Ctrl+S, plus a flush when the editor unmounts. Autosaving the multi-MB project on every edit made the editor crawl. "Reroll interior", per block or for the whole layout, bumps an `iseed` on the block or the layout. That changes the fit-out without touching the blocks.

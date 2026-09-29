@@ -40,6 +40,15 @@ const TYPE_FAMILIES = {
   research: { fam: [], ids: ["T1-SHOP", "T1-DRONE", "F4-HYDRO", "F4-ALGAE", "T2-ALGAE", "C1-ONEROW"] },
   medical: { fam: [], ids: ["H1-SOLO", "H1-OFFICER", "L0-CHAPEL", "T2-WATER"] },
 };
+// compact modules tried when nothing of the block's own kit fits (small
+// craft compartments, slivers)
+const FALLBACK = {
+  bridge: ["C0-COCKPIT", "C3-TINY"], engine: ["T0-BATTERY", "T0-NODE", "T0-CLOSET"], generator: ["T0-BATTERY", "T0-CLOSET"],
+  technical: ["T1-MINI", "T0-CLOSET"], research: ["T2-MINI", "T1-MINI", "T0-CLOSET"], medical: ["H1-SOLO", "T0-CLOSET"],
+  habitation: ["H0-HOT", "H1-SOLO", "F0-SINGLE"], dining: ["F0-CORNER", "F0-RATION", "F0-SINGLE"], cargo: ["F3-ALLCOLD"],
+  hangar: ["D0-PORT", "D0-PODS"], security: ["T1-MINI", "T0-CLOSET"], factory: ["T1-MINI", "T0-CLOSET"],
+  commercial: ["L0-NOOK", "F0-CORNER"], recreation: ["L0-NOOK", "L0-VR"],
+};
 const ANCHOR_AREA = 48; // U² — anything this big is placed as a set piece
 
 export function stationScale(layout) {
@@ -99,6 +108,7 @@ export function blockInterior(layout, block, clip, libOrProject) {
   const anchors = cands.filter((b) => b.size[0] * b.size[1] >= ANCHOR_AREA && !extraIds.has(b.id));
   const regular = cands.filter((b) => b.size[0] * b.size[1] < ANCHOR_AREA && !extraIds.has(b.id));
   const pool = regular.length ? regular : cands;
+  const fallback = (FALLBACK[block.type] || []).map((id) => lib.byId.get(id)).filter((b) => b && (b.height || 1) <= maxH);
   const weightOf = (b) => (b.base ? 1 : 2) * (b.wealth?.includes(wealth) ? 1.5 : 1) * (b.scale?.includes(scaleName) ? 1.5 : 1);
 
   // iseed (layout / block): bumped by "reroll interior" to redraw the fit-out
@@ -106,7 +116,9 @@ export function blockInterior(layout, block, clip, libOrProject) {
   const ls = layout.iseed ? `${layout.seed}~${layout.iseed}` : layout.seed;
   const bid = block.iseed ? `${block.id}~${block.iseed}` : block.id;
   const rng = createRng(`${ls}:interior:${bid}:${block.type}`);
-  const horiz = block.w >= block.h;
+  // full-width compartments of a small craft keep their walkway fore-aft,
+  // in line with the neighbouring compartments' hatches
+  const horiz = block.w >= block.h || (layout.archetype === "vessel" && block.h === layout.footprint?.h && block.h <= 4);
   const L = horiz ? block.w : block.h, A = horiz ? block.h : block.w;
   const mods = [], fill = [], halls = [];
   const put = (lx, ly, lw, lh, extra) => {
@@ -141,7 +153,7 @@ export function blockInterior(layout, block, clip, libOrProject) {
   let rows;
   if (A >= 2 * d + 1) rows = Math.floor(A / (2 * d + 1));
   else if (A >= d + 1) rows = 0;
-  else { d = Math.max(1, Math.floor((A - 1) / 2)); rows = A >= 3 ? 1 : 0; }
+  else { d = Math.max(1, A - 1); rows = 0; } // narrow block: one band along a side walkway
   const bands = [];
   if (rows > 0) {
     for (let r = 0; r < rows; r++) {
@@ -161,6 +173,7 @@ export function blockInterior(layout, block, clip, libOrProject) {
     const cx0 = clip.x - block.x, cy0 = clip.y - block.y;
     lc = horiz ? { l0: cx0, l1: cx0 + clip.w, a0: cy0, a1: cy0 + clip.h } : { l0: cy0, l1: cy0 + clip.h, a0: A - (cx0 + clip.w), a1: A - cx0 };
   }
+  const multiDeck = (layout.decks?.length || 1) > 1 || (layout.decks?.[0]?.levels || 1) > 1 || (block.span || 1) > 1;
   const stair = lib.byId.get(scaleName === "outpost" ? "V0-LADDER" : scaleName === "mega" && wealth === "rich" ? "V1-TWIN" : "V1-STAIR") || lib.byId.get("V1-STAIR");
   const node = lib.byId.get("T0-NODE");
   const mess = lib.byId.get("F1-MESS"), nook = lib.byId.get("L0-NOOK");
@@ -177,8 +190,10 @@ export function blockInterior(layout, block, clip, libOrProject) {
       if (lc && (b.y + b.depth < lc.a0 || b.y > lc.a1)) return;
       const r = createRng(`${ls}:interior:${bid}:${ci}:${bi}`);
       const queue = [];
-      if (bi === 0 && stair) queue.push(stair);
-      if (bi === 1 && node && ["habitation", "technical", "generator", "factory"].includes(block.type)) queue.push(node);
+      // a stair core only where there is somewhere to climb to, and a
+      // service node only in blocks big enough to need one
+      if (bi === 0 && stair && multiDeck && L >= CLUSTER_U / 2) queue.push(stair);
+      if (bi === 1 && node && L * A >= 64 && ["habitation", "technical", "generator", "factory"].includes(block.type)) queue.push(node);
       let x = c0, guard = 0;
       while (x < c1 && guard++ < 400) {
         let m = queue.shift();
@@ -190,7 +205,9 @@ export function blockInterior(layout, block, clip, libOrProject) {
         const fitting = (bb) => orientations(bb, b.face).filter((o) => o.depth <= b.depth && o.len <= c1 - x).sort((p, q) => q.depth - p.depth)[0];
         let o = fitting(m);
         if (!o) {
-          const alt = pool.map((bb) => ({ bb, o: fitting(bb) })).filter((z) => z.o).sort((p, q) => q.o.len * q.o.depth - p.o.len * p.o.depth);
+          let alt = pool.map((bb) => ({ bb, o: fitting(bb) })).filter((z) => z.o);
+          if (!alt.length) alt = fallback.map((bb) => ({ bb, o: fitting(bb) })).filter((z) => z.o).slice(0, 1); // in listed order
+          alt = alt.sort((p, q) => q.o.len * q.o.depth - p.o.len * p.o.depth);
           if (!alt.length) { addFill(x, b.y, c1 - x, b.depth); break; }
           const z = alt[Math.floor(r() * Math.min(3, alt.length))];
           m = z.bb; o = z.o;
