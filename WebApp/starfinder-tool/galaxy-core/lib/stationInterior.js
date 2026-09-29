@@ -101,7 +101,11 @@ export function blockInterior(layout, block, clip, libOrProject) {
   const pool = regular.length ? regular : cands;
   const weightOf = (b) => (b.base ? 1 : 2) * (b.wealth?.includes(wealth) ? 1.5 : 1) * (b.scale?.includes(scaleName) ? 1.5 : 1);
 
-  const rng = createRng(`${layout.seed}:interior:${block.id}:${block.type}`);
+  // iseed (layout / block): bumped by "reroll interior" to redraw the fit-out
+  // without touching the block itself
+  const ls = layout.iseed ? `${layout.seed}~${layout.iseed}` : layout.seed;
+  const bid = block.iseed ? `${block.id}~${block.iseed}` : block.id;
+  const rng = createRng(`${ls}:interior:${bid}:${block.type}`);
   const horiz = block.w >= block.h;
   const L = horiz ? block.w : block.h, A = horiz ? block.h : block.w;
   const mods = [], fill = [], halls = [];
@@ -119,7 +123,7 @@ export function blockInterior(layout, block, clip, libOrProject) {
 
   // 1. anchors at the head of the block
   let x0 = 0;
-  const ar = createRng(`${layout.seed}:anchor:${block.id}`);
+  const ar = createRng(`${ls}:anchor:${bid}`);
   for (let n = 0; n < 3 && anchors.length; n++) {
     const fits = anchors.map((b) => ({ b, o: orientations(b, "S").concat(orientations(b, "E")).filter((q) => q.depth <= A && q.len <= L - x0 - (n ? 0 : 0)).sort((p, q) => q.depth - p.depth)[0] })).filter((z) => z.o);
     if (!fits.length || (n > 0 && ar() < 0.45) || (n === 0 && L - x0 < 24 && ar() < 0.3)) break;
@@ -171,7 +175,7 @@ export function blockInterior(layout, block, clip, libOrProject) {
     bands.forEach((b, bi) => {
       if (b.filler) { addFill(c0, b.y, c1 - c0, b.depth); return; }
       if (lc && (b.y + b.depth < lc.a0 || b.y > lc.a1)) return;
-      const r = createRng(`${layout.seed}:interior:${block.id}:${ci}:${bi}`);
+      const r = createRng(`${ls}:interior:${bid}:${ci}:${bi}`);
       const queue = [];
       if (bi === 0 && stair) queue.push(stair);
       if (bi === 1 && node && ["habitation", "technical", "generator", "factory"].includes(block.type)) queue.push(node);

@@ -236,6 +236,7 @@ export default function StationGen({ project, setProject, initialTarget, active 
               extra={extra}
               onSelect={pick}
               onMove={(id, rect) => writeLayout(updateBlock(layout, id, rect))}
+              onReroll={() => writeLayout({ ...layout, iseed: (layout.iseed || 0) + 1 })}
               onAdd={() => {
                 const s = layout.module * 2;
                 const { layout: next, block } = addBlock(layout, deck, { x: layout.footprint.w / 2 - s / 2, y: layout.footprint.h / 2 - s / 2, w: s, h: s }, "habitation");
@@ -321,6 +322,11 @@ function BlockInspector({ layout, block, onClose, onChange, onDelete, onAddShop,
         </div>
         <div className="gx-lore">Or drag the block on the plan; drag its corner handle to resize.</div>
       </div>
+      <div className="gx-sec">
+        <div className="gx-label">INTERIOR</div>
+        <button className="gx-gbtn" onClick={() => onChange({ iseed: (block.iseed || 0) + 1 })}>REROLL INTERIOR</button>
+        <div className="gx-lore">The fit-out follows the block's size and purpose on its own; this just draws a different one.</div>
+      </div>
       {VENUE.has(block.type) && (
         <div className="gx-sec">
           <div className="gx-label"><span>VENUES</span><span style={{ color: "#ece6da" }}>{shops.length}</span></div>
@@ -347,7 +353,7 @@ function BlockInspector({ layout, block, onClose, onChange, onDelete, onAddShop,
 // drag background = pan, drag a block = move (grid snap), corner = resize,
 // double-click = zoom onto a block. Blocks big enough on screen show their
 // interior (blockDetail) — the dynamic level of detail.
-function Plan({ layout, deck, sel, extra = [], onSelect, onMove, onAdd, lib }) {
+function Plan({ layout, deck, sel, extra = [], onSelect, onMove, onAdd, onReroll, lib }) {
   const svgRef = useRef(null);
   const fit = useCallback(() => {
     const pad = Math.max(layout.footprint.w, layout.footprint.h) * 0.06;
@@ -522,6 +528,7 @@ function Plan({ layout, deck, sel, extra = [], onSelect, onMove, onAdd, lib }) {
         <button className="gx-mbtn" aria-label="Zoom out" onClick={() => zoomBy(1.4)}>{Icon.minus()}</button>
         <button className="gx-mbtn" aria-label="Fit" onClick={() => setVb(fit())}>{Icon.reset()}</button>
         <button className="gx-mbtn" aria-label="Add block" onClick={onAdd} title="Add a block on this deck">＋<span>BLOCK</span></button>
+        <button className="gx-mbtn" aria-label="Reroll interiors" onClick={onReroll} title="Redraw every block's interior (blocks stay as they are)">↻<span>INTERIORS</span></button>
       </div>
       <div className="gx-hint" style={{ bottom: 12 }}>{layout.unitM} M GRID · DRAG TO PAN · CLICK TO SELECT · SHIFT+CLICK TO ADD · DEL TO DELETE · DRAG A SELECTED BLOCK TO MOVE · DOUBLE-CLICK TO ZOOM</div>
     </div>

@@ -138,7 +138,7 @@ merged in — see `Docs/10-galaxy-mapgen.md`):
   the viewer (it reuses its map and panels): MAP / SYSTEM / STATIONS
   workspaces, tool dock, a BUILD checklist for the pipeline. It edits the
   campaign's stored galaxy **in place** (`GET/PUT /api/galaxy/project`,
-  debounced autosave, versioned: a save based on an older version is
+  manual save — SAVE button or Ctrl+S, no autosave — versioned: a save based on an older version is
   refused with a reload-or-overwrite choice instead of silently clobbering
   edits made elsewhere).
 - **Galaxy Map** (`/galaxy`, any login; also a GM tab) — the Elite-style

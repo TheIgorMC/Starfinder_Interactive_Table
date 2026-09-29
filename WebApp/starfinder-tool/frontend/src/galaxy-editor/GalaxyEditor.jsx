@@ -930,6 +930,17 @@ function EditorApp({ initialProject, initialVersion, embedded, active = true }) 
     });
   }, [tool, activeField, showFieldOverlay, brush, selectedSectorId, selectedFactionId, pendingPoints, pendingClosed, pendingFactionSeed, laneFrom]);
 
+  // Ctrl+S saves (anywhere in the editor, inputs included)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!active || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      sync.saveNow();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, sync]);
+
   // keyboard: tools, Esc / Enter
   useEffect(() => {
     const onKey = (e) => {
@@ -1211,7 +1222,7 @@ function EditorApp({ initialProject, initialVersion, embedded, active = true }) 
 const STATUS_TEXT = { saved: "SAVED", pending: "UNSAVED CHANGES", saving: "SAVING…", conflict: "CONFLICT", error: "SAVE FAILED" };
 function SaveStatus({ sync }) {
   return (
-    <button className={"gg-save gg-save-" + sync.status} onClick={sync.saveNow} title={sync.error || "Saved to SIT automatically — click to save now"}>
+    <button className={"gg-save gg-save-" + sync.status} onClick={sync.saveNow} title={sync.error || "Click (or Ctrl+S) to save to SIT"}>
       <span className="dot" />{STATUS_TEXT[sync.status]}{sync.status === "saved" && sync.version ? ` · V${sync.version}` : ""}
     </button>
   );

@@ -7,8 +7,6 @@ import { useWs } from "../api.js";
 // request per change — and versioned: a save based on an older version gets
 // a 409 instead of overwriting edits made elsewhere (another tab, an MCP
 // tool), and the GM chooses to reload or overwrite.
-const SAVE_DELAY_MS = 2500;
-
 async function putProject(data, baseVersion) {
   const res = await fetch("/api/galaxy/project", {
     method: "PUT",
@@ -57,13 +55,11 @@ export function useServerSync(project, setProject, initialVersion) {
     }
   }, []);
 
-  // debounced autosave
+  // no autosave: just flag unsaved changes
   useEffect(() => {
-    if (project === saved.current || status === "conflict") return undefined;
-    setStatus((s) => (s === "saving" ? s : "pending"));
-    const t = setTimeout(() => save(), SAVE_DELAY_MS);
-    return () => clearTimeout(t);
-  }, [project, save, status]);
+    if (project === saved.current || status === "conflict") return;
+    setStatus((s) => (s === "saving" || s === "error" ? s : "pending"));
+  }, [project, status]);
 
   // flush on unmount (switching GM tab) and warn on page unload
   useEffect(() => {
