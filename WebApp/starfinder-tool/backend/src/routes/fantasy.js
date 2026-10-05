@@ -9,12 +9,14 @@ import { broadcast } from "../ws.js";
 // the GM marked `playerVisible`, with hidden places and GM notes stripped.
 const r = Router();
 
-const COLLECTIONS = ["settlements", "pois", "roads", "rivers", "labels"];
+const COLLECTIONS = ["settlements", "pois", "roads", "rivers", "labels", "events"];
 
 function forPlayers(data) {
   const out = { ...data };
   for (const k of COLLECTIONS) out[k] = (data[k] || []).filter((e) => !e.hidden).map(({ gmNotes: _n, ...e }) => e);
   delete out.gmNotes;
+  // books: hidden books and chapters (not written yet, spoilers) stay GM-only
+  out.books = (data.books || []).filter((b) => !b.hidden).map((b) => ({ ...b, chapters: (b.chapters || []).filter((c) => !c.hidden) }));
   return out;
 }
 

@@ -284,7 +284,7 @@ export function generateMap(opts = {}) {
     name: o.name || namer.feature("region"), seed, w, h,
     kmPerCell: Math.round((o.widthKm / w) * 1000) / 1000,
     options: o, terrain,
-    settlements, roads, rivers: riverOut, pois, labels,
+    settlements, roads, rivers: riverOut, pois, labels, events: [], books: [],
     style: "parchment", playerVisible: false, description: "", images: [], gmNotes: "",
     currency: defaultCurrencyRef(), travel: { unit: "km" },
   };

@@ -285,7 +285,8 @@ function smoothPath(ctx, pts, v) {
 export const SETTLEMENT_SIZE = { capital: 15, city: 12, town: 9, village: 6.5, hamlet: 4, castle: 11 };
 
 export function drawOverlay(ctx, st) {
-  const { map, view: v, terrain, width, height, gm, sel, hover, route, draft, brush, cursor, showLabels = true } = st;
+  const { map, view: v, terrain, width, height, gm, sel, hover, route, draft, brush, cursor, showLabels = true, showEvents = true, highlight } = st;
+  const hl = (id) => highlight && highlight.has(id);
   const th = THEMES[map.style] || THEMES.parchment;
   ctx.save();
   ctx.fillStyle = map.style === "atlas" ? "#1d2328" : "#2a2016";
@@ -301,8 +302,14 @@ export function drawOverlay(ctx, st) {
   const isSel = (kind, id) => sel && sel.kind === kind && sel.id === id;
   const visible = (e) => gm || !e.hidden;
 
-  // rivers
   ctx.lineCap = "round"; ctx.lineJoin = "round";
+  // highlighted lines (cited by the open chapter) get a golden glow
+  if (highlight?.size) for (const kind of ["rivers", "roads"]) for (const r of map[kind] || []) {
+    if (!hl(r.id) || !visible(r)) continue;
+    ctx.beginPath(); smoothPath(ctx, r.pts, v);
+    ctx.strokeStyle = "rgba(230,170,40,.55)"; ctx.lineWidth = 10; ctx.stroke();
+  }
+  // rivers
   for (const r of map.rivers || []) {
     if (!visible(r)) continue;
     ctx.beginPath(); smoothPath(ctx, r.pts, v);
@@ -363,6 +370,7 @@ export function drawOverlay(ctx, st) {
     const [sx, sy] = toScreen(v, p.x, p.y);
     if (sx < -40 || sy < -40 || sx > width + 40 || sy > height + 40) continue;
     ctx.globalAlpha = p.hidden ? 0.45 : 1;
+    if (hl(p.id)) glow(ctx, sx, sy, 13 * k);
     poiIcon(ctx, p.type, sx, sy, 9 * k, th, map.style);
     if (isSel("pois", p.id) || hover?.id === p.id) ring(ctx, sx, sy, 10 * k);
     if (v.z >= 5.5 || isSel("pois", p.id)) textHalo(ctx, p.name, sx, sy + 11 * k, `italic ${Math.round(10 * Math.min(1.3, k))}px ${FONT}`, th, map.style);
@@ -376,6 +384,7 @@ export function drawOverlay(ctx, st) {
     if (sx < -60 || sy < -60 || sx > width + 60 || sy > height + 60) continue;
     const size = SETTLEMENT_SIZE[s.type] * k;
     ctx.globalAlpha = s.hidden ? 0.45 : 1;
+    if (hl(s.id)) glow(ctx, sx, sy, size * 0.9 + 6);
     settlementIcon(ctx, s.type, sx, sy, size, th, map.style);
     if (isSel("settlements", s.id) || hover?.id === s.id) ring(ctx, sx, sy, size * 0.9 + 3);
     const showName = { capital: 0, city: 0, town: 2.6, village: 4.5, hamlet: 7, castle: 3.5 }[s.type] <= v.z || isSel("settlements", s.id);
@@ -384,6 +393,19 @@ export function drawOverlay(ctx, st) {
       const font = s.type === "capital" || s.type === "city" ? `${fs}px ${FONT_CAPS}` : s.type === "castle" ? `italic ${fs}px ${FONT}` : `${fs}px ${FONT}`;
       textHalo(ctx, s.name, sx, sy + size * 0.6 + fs * 0.8, font, th, map.style);
     }
+  }
+  ctx.globalAlpha = 1;
+
+  // events pinned on the map
+  if (showEvents) for (const e of map.events || []) {
+    if (!visible(e) || e.x == null) continue;
+    const [sx, sy] = toScreen(v, e.x, e.y);
+    if (sx < -40 || sy < -40 || sx > width + 40 || sy > height + 40) continue;
+    ctx.globalAlpha = e.hidden ? 0.45 : 1;
+    if (hl(e.id)) glow(ctx, sx, sy - 6 * k, 13 * k);
+    eventIcon(ctx, sx, sy, 10 * k, map.style);
+    if (isSel("events", e.id) || hover?.id === e.id) ring(ctx, sx, sy - 6 * k, 12 * k);
+    if (v.z >= 4.5 || isSel("events", e.id)) textHalo(ctx, e.name + (e.date ? ` (${e.date})` : ""), sx, sy + 8 * k, `italic ${Math.round(10.5 * Math.min(1.3, k))}px ${FONT}`, { ...th, ink: "#7a1f12" }, map.style);
   }
   ctx.globalAlpha = 1;
 
@@ -416,6 +438,21 @@ export function drawOverlay(ctx, st) {
   ctx.restore();
 }
 
+function glow(ctx, x, y, r) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, "rgba(240,180,40,.75)"); g.addColorStop(1, "rgba(240,180,40,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
+// a pennant on a pole: the event marker
+export function eventIcon(ctx, x, y, s, style) {
+  const red = style === "atlas" ? "#c0392b" : "#8a2c1c";
+  ctx.setLineDash([]);
+  ctx.strokeStyle = "#3b2a1a"; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - s * 1.4); ctx.stroke();
+  ctx.fillStyle = red; ctx.beginPath();
+  ctx.moveTo(x, y - s * 1.4); ctx.lineTo(x + s * 1.05, y - s * 1.1); ctx.lineTo(x, y - s * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#3b2a1a"; ctx.beginPath(); ctx.ellipse(x, y, s * 0.35, s * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+}
 function ring(ctx, x, y, r) {
   ctx.strokeStyle = "#c0392b"; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
@@ -568,9 +605,14 @@ function distSeg(px, py, ax, ay, bx, by) {
   const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L));
   return Math.hypot(px - ax - t * dx, py - ay - t * dy);
 }
-export function hitTest(map, v, sx, sy, gm) {
+export function hitTest(map, v, sx, sy, gm, showEvents = true) {
   const vis = (e) => gm || !e.hidden;
   const k = Math.max(0.6, Math.min(1.8, v.z / 5));
+  if (showEvents) for (const e of map.events || []) {
+    if (!vis(e) || e.x == null) continue;
+    const [x, y] = toScreen(v, e.x, e.y);
+    if (Math.abs(sx - x - 4 * k) < 9 * k && sy < y + 3 && sy > y - 16 * k) return { kind: "events", id: e.id };
+  }
   for (const s of [...(map.settlements || [])].reverse()) {
     if (!vis(s)) continue;
     const [x, y] = toScreen(v, s.x, s.y);

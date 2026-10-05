@@ -5,7 +5,7 @@ import { drawOverlay, hitTest, toCell, toScreen, vertexAt, SETTLEMENT_SIZE } fro
 // the active tool. All edits go out through callbacks; painting mutates the
 // runtime world directly (fast) and commits once at the end of the stroke.
 export default function MapView({ map, world, terrain, terrainRev, gm, tool, toolOpts, sel, onSelect, onMove, onMoveVertex, onDeleteVertex,
-  onPlace, draft, onDraftPoint, onFinishDraft, fitRev, route, onWaypoint, onPaintDab, onPaintEnd, focus, paused }) {
+  onPlace, draft, onDraftPoint, onFinishDraft, fitRev, route, onWaypoint, onPaintDab, onPaintEnd, focus, paused, showEvents = true, highlight }) {
   const ref = useRef(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState(null);
@@ -51,10 +51,10 @@ export default function MapView({ map, world, terrain, terrainRev, gm, tool, too
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       drawOverlay(ctx, {
         map, view, terrain, width: size.w, height: size.h, gm, sel, hover, route, draft, cursor,
-        brush: tool === "brush" ? { r: toolOpts.brushR } : null,
+        brush: tool === "brush" ? { r: toolOpts.brushR } : null, showEvents, highlight,
       });
     });
-  }, [map, view, terrain, terrainRev, size, gm, sel, hover, route, draft, cursor, tool, toolOpts.brushR, paused]);
+  }, [map, view, terrain, terrainRev, size, gm, sel, hover, route, draft, cursor, tool, toolOpts.brushR, paused, showEvents, highlight]);
 
   // wheel zoom around the pointer
   useEffect(() => {
@@ -108,8 +108,8 @@ export default function MapView({ map, world, terrain, terrainRev, gm, tool, too
           return;
         }
       }
-      const hit = hitTest(map, view, sx, sy, gm);
-      if (hit && gm && (hit.kind === "settlements" || hit.kind === "pois" || hit.kind === "labels")) {
+      const hit = hitTest(map, view, sx, sy, gm, showEvents);
+      if (hit && gm && (hit.kind === "settlements" || hit.kind === "pois" || hit.kind === "labels" || hit.kind === "events")) {
         const it = map[hit.kind].find((x) => x.id === hit.id);
         drag.current = { ...base, mode: "move", hit, ox: it.x - cx, oy: it.y - cy };
         return;
@@ -128,8 +128,8 @@ export default function MapView({ map, world, terrain, terrainRev, gm, tool, too
     const d = drag.current;
     if (!d) {
       if (tool === "select" || tool === "travel") {
-        const h = hitTest(map, view, sx, sy, gm);
-        setHover(h && (h.kind === "settlements" || h.kind === "pois") ? h : null);
+        const h = hitTest(map, view, sx, sy, gm, showEvents);
+        setHover(h && (h.kind === "settlements" || h.kind === "pois" || h.kind === "events") ? h : null);
       }
       return;
     }

@@ -21,7 +21,8 @@ Coordinates are in cells. One cell is `kmPerCell` km; the GM sets this as "width
 
 - `terrain.h` holds the heights, one byte per cell, base64-encoded.
 - `terrain.b` holds the biome codes, one character per cell: `O` sea, `L` lake, `G` plains, `A` farmland, `F` forest, `D` deep forest, `T` taiga, `H` hills, `M` mountains, `S` snowy peaks, `W` marsh, `R` desert.
-- `settlements`, `pois`, `roads`, `rivers` and `labels` are arrays. Every entry carries `{ id, name, description, images[], gmNotes, hidden }`.
+- `settlements`, `pois`, `roads`, `rivers`, `labels` and `events` are arrays. Every entry carries `{ id, name, description, images[], links[], refs[], gmNotes, hidden }`.
+- `books` holds `[{ title, author, url, hidden, chapters: [{ n, title, url, summary, hidden }] }]`.
 - `currency` is `{ currencies: [{ name, realm, rate, denominations: [{ name, abbr, metal, value }] }], feePct }`.
 - `playerVisible` shares the map with players. The player API strips entries marked `hidden` and all `gmNotes`.
 - `style` is `parchment` or `atlas`.
@@ -58,6 +59,7 @@ Names come from four cultures (`names.js`): anglo, italic (`Borgo Ardano`, `Rocc
 - **I** river
 - **B** terrain brush (any biome, water included)
 - **L** label
+- **E** event
 - **M** travel
 
 **Shortcuts:**
@@ -106,6 +108,35 @@ Presets:
 - an "imperial" crown/mark/penny.
 
 Each settlement can name its local coinage.
+
+## Book, links and events
+
+**The book.** The Book tab holds the book(s) the GM is writing.
+- A book has a title, an author and a link. Each chapter has a title, a link to its text (Google Doc, wiki, PDF…) and a summary.
+- Any place, road, river, label or event can cite chapters, with an optional page or note: `refs: [{ book, chapter, note }]`.
+- An open chapter lists everything that cites it, and those items glow on the map.
+- Hidden books and chapters are stripped from the player API.
+
+**Links in descriptions.** Every description and chapter summary is Markdown.
+- `[text](https://…)` opens in a new tab.
+- `[[Name]]` (or `[[Name|shown text]]`) links to whatever on this map carries that name: a place, an event, a book or a chapter.
+- Each item also has a `links: [{ label, url }]` list.
+
+**Deep links.**
+- `/fantasy?map=<id>&sel=<collection>:<id>` opens the map, selects the item and centres on it.
+- `/fantasy?map=<id>&ch=<chapter id>` opens the chapter.
+- The address bar follows the selection (full-screen view only).
+- 🔗 in any inspector copies the link, ready to paste into the manuscript.
+
+**Events.** Events (`events[]`) have:
+- `date`: free text, in the campaign's own calendar;
+- `sort`: a number used to order them, e.g. the year;
+- `type`: battle, siege, founding, plague, treaty, coronation…;
+- `places`: links to the places involved;
+- an optional pin on the map (`x`/`y`);
+- plus the usual description, pictures, citations and links.
+
+They are created with the Event tool (E) by clicking the map, or from the Timeline tab without a pin. The Timeline lists them in order and filters by kind or text. A place's inspector shows "What happened here".
 
 ## Not built yet
 

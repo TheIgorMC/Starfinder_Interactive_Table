@@ -54,9 +54,54 @@ export const LABEL_TYPES = {
   desert: "Desert", sea: "Sea", lake: "Lake", river: "River", note: "Note",
 };
 
-export const COLLECTIONS = {
-  settlements: "Settlement", pois: "Place", roads: "Road", rivers: "River", labels: "Label",
+export const EVENT_TYPES = {
+  battle: "Battle", siege: "Siege", founding: "Founding", fall: "Fall / destruction", disaster: "Disaster",
+  plague: "Plague", treaty: "Treaty", coronation: "Coronation", death: "Death", birth: "Birth", marriage: "Marriage",
+  festival: "Festival", journey: "Journey", discovery: "Discovery", prophecy: "Prophecy", mystery: "Mystery", other: "Event",
 };
+
+export const COLLECTIONS = {
+  settlements: "Settlement", pois: "Place", roads: "Road", rivers: "River", labels: "Label", events: "Event",
+};
+
+// Books the GM writes alongside the map: chapters can be cited by any place
+// or event (`refs: [{ book, chapter, note }]`) and link out to the text.
+export function emptyBook(n = 1) {
+  return { id: newId("b"), title: n > 1 ? `Book ${n}` : "My book", author: "", url: "", description: "", hidden: false, chapters: [] };
+}
+export function emptyChapter(book) {
+  const n = (book.chapters || []).length + 1;
+  return { id: newId("c"), n, title: `Chapter ${n}`, url: "", summary: "", hidden: false };
+}
+export function chapterLabel(book, ch) {
+  return `${book?.title || "?"} · ${ch ? `Ch. ${ch.n}${ch.title ? ` — ${ch.title}` : ""}` : "?"}`;
+}
+// every item that cites a chapter
+export function citing(map, chapterId) {
+  const out = [];
+  for (const kind of Object.keys(COLLECTIONS)) {
+    for (const e of map[kind] || []) if ((e.refs || []).some((r) => r.chapter === chapterId)) out.push({ kind, item: e });
+  }
+  return out;
+}
+// "[[Name]]" in a description → link to whatever carries that name
+export function resolveName(map, name) {
+  const q = name.trim().toLowerCase();
+  for (const kind of Object.keys(COLLECTIONS)) {
+    const e = (map[kind] || []).find((x) => (x.name || "").toLowerCase() === q);
+    if (e) return { kind, id: e.id };
+  }
+  for (const b of map.books || []) {
+    if ((b.title || "").toLowerCase() === q) return { kind: "book", id: b.id };
+    const ch = (b.chapters || []).find((c) => (c.title || "").toLowerCase() === q || `${b.title} ${c.n}`.toLowerCase() === q || `ch. ${c.n}` === q && (map.books || []).length === 1);
+    if (ch) return { kind: "chapter", id: ch.id, book: b.id };
+  }
+  return null;
+}
+export function findChapter(map, chapterId) {
+  for (const b of map.books || []) { const c = (b.chapters || []).find((x) => x.id === chapterId); if (c) return { book: b, chapter: c }; }
+  return null;
+}
 
 export function newId(prefix) {
   return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
