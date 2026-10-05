@@ -79,7 +79,10 @@ export default function BooksPanel({ map, gm, setMap, openChapter, setOpenChapte
           ) : (
             <div className="fm-row between">
               <div><b className="fm-booktitle">{b.title}</b>{b.author && <span className="fm-muted"> — {b.author}</span>}{b.url && <a className="fm-ext" href={b.url} target="_blank" rel="noopener noreferrer"> ↗</a>}</div>
-              {gm && <button className="fm-link" onClick={() => setEditBook(b.id)}>edit</button>}
+              <span className="fm-headbtns">
+                <button className="fm-close" title="Copy a link to this book" onClick={() => onCopyLink({ kind: "book", id: b.id })}>🔗</button>
+                {gm && <button className="fm-link" onClick={() => setEditBook(b.id)}>edit</button>}
+              </span>
             </div>
           )}
           <ol className="fm-chapters">

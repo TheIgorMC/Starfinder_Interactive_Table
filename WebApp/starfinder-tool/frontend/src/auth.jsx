@@ -35,7 +35,7 @@ export function RequireAuth({ role, children }) {
   const location = useLocation();
 
   if (user === undefined) return null; // still checking session
-  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (!user) return <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
   if (role && role !== "any" && user.role !== role) return <Navigate to="/" replace />;
   return children;
 }

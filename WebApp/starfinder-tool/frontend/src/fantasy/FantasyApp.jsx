@@ -47,7 +47,7 @@ function readDeepLink() {
   try {
     const q = new URLSearchParams(window.location.search);
     const [kind, id] = (q.get("sel") || "").split(":");
-    return { map: Number(q.get("map")) || null, sel: kind && id ? { kind, id } : null, ch: q.get("ch") || null };
+    return { map: Number(q.get("map")) || null, sel: kind && id ? { kind, id } : null, ch: q.get("ch") || null, book: q.get("book") || null };
   } catch { return {}; }
 }
 
@@ -97,6 +97,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
         }
       }
       if (d.ch && findChapter(data, d.ch)) { setTab("book"); setOpenChapter(d.ch); }
+      if (d.book && (data.books || []).some((b) => b.id === d.book)) setTab("book");
       deep.current = {};
     }
     try { localStorage.setItem("fm-last", String(id)); } catch { /* private mode */ }
@@ -336,7 +337,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
   };
   const linkFor = (t) => {
     const base = `${window.location.origin}/fantasy?map=${cur?.id}`;
-    return t.kind === "chapter" ? `${base}&ch=${t.id}` : `${base}&sel=${t.kind}:${t.id}`;
+    return t.kind === "map" ? base : t.kind === "chapter" ? `${base}&ch=${t.id}` : t.kind === "book" ? `${base}&book=${t.id}` : `${base}&sel=${t.kind}:${t.id}`;
   };
   const copyLink = async (t) => {
     const url = linkFor(t);
@@ -515,7 +516,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
               {tab === "details" && (sel
                 ? <Inspector map={map} sel={sel} gm={gm} update={update} remove={remove} onClose={() => setSel(null)} unit={unit} currencies={treasury.currencies}
                     onLink={onLink} onCopyLink={copyLink} pinning={!!pinFor} onPinEvent={(id) => { if (pinFor) { setPinFor(null); setToolState("select"); } else { setPinFor(id); setToolState("event"); setDraft(null); } }} />
-                : <MapProperties map={map} gm={gm} setMap={setMap} onRebuildRoads={rebuildRoads} onRegenerate={() => setDialog({ mode: "regen" })} onExport={exportJson} onDelete={deleteMap} onLink={onLink} />)}
+                : <MapProperties map={map} gm={gm} setMap={setMap} onRebuildRoads={rebuildRoads} onRegenerate={() => setDialog({ mode: "regen" })} onExport={exportJson} onDelete={deleteMap} onLink={onLink} onCopyLink={copyLink} />)}
               {tab === "timeline" && <TimelinePanel map={map} gm={gm} onNew={newEvent} onPick={pick} showEvents={showEvents} setShowEvents={setShowEvents} onLink={onLink} />}
               {tab === "book" && <BooksPanel map={map} gm={gm} setMap={setMap} openChapter={openChapter} setOpenChapter={setOpenChapter} onPick={pick} onLink={onLink} onCopyLink={copyLink} />}
               {tab === "travel" && <TravelPanel map={map} world={world} trip={trip} setTrip={setTrip} unit={unit} />}

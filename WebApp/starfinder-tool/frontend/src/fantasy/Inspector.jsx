@@ -249,7 +249,7 @@ export function Inspector({ map, sel, gm, update, remove, onClose, unit, currenc
 }
 
 // map-wide properties, shown when nothing is selected
-export function MapProperties({ map, gm, setMap, onRebuildRoads, onRegenerate, onExport, onDelete, onLink }) {
+export function MapProperties({ map, gm, setMap, onRebuildRoads, onRegenerate, onExport, onDelete, onLink, onCopyLink }) {
   const set = (patch) => setMap((m) => ({ ...m, ...patch }));
   const widthKm = Math.round(map.w * (map.kmPerCell || 1));
   return (
@@ -257,7 +257,8 @@ export function MapProperties({ map, gm, setMap, onRebuildRoads, onRegenerate, o
       <div className="fm-head"><div>
         <div className="fm-kicker">Region map · {map.w}×{map.h} cells · seed {map.seed}</div>
         {gm ? <input className="fm-title-in" value={map.name} onChange={(e) => set({ name: e.target.value })} /> : <h2 className="fm-title">{map.name}</h2>}
-      </div></div>
+      </div>
+      <div className="fm-headbtns"><button className="fm-close" onClick={() => onCopyLink({ kind: "map" })} title="Copy a link to this map">🔗</button></div></div>
       {gm && (
         <div className="fm-sec fm-grid2">
           <label>Width of the map (km)<input className="fm-in" type="number" min={5} value={widthKm} onChange={(e) => set({ kmPerCell: Math.max(0.01, Number(e.target.value) / map.w) })} /></label>

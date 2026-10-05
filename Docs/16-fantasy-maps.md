@@ -125,6 +125,8 @@ Each settlement can name its local coinage.
 **Deep links.**
 - `/fantasy?map=<id>&sel=<collection>:<id>` opens the map, selects the item and centres on it.
 - `/fantasy?map=<id>&ch=<chapter id>` opens the chapter.
+- `/fantasy?map=<id>&book=<book id>` opens the Book tab, and `/fantasy?map=<id>` opens the map itself.
+- Someone not logged in is sent to the login page and then on to the link: the query string survives the redirect (`RequireAuth` keeps `pathname + search`).
 - The address bar follows the selection (full-screen view only).
 - 🔗 in any inspector copies the link, ready to paste into the manuscript.
 
