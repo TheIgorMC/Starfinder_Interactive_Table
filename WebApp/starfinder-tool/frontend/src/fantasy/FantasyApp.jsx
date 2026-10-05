@@ -68,14 +68,16 @@ export default function FantasyApp({ embedded = false, active = true }) {
   const ownVersions = useRef(new Set());
 
   // ---- loading / saving ----------------------------------------------------
+  // only the GM lists maps; everyone else arrives on one map by its link
   const refreshList = useCallback(async () => {
+    if (!gm) { setList([]); return []; }
     const r = await req("GET", "/api/fantasy");
     if (r.ok) setList(r.data);
     return r.data || [];
-  }, []);
+  }, [gm]);
   const open = useCallback(async (id) => {
     const r = await req("GET", `/api/fantasy/${id}`);
-    if (!r.ok) { setError(r.data?.error || "could not open the map"); return; }
+    if (!r.ok) { if (gm) setError(r.data?.error || "could not open the map"); else setMissing(true); return; }
     past.current = []; future.current = [];
     // maps made before events/books existed
     const loaded = { events: [], books: [], ...r.data.data };
@@ -104,6 +106,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
   }, []);
   useEffect(() => {
     if (user === undefined) return;
+    if (!gm) { setList([]); if (deep.current.map) open(deep.current.map); return; }
     refreshList().then((l) => {
       let last = null;
       try { last = Number(localStorage.getItem("fm-last")); } catch { /* ignore */ }
@@ -195,6 +198,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
   const [showEvents, setShowEvents] = useState(true);
   const [pinFor, setPinFor] = useState(null); // event waiting for a map click
   const [toast, setToast] = useState("");
+  const [missing, setMissing] = useState(false);
   const setTool = (t) => { setToolState(t); setDraft(null); setPinFor(null); if (t === "travel") setTab("travel"); };
   const select = (s) => { setSel(s); if (s) setTab("details"); };
 
@@ -362,6 +366,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
     await new Promise((r) => setTimeout(r, 30));
     const data = generateMap(opts);
     data.currency = defaultTreasury();
+    data.playerVisible = true; // public by default: the atlas is meant to be shared by link
     const r = await req("POST", "/api/fantasy", { data, name: data.name });
     setBusy(false);
     if (!r.ok) { setError(r.data?.error || "could not create the map"); return; }
@@ -440,19 +445,25 @@ export default function FantasyApp({ embedded = false, active = true }) {
 
   // ---- render ------------------------------------------------------------------
   if (user === undefined || list === null) return <div className="fm fm-empty">Unrolling the maps…</div>;
+  if (!gm && !map) return (
+    <div className="fm fm-empty">
+      <div className="fm-brand">Fantasy Atlas</div>
+      {missing || !deep.current.map ? <p>{missing ? "This map doesn't exist or isn't public." : "Open a map from the link you were given."}</p> : <p>Unrolling the map…</p>}
+    </div>
+  );
   const STATUS = { saved: "Saved", pending: "Unsaved changes", saving: "Saving…", conflict: "Conflict", error: "Save failed" };
   const tools = TOOLS.filter((t) => gm || !t.gm);
   return (
     <div className={"fm" + (embedded ? " embedded" : "")}>
       <header className="fm-top">
-        {!embedded && <Link to="/" className="fm-back" title="Back to SIT">‹</Link>}
+        {gm && !embedded && <Link to="/" className="fm-back" title="Back to SIT">‹</Link>}
         <div className="fm-brand">Fantasy Atlas</div>
-        {list.length > 0 && (
+        {gm && list.length > 0 && (
           <select className="fm-in fm-picker" value={cur?.id || ""} onChange={(e) => {
             if (gm && mapRef.current !== savedRef.current && !window.confirm("Leave this map without saving?")) return;
             open(Number(e.target.value));
           }}>
-            {list.map((m) => <option key={m.id} value={m.id}>{m.name}{gm && m.player_visible ? " · shared" : ""}</option>)}
+            {list.map((m) => <option key={m.id} value={m.id}>{m.name}{m.player_visible ? "" : " · private"}</option>)}
           </select>
         )}
         {gm && <button className="fm-btn" onClick={() => setDialog({ mode: "new" })}>New map</button>}
@@ -482,7 +493,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
             <h2 className="fm-title">No region drawn yet</h2>
             <p>Generate a territory — coast, rivers, forests, mountains, towns and the roads between them — then edit everything by hand.</p>
             <button className="fm-btn primary" onClick={() => setDialog({ mode: "new" })}>Generate a map</button>
-          </> : <><h2 className="fm-title">No maps yet</h2><p>The GM hasn't shared a map with the players.</p></>}
+          </> : null}
         </div>
       ) : (
         <div className="fm-body">

@@ -263,7 +263,7 @@ export function MapProperties({ map, gm, setMap, onRebuildRoads, onRegenerate, o
         <div className="fm-sec fm-grid2">
           <label>Width of the map (km)<input className="fm-in" type="number" min={5} value={widthKm} onChange={(e) => set({ kmPerCell: Math.max(0.01, Number(e.target.value) / map.w) })} /></label>
           <label>Units<select className="fm-in" value={map.travel?.unit || "km"} onChange={(e) => set({ travel: { ...(map.travel || {}), unit: e.target.value } })}><option value="km">Kilometres</option><option value="mi">Miles</option></select></label>
-          <label className="fm-check"><input type="checkbox" checked={!!map.playerVisible} onChange={(e) => set({ playerVisible: e.target.checked })} /> Players can open this map</label>
+          <label className="fm-check"><input type="checkbox" checked={!!map.playerVisible} onChange={(e) => set({ playerVisible: e.target.checked })} /> Public — anyone with a link can view it (read-only, no login)</label>
         </div>
       )}
       <div className="fm-sec fm-stat">

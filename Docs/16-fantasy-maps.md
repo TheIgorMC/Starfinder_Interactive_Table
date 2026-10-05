@@ -1,6 +1,13 @@
 # 16 — Fantasy Atlas (`/fantasy`)
 
-A medieval region-map generator and editor that sits next to the galaxy tools. It covers one territory of a few hundred kilometres (not planets or galaxies). It is reachable from the launcher, from the GM console's "Fantasy Atlas" tab, and at `/fantasy`. The GM edits; players get a read-only view of the maps the GM shares, with travel times and the coin converter.
+A medieval region-map generator and editor. It covers one territory of a few hundred kilometres (not planets or galaxies).
+
+It lives in the SIT stack but is a **separate, public feature**. It is not in the launcher or in the GM console, and is reached **only by direct link** (`/fantasy?map=…`).
+
+- **Readers:** anyone with the link sees a map marked *public* (`playerVisible`) read-only, with travel times and the coin converter. No login is needed.
+- **The GM:** logged in, opens `/fantasy` to list, generate and edit maps.
+- **Hidden content:** private maps answer 404 to everyone else, and hidden items and GM notes are stripped from the public view.
+- **New maps:** start public; untick the box to keep a draft private.
 
 It is inspired by [Azgaar's Fantasy Map Generator](https://azgaar.github.io/Fantasy-Map-Generator/), on the generation side (heightmap → rivers → biomes → burgs → routes) and in the parchment look. It is scaled down to a single region, so every place can carry a description and pictures.
 
@@ -9,7 +16,7 @@ It is inspired by [Azgaar's Fantasy Map Generator](https://azgaar.github.io/Fant
 | What | Where |
 |---|---|
 | Storage | `fantasy_maps` table (`migrations/022`): one JSON document per map, `version` for optimistic saves |
-| API | `backend/src/routes/fantasy.js`: `GET /api/fantasy` (list), `GET/PUT/DELETE /api/fantasy/:id`, `POST /api/fantasy`. A PUT with a stale `baseVersion` → 409. Every write broadcasts `fantasy:updated` |
+| API | `backend/src/routes/fantasy.js`: `GET /api/fantasy/:id` is public (no login; GM gets the full map, everyone else only public maps, stripped). `GET /api/fantasy` (list), `POST`, `PUT /:id` and `DELETE /:id` are GM-only. A PUT with a stale `baseVersion` → 409. Every write broadcasts `fantasy:updated` |
 | Pictures | media library, category `fantasy` (`POST /api/media/fantasy`, served at `/api/media/files/fantasy/…`) |
 | Generator & logic | `frontend/src/fantasy/lib/` — `generate.js`, `names.js`, `travel.js`, `currency.js`, `path.js` (A*), `model.js` (data model, encode/decode). Pure JS; tests: `node --test src/fantasy/lib/fantasy.test.js` from `frontend/` |
 | Rendering | `frontend/src/fantasy/render.js`: terrain is painted once into an off-screen canvas (8 px per cell) and only repainted where the brush touches. Rivers, roads, places, labels and routes are vector, redrawn every frame |
@@ -24,7 +31,7 @@ Coordinates are in cells. One cell is `kmPerCell` km; the GM sets this as "width
 - `settlements`, `pois`, `roads`, `rivers`, `labels` and `events` are arrays. Every entry carries `{ id, name, description, images[], links[], refs[], gmNotes, hidden }`.
 - `books` holds `[{ title, author, url, hidden, chapters: [{ n, title, url, summary, hidden }] }]`.
 - `currency` is `{ currencies: [{ name, realm, rate, denominations: [{ name, abbr, metal, value }] }], feePct }`.
-- `playerVisible` shares the map with players. The player API strips entries marked `hidden` and all `gmNotes`.
+- `playerVisible` makes the map public: readable by link, without login. The public API strips entries marked `hidden`, all `gmNotes`, and hidden books and chapters.
 - `style` is `parchment` or `atlas`.
 
 A medium map (240×160) is about 120 KB.
@@ -126,7 +133,7 @@ Each settlement can name its local coinage.
 - `/fantasy?map=<id>&sel=<collection>:<id>` opens the map, selects the item and centres on it.
 - `/fantasy?map=<id>&ch=<chapter id>` opens the chapter.
 - `/fantasy?map=<id>&book=<book id>` opens the Book tab, and `/fantasy?map=<id>` opens the map itself.
-- Someone not logged in is sent to the login page and then on to the link: the query string survives the redirect (`RequireAuth` keeps `pathname + search`).
+- No login is needed to follow a link to a public map.
 - The address bar follows the selection (full-screen view only).
 - 🔗 in any inspector copies the link, ready to paste into the manuscript.
 

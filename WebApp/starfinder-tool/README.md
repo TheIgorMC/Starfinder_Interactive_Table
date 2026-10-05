@@ -226,7 +226,7 @@ tiles. The list is one registry, `frontend/src/apps.jsx`.
 |---|---|
 | `/` | Any — app launcher (tiles depend on role; shared displays always listed). |
 | `/galaxy` | Any device — galaxy viewer (map → system → planet → settlement), desktop + mobile layouts. **Any login required.** |
-| `/fantasy` | Any device — Fantasy Atlas: medieval region maps (generate + edit for the GM; players see shared maps read-only, with travel times and the coin converter). Also a GM-console tab. **Any login required.** |
+| `/fantasy` | Any device — Fantasy Atlas: medieval region maps. A separate public feature reached **only by direct link** (not in the launcher or the GM console): anyone sees a public map read-only, without login; the logged-in GM generates and edits. |
 | `/galaxy-editor` | GM PC — Galaxy Editor full screen (also a GM-console tab). **GM login required.** |
 | `/gm` | PC — GM console + "Connect tracker" button (Web Serial, Chrome/Edge). **GM login required.** |
 | `/player` | Player tablet / mobile — character sheet, scoped to the logged-in player's own character. **Player login required.** |

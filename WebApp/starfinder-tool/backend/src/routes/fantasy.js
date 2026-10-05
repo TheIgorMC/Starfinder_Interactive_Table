@@ -1,17 +1,19 @@
 import { Router } from "express";
 import { pool } from "../db.js";
-import { requireAuth, requireGM } from "../auth.js";
+import { requireGM } from "../auth.js";
 import { broadcast } from "../ws.js";
 
-// Fantasy Map Generator (/fantasy, Docs/16-fantasy-maps.md). Each map is
-// one JSON document edited whole by the GM's editor, saved with an
-// optimistic version check like the galaxy project. Players only see maps
-// the GM marked `playerVisible`, with hidden places and GM notes stripped.
+// Fantasy Atlas (/fantasy, Docs/16-fantasy-maps.md) — a public, stand-alone
+// feature reached only by direct link. Each map is one JSON document edited
+// whole by the GM, saved with an optimistic version check like the galaxy
+// project. Anyone (no login) can read a map marked public (`playerVisible`),
+// with hidden items and GM notes stripped; only the GM lists, writes or
+// deletes maps.
 const r = Router();
 
 const COLLECTIONS = ["settlements", "pois", "roads", "rivers", "labels", "events"];
 
-function forPlayers(data) {
+function forPublic(data) {
   const out = { ...data };
   for (const k of COLLECTIONS) out[k] = (data[k] || []).filter((e) => !e.hidden).map(({ gmNotes: _n, ...e }) => e);
   delete out.gmNotes;
@@ -22,20 +24,21 @@ function forPlayers(data) {
 
 const isMap = (d) => d && typeof d === "object" && Number.isInteger(d.w) && Number.isInteger(d.h) && d.terrain && typeof d.terrain === "object";
 
-r.get("/", requireAuth, async (req, res) => {
+r.get("/", requireGM, async (req, res) => {
   const { rows } = await pool.query(
     "SELECT id, name, version, updated_at, COALESCE((data->>'playerVisible')::boolean, false) AS player_visible FROM fantasy_maps ORDER BY updated_at DESC",
   );
-  res.json(req.user.role === "gm" ? rows : rows.filter((m) => m.player_visible));
+  res.json(rows);
 });
 
-r.get("/:id", requireAuth, async (req, res) => {
+// public: no login needed
+r.get("/:id", async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM fantasy_maps WHERE id = $1", [Number(req.params.id) || 0]);
   const m = rows[0];
   if (!m) return res.status(404).json({ error: "no such map" });
-  if (req.user.role !== "gm") {
+  if (req.user?.role !== "gm") {
     if (!m.data.playerVisible) return res.status(404).json({ error: "no such map" });
-    return res.json({ id: m.id, name: m.name, version: m.version, updated_at: m.updated_at, data: forPlayers(m.data) });
+    return res.json({ id: m.id, name: m.name, version: m.version, updated_at: m.updated_at, data: forPublic(m.data) });
   }
   res.json({ id: m.id, name: m.name, version: m.version, updated_at: m.updated_at, data: m.data });
 });
