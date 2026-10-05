@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { DEFAULT_OPTIONS, SIZES, TEMPLATES, CLIMATES } from "./lib/generate.js";
-import { CULTURES } from "./lib/names.js";
+import { DEFAULT_OPTIONS, SIZES, TEMPLATES, CLIMATES } from "@galaxy-core/fantasy/generate.js";
+import { CULTURES } from "@galaxy-core/fantasy/names.js";
 
 // Options for a new region (or a re-roll of the current one).
 export default function GeneratorDialog({ initial, title, onGenerate, onCancel, busy }) {

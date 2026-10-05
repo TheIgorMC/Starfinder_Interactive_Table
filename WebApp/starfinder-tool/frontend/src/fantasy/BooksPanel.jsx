@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { emptyBook, emptyChapter, citing, COLLECTIONS } from "./lib/model.js";
+import { emptyBook, emptyChapter, citing, COLLECTIONS } from "@galaxy-core/fantasy/model.js";
 import { Prose } from "./Inspector.jsx";
 
 // The GM's book(s): chapters with a link to the text and a summary; every

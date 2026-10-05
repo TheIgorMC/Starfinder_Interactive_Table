@@ -18,7 +18,8 @@ It is inspired by [Azgaar's Fantasy Map Generator](https://azgaar.github.io/Fant
 | Storage | `fantasy_maps` table (`migrations/022`): one JSON document per map, `version` for optimistic saves |
 | API | `backend/src/routes/fantasy.js`: `GET /api/fantasy/:id` is public (no login; GM gets the full map, everyone else only public maps, stripped). `GET /api/fantasy` (list), `POST`, `PUT /:id` and `DELETE /:id` are GM-only. A PUT with a stale `baseVersion` → 409. Every write broadcasts `fantasy:updated` |
 | Pictures | media library, category `fantasy` (`POST /api/media/fantasy`, served at `/api/media/files/fantasy/…`) |
-| Generator & logic | `frontend/src/fantasy/lib/` — `generate.js`, `names.js`, `travel.js`, `currency.js`, `path.js` (A*), `model.js` (data model, encode/decode). Pure JS; tests: `node --test src/fantasy/lib/fantasy.test.js` from `frontend/` |
+| Generator & logic | `galaxy-core/fantasy/` (shared: frontend via `@galaxy-core/fantasy/…`, backend and MCP server by path) — `generate.js`, `names.js`, `travel.js`, `currency.js`, `path.js` (A*), `model.js` (data model, encode/decode), `tools.js` (MCP tools). Pure JS; tests: `node --test galaxy-core/fantasy/fantasy.test.js` |
+| MCP tools | `galaxy-core/fantasy/tools.js` → run by the backend at `POST /api/fantasy/tool/:name` (GM / service token) → exposed by the MCP server as `fantasy_*` |
 | Rendering | `frontend/src/fantasy/render.js`: terrain is painted once into an off-screen canvas (8 px per cell) and only repainted where the brush touches. Rivers, roads, places, labels and routes are vector, redrawn every frame |
 | UI | `FantasyApp.jsx` (shell, save, undo, tools), `MapView.jsx` (canvas input), `Inspector.jsx`, `TravelPanel.jsx`, `Treasury.jsx`, `IndexPanel.jsx`, `GeneratorDialog.jsx`, `fantasy.css` |
 
@@ -147,9 +148,26 @@ Each settlement can name its local coinage.
 
 They are created with the Event tool (E) by clicking the map, or from the Timeline tab without a pin. The Timeline lists them in order and filters by kind or text. A place's inspector shows "What happened here".
 
+## MCP tools (`fantasy_*`)
+
+The definitions are in `galaxy-core/fantasy/tools.js`. The backend runs them one at a time against the stored map; a tool that changes the map saves it with a version bump and broadcasts `fantasy:updated`, so an open editor reloads, or flags a conflict if it has unsaved edits.
+
+**Conventions:**
+- Positions are in **km from the north-west corner**: `x_km` east, `y_km` south. Alternatively pass `near: "<place>"` plus `dx_km` / `dy_km`.
+- Any item can be given by id or by name.
+- `mapId` defaults to the most recently edited map.
+- Every item returned carries its `link`: `SIT_PUBLIC_URL` + `/fantasy?map=…&sel=…`, or a relative link when `SIT_PUBLIC_URL` is unset.
+
+**The tools:**
+- **Maps:** `list_maps`, `generate_map`, `get_map`, `set_map_info`.
+- **Finding things:** `search`, `get_item`. `get_item` returns everything about one item: description, notes, pictures, links, cited chapters, events there, terrain and the nearest settlements.
+- **Adding:** `add_settlement`, `add_place`, `add_label`, `add_event`, `add_road`. `add_road` follows the terrain between named places.
+- **Editing:** `update_item`, `add_link`, `delete_item`, `paint_terrain`.
+- **The book:** `upsert_book`, `upsert_chapter`, `cite`.
+- **Calculators:** `travel_time` (every mode, at a pace), `convert_currency`.
+
 ## Not built yet
 
 - Political borders and realms (the label tool can name regions by hand).
 - City plans for a settlement, in the spirit of Watabou's Medieval Fantasy City Generator.
 - Sea routes between ports.
-- MCP tools for the atlas.

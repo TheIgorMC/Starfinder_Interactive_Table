@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { requireGM } from "../auth.js";
+import { z } from "zod";
 import { broadcast } from "../ws.js";
+import { setZod } from "../../../galaxy-core/tools/zod.js";
 
 // Fantasy Atlas (/fantasy, Docs/16-fantasy-maps.md) — a public, stand-alone
 // feature reached only by direct link. Each map is one JSON document edited
@@ -77,6 +79,78 @@ r.delete("/:id", requireGM, async (req, res) => {
   await pool.query("DELETE FROM fantasy_maps WHERE id = $1", [Number(req.params.id) || 0]);
   broadcast("fantasy:updated", { id: Number(req.params.id), deleted: true });
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// MCP tools (galaxy-core/fantasy/tools.js), run here against the stored map
+// like the galaxy tools; one at a time, saved with a version bump when they
+// change something, broadcast like an editor save.
+setZod(z);
+let toolDefs = null;
+async function tools() {
+  if (!toolDefs) toolDefs = (await import("../../../galaxy-core/fantasy/tools.js")).fantasyTools();
+  return toolDefs;
+}
+const PUBLIC = (process.env.SIT_PUBLIC_URL || "").replace(/\/$/, "");
+function linkFor(mapId, params = {}) {
+  const q = new URLSearchParams({ map: String(mapId), ...params });
+  return `${PUBLIC}/fantasy?${q.toString().replace(/%3A/g, ":")}`;
+}
+const result = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
+const errorResult = (msg) => ({ content: [{ type: "text", text: msg }], isError: true });
+
+let chain = Promise.resolve();
+function queue(fn) {
+  const run = chain.then(fn, fn);
+  chain = run.catch(() => {});
+  return run;
+}
+
+r.get("/tools/list", requireGM, async (_req, res) => res.json((await tools()).map(({ name, description, scope }) => ({ name, description, scope }))));
+
+r.post("/tool/:name", requireGM, async (req, res) => {
+  const t = (await tools()).find((x) => x.name === req.params.name);
+  if (!t) return res.status(404).json({ error: `unknown fantasy tool: ${req.params.name}` });
+  let input;
+  try { input = z.object(t.shape).parse(req.body || {}); } catch (err) { return res.status(400).json({ error: "invalid arguments", issues: err.issues }); }
+  try {
+    const out = await queue(async () => {
+      if (t.scope === "global") {
+        const host = {
+          link: linkFor,
+          listMaps: async () => (await pool.query(
+            `SELECT id, name, version, updated_at, COALESCE((data->>'playerVisible')::boolean, false) AS public,
+                    data->>'w' AS w, data->>'kmPerCell' AS kpc, jsonb_array_length(COALESCE(data->'settlements','[]')) AS settlements,
+                    jsonb_array_length(COALESCE(data->'events','[]')) AS events
+             FROM fantasy_maps ORDER BY updated_at DESC`)).rows.map((m) => ({ id: m.id, name: m.name, public: m.public, width_km: Math.round(Number(m.w) * Number(m.kpc)), settlements: Number(m.settlements), events: Number(m.events), updated_at: m.updated_at, link: linkFor(m.id) })),
+          createMap: async (data) => {
+            const { rows } = await pool.query("INSERT INTO fantasy_maps (name, data) VALUES ($1, $2) RETURNING id, version", [data.name, JSON.stringify(data)]);
+            broadcast("fantasy:updated", { id: rows[0].id, version: rows[0].version, source: "tool" });
+            return rows[0];
+          },
+        };
+        return { res: result(await t.run(input, host)) };
+      }
+      const { rows } = input.mapId != null
+        ? await pool.query("SELECT * FROM fantasy_maps WHERE id = $1", [input.mapId])
+        : await pool.query("SELECT * FROM fantasy_maps ORDER BY updated_at DESC LIMIT 1");
+      const m = rows[0];
+      if (!m) return { res: errorResult(input.mapId != null ? `No map ${input.mapId}.` : "No fantasy map yet — use generate_map.") };
+      const map = { events: [], books: [], ...m.data };
+      const out2 = t.run(input, { map, id: m.id, link: (p) => linkFor(m.id, p) });
+      if (out2.map) {
+        const saved = await pool.query(
+          "UPDATE fantasy_maps SET data = $2, name = $3, version = version + 1, updated_at = now() WHERE id = $1 RETURNING version",
+          [m.id, JSON.stringify(out2.map), out2.map.name || m.name],
+        );
+        broadcast("fantasy:updated", { id: m.id, version: saved.rows[0].version, source: "tool" });
+      }
+      return { res: result(out2.result) };
+    });
+    res.json(out.res);
+  } catch (err) {
+    res.json(errorResult(err.message || String(err)));
+  }
 });
 
 export default r;

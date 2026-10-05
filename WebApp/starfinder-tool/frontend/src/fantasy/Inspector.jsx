@@ -1,7 +1,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { SETTLEMENT_TYPES, POI_TYPES, ROAD_TYPES, LABEL_TYPES, EVENT_TYPES, COLLECTIONS, polyLength, fmtDist, fmtPop, resolveName, findChapter, chapterLabel } from "./lib/model.js";
+import { SETTLEMENT_TYPES, POI_TYPES, ROAD_TYPES, LABEL_TYPES, EVENT_TYPES, COLLECTIONS, polyLength, fmtDist, fmtPop, resolveName, findChapter, chapterLabel } from "@galaxy-core/fantasy/model.js";
 
 // Photos: upload into the media library (category "fantasy") or link a URL.
 export function ImageField({ images = [], onChange, readOnly }) {

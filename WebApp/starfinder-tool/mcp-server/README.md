@@ -5,8 +5,11 @@ primarily claude.ai's custom connector — import, edit and manage campaign
 data, the compendium hand-review workflow, characters, the mood
 tablet/projector, and the **galaxy** (`galaxy_*` tools: every GalaxyGen
 generator/editing operation, run by the backend on the stored project —
-see `../galaxy-core/tools/README.md`), through the same backend REST API
-the web UI uses.
+see `../galaxy-core/tools/README.md`), the **Fantasy Atlas** (`fantasy_*`
+tools: read, search, add/edit settlements, places, roads, labels, events,
+terrain, book chapters and citations, travel times, coin conversion — run by
+the backend on the stored maps, see `Docs/16-fantasy-maps.md`), through the
+same backend REST API the web UI uses.
 
 ## How it fits together
 
@@ -70,4 +73,6 @@ at `MCP_PUBLIC_URL` and forwards to its port (`7601` by default in
 See `src/tools.js` — compendium search/get, the review workflow
 (list/get/update), the campaign wiki (list/get/upsert/link/import a .tgn
 export), characters (list/get/update — inventory, HP, everything on the
-sheet), and pushing to the mood tablet/projector/mood lights.
+sheet), pushing to the mood tablet/projector/mood lights, plus the
+`galaxy_*` and `fantasy_*` families whose definitions live in
+`../galaxy-core/tools/` and `../galaxy-core/fantasy/tools.js`.

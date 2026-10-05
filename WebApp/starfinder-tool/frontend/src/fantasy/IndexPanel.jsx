@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SETTLEMENT_TYPES, POI_TYPES, LABEL_TYPES, ROAD_TYPES, EVENT_TYPES, fmtPop } from "./lib/model.js";
+import { SETTLEMENT_TYPES, POI_TYPES, LABEL_TYPES, ROAD_TYPES, EVENT_TYPES, fmtPop } from "@galaxy-core/fantasy/model.js";
 
 // Everything on the map, searchable; a click selects it and centres the map.
 export default function IndexPanel({ map, gm, onPick }) {

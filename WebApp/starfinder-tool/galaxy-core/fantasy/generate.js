@@ -524,3 +524,21 @@ export function regenerateRoads(map, world) {
   return buildRoads(w2, settlements, rngFrom((map.seed || "x") + ":r2"));
 }
 export { forEachCellOnLine };
+
+// A road from a to b (cell coords) that follows the terrain: avoids water,
+// prefers flat ground, reuses existing roads, pays for bridges. → points.
+export function traceRoad(world, a, b) {
+  const cell = ([x, y]) => Math.min(world.h - 1, Math.max(0, Math.floor(y))) * world.w + Math.min(world.w - 1, Math.max(0, Math.floor(x)));
+  const s = cell(a), t = cell(b);
+  if (s === t) return [a, b];
+  const step = (p, q, diag) => {
+    const cost = BUILD_COST[world.biome[q]];
+    if (cost === undefined) return Infinity;
+    const c = (cost + Math.abs(world.height[q] - world.height[p]) * 40) * (world.road?.[q] ? 0.4 : 1) + (world.river?.[q] && !world.road?.[q] ? 6 : 0);
+    return diag ? c * 1.4142 : c;
+  };
+  const r = findPath({ w: world.w, h: world.h, start: s, target: t, isGoal: (k) => k === t, step, minStep: 0.4 });
+  if (!r) return null;
+  const mid = r.path.slice(1, -1).map((k) => [k % world.w + 0.5, Math.floor(k / world.w) + 0.5]);
+  return simplify([a, ...mid, b], 0.6);
+}

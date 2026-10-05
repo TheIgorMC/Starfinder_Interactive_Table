@@ -15,6 +15,7 @@ services:
       - OLLAMA_URL=${OLLAMA_URL:-http://fisso:11434/v1}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:8b}
       - MCP_SERVICE_TOKEN=${MCP_SERVICE_TOKEN:-}
+      - SIT_PUBLIC_URL=${SIT_PUBLIC_URL:-}
     volumes:
       - /mnt/data_ssd/nas_share/SIT/uploads:/app/uploads
       - /mnt/data_ssd/nas_share/SIT/aon-cache:/app/aon-cache

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { MODES, PACES, computeRoute, schedule, fmtDuration } from "./lib/travel.js";
-import { fmtDist } from "./lib/model.js";
+import { MODES, PACES, computeRoute, schedule, fmtDuration } from "@galaxy-core/fantasy/travel.js";
+import { fmtDist } from "@galaxy-core/fantasy/model.js";
 
 const BY_NAME = { royal: "Royal road", road: "Road", track: "Cart track", trail: "Footpath", offroad: "Off-road", water: "Water" };
 

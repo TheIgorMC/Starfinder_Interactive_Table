@@ -8,9 +8,13 @@ import { setZod } from "../../galaxy-core/tools/zod.js";
 // the campaign's stored galaxy, which it saves in place — so the Galaxy
 // Editor, the viewer and this server always see the same galaxy.
 let galaxyDefs = [];
+// Fantasy Atlas tools (galaxy-core/fantasy/tools.js), same arrangement:
+// definitions shared, execution in the backend (POST /api/fantasy/tool/:name).
+let fantasyDefs = [];
 export async function loadGalaxyTools() {
   setZod(z); // must precede the import: the tool modules build zod shapes at load time
   galaxyDefs = (await import("../../galaxy-core/tools/index.js")).collectTools();
+  fantasyDefs = (await import("../../galaxy-core/fantasy/tools.js")).fantasyTools();
 }
 
 const json = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
@@ -44,6 +48,21 @@ export function registerTools(server) {
       async (args) => {
         try {
           return await backendJson("POST", `/api/galaxy/tool/${t.name}`, args || {});
+        } catch (err) {
+          return errorResult(err);
+        }
+      }
+    );
+  }
+
+  // --- Fantasy Atlas (public medieval region maps, /fantasy) ----------
+  for (const t of fantasyDefs) {
+    server.registerTool(
+      `fantasy_${t.name}`,
+      { title: `Fantasy Atlas: ${t.name.replace(/_/g, " ")}`, description: `Fantasy Atlas (medieval region maps, separate from the Starfinder galaxy). ${t.description}`, inputSchema: t.shape },
+      async (args) => {
+        try {
+          return await backendJson("POST", `/api/fantasy/tool/${t.name}`, args || {});
         } catch (err) {
           return errorResult(err);
         }

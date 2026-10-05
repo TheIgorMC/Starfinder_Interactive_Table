@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { EVENT_TYPES, findChapter } from "./lib/model.js";
+import { EVENT_TYPES, findChapter } from "@galaxy-core/fantasy/model.js";
 
 // Events in order (by their "order" number, then as written). Events can be
 // pinned on the map, tied to places and cite chapters of the book.

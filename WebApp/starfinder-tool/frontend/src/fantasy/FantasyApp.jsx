@@ -11,13 +11,12 @@ import TimelinePanel from "./TimelinePanel.jsx";
 import BooksPanel from "./BooksPanel.jsx";
 import GeneratorDialog from "./GeneratorDialog.jsx";
 import { createTerrain, paintTerrain, terrainFields, settlementIcon, poiIcon, THEMES } from "./render.js";
-import { buildWorld, encodeTerrain, BIOMES, LAND_BRUSHES, SETTLEMENT_TYPES, POI_TYPES, ROAD_TYPES, LABEL_TYPES, EVENT_TYPES, newId, simplify, citing, findChapter } from "./lib/model.js";
-import { generateMap, buildRoads } from "./lib/generate.js";
-import { makeNamer } from "./lib/names.js";
-import { rngFrom } from "./lib/rng.js";
-import { findPath } from "./lib/path.js";
-import { computeRoute } from "./lib/travel.js";
-import { defaultTreasury } from "./lib/currency.js";
+import { buildWorld, encodeTerrain, BIOMES, LAND_BRUSHES, SETTLEMENT_TYPES, POI_TYPES, ROAD_TYPES, LABEL_TYPES, EVENT_TYPES, newId, citing, findChapter, paintBiome } from "@galaxy-core/fantasy/model.js";
+import { generateMap, buildRoads, traceRoad } from "@galaxy-core/fantasy/generate.js";
+import { makeNamer } from "@galaxy-core/fantasy/names.js";
+import { rngFrom } from "@galaxy-core/fantasy/rng.js";
+import { computeRoute } from "@galaxy-core/fantasy/travel.js";
+import { defaultTreasury } from "@galaxy-core/fantasy/currency.js";
 import "@fontsource/im-fell-english/400.css";
 import "@fontsource/im-fell-english/400-italic.css";
 import "@fontsource/cinzel/500.css";
@@ -237,25 +236,12 @@ export default function FantasyApp({ embedded = false, active = true }) {
     setMap((m) => ({ ...m, [kind]: [...m[kind], item] }));
     select({ kind, id: item.id });
   };
-  const traceStep = (a, b, diag) => {
-    const code = world.biome[b];
-    const cost = { 71: 1, 65: 1, 82: 1.5, 84: 1.7, 70: 2, 72: 2.4, 68: 3.5, 87: 5, 77: 9, 83: 25 }[code];
-    if (cost === undefined) return Infinity;
-    const c = (cost + Math.abs(world.height[b] - world.height[a]) * 40) * (world.road[b] ? 0.4 : 1) + (world.river[b] && !world.road[b] ? 6 : 0);
-    return diag ? c * 1.4142 : c;
-  };
   const onDraftPoint = (kind, p) => {
     setDraft((dr) => {
       const pts = dr?.kind === kind ? dr.pts : [];
       if (kind === "road" && toolOpts.autoTrace && pts.length && world) {
-        const last = pts[pts.length - 1];
-        const cell = ([x, y]) => Math.min(world.h - 1, Math.max(0, Math.floor(y))) * world.w + Math.min(world.w - 1, Math.max(0, Math.floor(x)));
-        const s = cell(last), t = cell(p);
-        const r = s !== t && findPath({ w: world.w, h: world.h, start: s, target: t, isGoal: (k) => k === t, step: traceStep, minStep: 0.4 });
-        if (r) {
-          const mid = r.path.slice(1, -1).map((k) => [k % world.w + 0.5, Math.floor(k / world.w) + 0.5]);
-          return { kind, pts: [...pts, ...simplify([last, ...mid, p], 0.6).slice(1)] };
-        }
+        const traced = traceRoad(world, pts[pts.length - 1], p);
+        if (traced) return { kind, pts: [...pts, ...traced.slice(1)] };
       }
       return { kind, pts: [...pts, p] };
     });
@@ -279,21 +265,8 @@ export default function FantasyApp({ embedded = false, active = true }) {
   const stroke = useRef(null);
   const onPaintDab = (cx, cy) => {
     if (!world || !terrain) return;
-    const code = toolOpts.brush.charCodeAt(0), r = toolOpts.brushR, sea = world.sea;
-    const rel = (e) => sea + (1 - sea) * e;
-    let touched = false;
-    for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
-      if (x < 0 || y < 0 || x >= world.w || y >= world.h || Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > r) continue;
-      const i = y * world.w + x;
-      if (world.biome[i] === code) continue;
-      world.biome[i] = code; touched = true;
-      const h = world.height[i];
-      if (code === 79 || code === 76) world.height[i] = Math.min(h, sea - 0.02);
-      else if (code === 77) world.height[i] = Math.max(h, rel(0.7));
-      else if (code === 83) world.height[i] = Math.max(h, rel(0.85));
-      else if (code === 72) world.height[i] = Math.min(Math.max(h, rel(0.5)), rel(0.62));
-      else world.height[i] = Math.min(Math.max(h, rel(0.04)), rel(0.45));
-    }
+    const r = toolOpts.brushR;
+    const touched = paintBiome(world, cx, cy, r, toolOpts.brush);
     if (!touched) return;
     stroke.current = true;
     terrain.fields = terrainFields(world);

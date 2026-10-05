@@ -1,4 +1,4 @@
-// node --test src/fantasy/lib   (from frontend/) — pure JS, no browser needed
+// node --test galaxy-core/fantasy/fantasy.test.js — pure JS, no browser needed
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateMap } from "./generate.js";

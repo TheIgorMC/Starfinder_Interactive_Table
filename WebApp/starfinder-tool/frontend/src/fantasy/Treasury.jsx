@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { METALS, PRESETS, makeCurrency, toBase, breakdown, formatAmount, exchange } from "./lib/currency.js";
-import { newId } from "./lib/model.js";
+import { METALS, PRESETS, makeCurrency, toBase, breakdown, formatAmount, exchange } from "@galaxy-core/fantasy/currency.js";
+import { newId } from "@galaxy-core/fantasy/model.js";
 
 // Coinage of the map: currencies (one per realm if you like), their coins,
 // exchange rates, a converter and a purse counter.

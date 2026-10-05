@@ -207,3 +207,24 @@ export function fmtDist(km, unit = "km") {
 export function fmtPop(n) {
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
 }
+
+// Terrain brush: set the biome of every cell within r of (cx, cy) and nudge
+// the heights so relief shading matches. Mutates the world; → touched?
+export function paintBiome(world, cx, cy, r, letter) {
+  const code = letter.charCodeAt(0), sea = world.sea;
+  const rel = (e) => sea + (1 - sea) * e;
+  let touched = false;
+  for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+    if (x < 0 || y < 0 || x >= world.w || y >= world.h || Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > r) continue;
+    const i = y * world.w + x;
+    if (world.biome[i] === code) continue;
+    world.biome[i] = code; touched = true;
+    const h = world.height[i];
+    if (code === 79 || code === 76) world.height[i] = Math.min(h, sea - 0.02);
+    else if (code === 77) world.height[i] = Math.max(h, rel(0.7));
+    else if (code === 83) world.height[i] = Math.max(h, rel(0.85));
+    else if (code === 72) world.height[i] = Math.min(Math.max(h, rel(0.5)), rel(0.62));
+    else world.height[i] = Math.min(Math.max(h, rel(0.04)), rel(0.45));
+  }
+  return touched;
+}

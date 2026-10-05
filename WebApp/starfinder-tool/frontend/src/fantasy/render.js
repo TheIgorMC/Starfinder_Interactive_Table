@@ -2,8 +2,8 @@
 // painted once into an off-screen canvas at P px per cell and only
 // repainted where the GM paints; everything else (rivers, roads, places,
 // labels, selection, routes) is vector, redrawn each frame.
-import { BIOMES, isWater } from "./lib/model.js";
-import { cellHash } from "./lib/rng.js";
+import { BIOMES, isWater } from "@galaxy-core/fantasy/model.js";
+import { cellHash } from "@galaxy-core/fantasy/rng.js";
 
 export const P = 8; // terrain canvas px per cell
 
