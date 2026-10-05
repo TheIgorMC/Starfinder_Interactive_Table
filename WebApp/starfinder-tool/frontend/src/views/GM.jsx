@@ -10,6 +10,7 @@ import Galaxy from "../components/Galaxy.jsx";
 
 // Only loaded when the GM opens the tab.
 const GalaxyEditor = React.lazy(() => import("../galaxy-editor/GalaxyEditor.jsx"));
+const FantasyApp = React.lazy(() => import("../fantasy/FantasyApp.jsx"));
 import Characters from "../components/Characters.jsx";
 import Sessions from "../components/Sessions.jsx";
 import { useAuth } from "../auth.jsx";
@@ -82,6 +83,7 @@ const TABS = [
   { key: "galaxymap", label: "Galaxy Map", fill: true },
   { key: "galaxyeditor", label: "Galaxy Editor", fill: true },
   { key: "galaxy", label: "Galaxy Data" },
+  { key: "fantasy", label: "Fantasy Atlas", fill: true },
   { key: "characters", label: "Characters" },
   { key: "sessions", label: "Sessions" },
   { key: "sources", label: "Sources" },
@@ -335,6 +337,9 @@ export default function GM() {
         {pane("galaxymap", <iframe title="Galaxy map" src="/galaxy" className="gm-frame" />)}
         {pane("galaxyeditor", <React.Suspense fallback={<div className="gm-panel muted">Loading editor…</div>}>
             <GalaxyEditor embedded active={tab === "galaxyeditor"} />
+          </React.Suspense>)}
+        {pane("fantasy", <React.Suspense fallback={<div className="gm-panel muted">Loading atlas…</div>}>
+            <FantasyApp embedded active={tab === "fantasy"} />
           </React.Suspense>)}
         {pane("galaxy", <Galaxy onOpenCampaignEntry={(id) => { setFocusEntryId(id); setTab("campaign"); }} />)}
         {pane("characters", <Characters

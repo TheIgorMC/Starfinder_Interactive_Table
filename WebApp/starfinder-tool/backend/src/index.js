@@ -15,13 +15,15 @@ import campaign from "./routes/campaign.js";
 import sessions from "./routes/sessions.js";
 import review from "./routes/review.js";
 import galaxy from "./routes/galaxy.js";
+import fantasy from "./routes/fantasy.js";
 
 const app = express();
 // The galaxy project (Galaxy Editor saves the whole thing, several MB) gets
 // its own larger limit; everything else stays small.
 const jsonSmall = express.json({ limit: "2mb" });
 const jsonGalaxy = express.json({ limit: "40mb" });
-app.use((req, res, next) => (req.path === "/api/galaxy/project" ? jsonGalaxy : jsonSmall)(req, res, next));
+// fantasy maps carry their terrain grid + inline data, a few hundred KB
+app.use((req, res, next) => (req.path === "/api/galaxy/project" || req.path.startsWith("/api/fantasy") ? jsonGalaxy : jsonSmall)(req, res, next));
 app.use(attachUser); // parses the session cookie into req.user; never blocks
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -37,6 +39,7 @@ app.use("/api/campaign", campaign);
 app.use("/api/sessions", sessions);
 app.use("/api/review", review);
 app.use("/api/galaxy", galaxy);
+app.use("/api/fantasy", fantasy);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

@@ -20,6 +20,7 @@ import "./galaxy/galaxy.css";
 
 // Only the GM ever loads the editor code.
 const GalaxyEditor = React.lazy(() => import("./galaxy-editor/GalaxyEditor.jsx"));
+const FantasyApp = React.lazy(() => import("./fantasy/FantasyApp.jsx"));
 
 createRoot(document.getElementById("root")).render(
   <BrowserRouter>
@@ -43,6 +44,8 @@ createRoot(document.getElementById("root")).render(
         {/* Galaxy Editor full screen (also a GM-console tab) */}
         <Route path="/galaxy-editor" element={<RequireAuth role="gm"><React.Suspense fallback={null}><GalaxyEditor /></React.Suspense></RequireAuth>} />
         {/* Public, unauthenticated: shared physical displays, not per-person devices */}
+        <Route path="/fantasy" element={<RequireAuth role="any"><React.Suspense fallback={null}><FantasyApp /></React.Suspense></RequireAuth>} />
+
         <Route path="/tablet" element={<Tablet />} />
         <Route path="/display" element={<Display />} />
       </Routes>

@@ -7,7 +7,7 @@ import { mkdir, unlink } from "node:fs/promises";
 import { pool } from "../db.js";
 import { requireAuth, requireGM } from "../auth.js";
 
-const CATEGORIES = ["map", "mood", "token", "portrait", "music", "sfx"];
+const CATEGORIES = ["map", "mood", "token", "portrait", "music", "sfx", "fantasy"];
 const LINK_CATEGORIES = ["music", "sfx"];
 const ROOT = process.env.UPLOADS_DIR || "/app/uploads";
 
