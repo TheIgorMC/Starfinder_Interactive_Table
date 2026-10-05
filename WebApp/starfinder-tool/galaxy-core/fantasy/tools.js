@@ -16,7 +16,7 @@ import {
   newId, buildWorld, encodeTerrain, paintBiome, polyLength, fmtDist, citing, findChapter, emptyBook, emptyChapter,
 } from "./model.js";
 import { generateMap, traceRoad, TEMPLATES, CLIMATES, SIZES, GUIDE_HELP } from "./generate.js";
-import { CULTURES, makeNamer, parseNameList } from "./names.js";
+import { CULTURES, makeNamer, nameSetSize } from "./names.js";
 import { rngFrom } from "./rng.js";
 import { computeRoute, schedule, fmtDuration, MODES, PACES } from "./travel.js";
 import { defaultTreasury, toBase, formatAmount, exchange } from "./currency.js";
@@ -116,10 +116,13 @@ export function fantasyTools() {
   const ref = z.string().describe("Id or name of the item");
   const kind = z.enum(KINDS).optional().describe("Limit the lookup to one collection");
   const nameSet = z.object({
-    samples: z.array(z.string()).min(3).describe("example names"),
+    samples: z.array(z.string()).describe("example names of towns and cities"),
+    places: z.array(z.string()).optional().describe("example names of places / features (forests, rivers, caves…)"),
+    people: z.array(z.string()).optional().describe("example names of persons"),
     mode: z.enum(["inspire", "use"]).optional().describe("inspire: invent in their style (default); use: these names first, then invent"),
-    base: z.enum(Object.keys(CULTURES)).optional().describe("wording of features"),
+    base: z.enum(Object.keys(CULTURES)).optional().describe("wording of features; 'plain' = the bare name"),
   });
+  const textSet = (s) => ({ mode: "inspire", base: "anglo", ...s, samples: (s.samples || []).join("\n"), places: (s.places || []).join("\n"), people: (s.people || []).join("\n") });
   const where = {
     x_km: z.number().optional().describe("km east of the map's west edge"),
     y_km: z.number().optional().describe("km south of the map's north edge"),
@@ -169,7 +172,7 @@ export function fantasyTools() {
       }),
       run: async (i, host) => {
         const { public: pub = true, extra_settlements: extraSettlements, names, ...opts } = i;
-        const data = generateMap({ ...opts, extraSettlements, names: names ? { mode: "inspire", base: "anglo", ...names, samples: names.samples.join("\n") } : undefined });
+        const data = generateMap({ ...opts, extraSettlements, names: names ? textSet(names) : undefined });
         data.currency = defaultTreasury();
         data.playerVisible = pub;
         const { id } = await host.createMap(data);
@@ -178,11 +181,26 @@ export function fantasyTools() {
     },
     {
       name: "name_ideas", scope: "global",
-      description: "Invent names in the style of a list of examples (a character-level Markov chain), e.g. towns that sound like a given set. Also shows how features would be worded.",
-      shape: () => ({ samples: z.array(z.string()).min(3), count: z.number().int().min(1).max(100).optional(), base: z.enum(Object.keys(CULTURES)).optional().describe("wording of features: anglo 'X Wood', italic 'Bosco di X', nordic 'Xskog', elvish 'Taur X'") }),
+      description: "Invent names in the style of examples (a character-level Markov chain over one invented language): towns, places/features and people. Give whichever lists you have; each category learns the sounds from all of them, its own examples weighing most.",
+      shape: () => ({
+        samples: z.array(z.string()).optional().describe("example town/city names"),
+        places: z.array(z.string()).optional().describe("example place/feature names"),
+        people: z.array(z.string()).optional().describe("example personal names"),
+        count: z.number().int().min(1).max(100).optional(),
+        base: z.enum(Object.keys(CULTURES)).optional().describe("wording of features: plain = bare name, anglo 'X Wood', italic 'Bosco di X', nordic 'Xskog', elvish 'Taur X'"),
+      }),
       run: async (i) => {
-        const n = makeNamer(rngFrom(i.samples.join("|") + Math.random()), i.base || "anglo", { samples: i.samples, mode: "inspire", base: i.base || "anglo" });
-        return { places: Array.from({ length: i.count || 20 }, () => n.place("town")), features: ["forest", "mountains", "river", "lake", "region"].map((t) => n.feature(t)), learned_from: parseNameList(i.samples).length };
+        const set = textSet({ ...i, base: i.base || "plain" });
+        if (nameSetSize(set) < 3) throw new Error("Give at least 3 example names in total.");
+        const n = makeNamer(rngFrom(JSON.stringify(i) + Math.random()), set.base, set);
+        const k = i.count || 15;
+        return {
+          towns: Array.from({ length: k }, () => n.place("town")),
+          places: Array.from({ length: k }, () => n.poi("landmark")),
+          people: Array.from({ length: k }, () => n.person()),
+          features: ["forest", "mountains", "river", "lake", "region"].map((t) => n.feature(t)),
+          learned_from: nameSetSize(set),
+        };
       },
     },
 
@@ -302,7 +320,7 @@ export function fantasyTools() {
         const m = clone(ctx.map);
         m.options = { ...(m.options || {}) };
         if (i.culture) m.options.culture = i.culture;
-        m.options.names = i.names ? { mode: "inspire", base: i.culture || m.options.culture || "anglo", ...i.names, samples: i.names.samples.join("\n") } : i.culture ? null : m.options.names || null;
+        m.options.names = i.names ? textSet({ base: i.culture || m.options.culture || "anglo", ...i.names }) : i.culture ? null : m.options.names || null;
         const renamed = [];
         if (i.rename && i.rename !== "none") {
           const n = makeNamer(rngFrom(Math.random()), m.options.culture || "anglo", m.options.names);

@@ -1,26 +1,38 @@
 import { useEffect, useRef, useState } from "react";
 import { DEFAULT_OPTIONS, SIZES, TEMPLATES, CLIMATES } from "@galaxy-core/fantasy/generate.js";
-import { CULTURES, parseNameList, makeNamer } from "@galaxy-core/fantasy/names.js";
+import { CULTURES, parseNameList, makeNamer, nameSetSize } from "@galaxy-core/fantasy/names.js";
 import { rngFrom } from "@galaxy-core/fantasy/rng.js";
 import { BIOMES } from "@galaxy-core/fantasy/model.js";
 import { GUIDE_CHOICES, loadImage, analyze, toGuide } from "./draft.js";
 
 const LEGEND_TO_BIOME = { "~": "O", o: "L", ".": "G", ",": "A", f: "F", F: "D", t: "T", h: "H", m: "M", M: "S", s: "W", d: "R" };
 
-// A custom name list: new names "in the style of" the samples, or the samples
-// themselves first. `base` gives the wording of features ("Forest of X"…).
+// A custom name set: one invented language in three lists (towns, places,
+// people). New names are written "in the style of" the samples — or the
+// samples are used first. `base` gives the wording of features ("Forest of
+// X"…, or "plain": the bare name).
+export const EMPTY_NAMES = { samples: "", places: "", people: "", mode: "inspire", base: "plain" };
 export function NameSetField({ value, onChange }) {
-  const v = value || { samples: "", mode: "inspire", base: "anglo" };
-  const list = parseNameList(v.samples);
-  const [preview, setPreview] = useState([]);
+  const v = { ...EMPTY_NAMES, ...(value || {}) };
+  const size = nameSetSize(v);
+  const [seed, setSeed] = useState(1);
+  const [preview, setPreview] = useState(null);
   useEffect(() => {
-    if (list.length < 3) { setPreview([]); return; }
-    const n = makeNamer(rngFrom(v.samples.length + list.length), v.base, { ...v, mode: "inspire" });
-    setPreview(Array.from({ length: 8 }, () => n.place("town")));
-  }, [v.samples, v.base]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (size < 3) { setPreview(null); return; }
+    const n = makeNamer(rngFrom(`${seed}:${v.samples}:${v.places}:${v.people}`), v.base, { ...v, mode: "inspire" });
+    setPreview({ towns: Array.from({ length: 6 }, () => n.place("town")), places: Array.from({ length: 4 }, () => n.poi("landmark")), people: Array.from({ length: 10 }, () => n.person()) });
+  }, [v.samples, v.places, v.people, v.base, seed, size]); // eslint-disable-line react-hooks/exhaustive-deps
+  const area = (key, label, ph) => (
+    <label className="fm-namelist">{label} <small>{parseNameList(v[key]).length}</small>
+      <textarea className="fm-in fm-area" rows={2} placeholder={ph} value={v[key]} onChange={(e) => onChange({ ...v, [key]: e.target.value })} />
+    </label>
+  );
   return (
     <div className="fm-nameset">
-      <textarea className="fm-in fm-area" rows={4} placeholder="Paste names, one per line or comma-separated (at least 3; 20+ works best)…" value={v.samples} onChange={(e) => onChange({ ...v, samples: e.target.value })} />
+      <div className="fm-muted">One language, three lists — each learns its sounds from all of them, its own examples weighing most. Comma- or line-separated.</div>
+      {area("samples", "Towns & cities", "Xeredon, Aprij, Quogyt…")}
+      {area("places", "Places & features", "Glesh, Serety…")}
+      {area("people", "People", "Selor, Idavar, Sezla…")}
       <div className="fm-row">
         <select className="fm-in" value={v.mode} onChange={(e) => onChange({ ...v, mode: e.target.value })}>
           <option value="inspire">Invent new names in this style</option>
@@ -28,7 +40,14 @@ export function NameSetField({ value, onChange }) {
         </select>
         <label className="fm-inline">Feature wording<select className="fm-in" value={v.base} onChange={(e) => onChange({ ...v, base: e.target.value })}>{Object.entries(CULTURES).map(([k, c]) => <option key={k} value={k}>{c.name.split(" (")[0]}</option>)}</select></label>
       </div>
-      <div className="fm-muted">{list.length} names{preview.length ? <> · e.g. <i>{preview.join(", ")}</i></> : list.length ? " — add a few more" : ""}</div>
+      {preview ? (
+        <div className="fm-namepreview">
+          <div><b>Towns</b> {preview.towns.join(", ")}</div>
+          <div><b>Places</b> {preview.places.join(", ")}</div>
+          <div><b>People</b> {preview.people.join(", ")}</div>
+          <button className="fm-link" onClick={() => setSeed((x) => x + 1)}>more ideas</button>
+        </div>
+      ) : <div className="fm-muted">Give at least 3 names in total.</div>}
     </div>
   );
 }
@@ -36,7 +55,7 @@ export function NameSetField({ value, onChange }) {
 export default function GeneratorDialog({ initial, title, onGenerate, onCancel, busy }) {
   const [o, setO] = useState({ ...DEFAULT_OPTIONS, ...(initial || {}), seed: "" });
   const [customNames, setCustomNames] = useState(initial?.names ? true : false);
-  const [names, setNames] = useState(initial?.names || { samples: "", mode: "inspire", base: "anglo" });
+  const [names, setNames] = useState(initial?.names || EMPTY_NAMES);
   const [draft, setDraft] = useState(null); // { file, img, a, picks }
   const [err, setErr] = useState("");
   const set = (k) => (e) => setO((x) => ({ ...x, [k]: e.target.type === "range" ? Number(e.target.value) : e.target.value }));
@@ -58,7 +77,7 @@ export default function GeneratorDialog({ initial, title, onGenerate, onCancel, 
 
   const go = () => {
     const out = { ...o };
-    if (customNames && parseNameList(names.samples).length >= 3) out.names = names;
+    if (customNames && nameSetSize(names) >= 3) out.names = names;
     else delete out.names;
     if (draft) { out.guide = toGuide(draft.a, draft.picks); out.draftFile = draft.file; out.extraSettlements = o.extraSettlements !== false; }
     onGenerate(out);

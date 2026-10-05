@@ -85,6 +85,14 @@ export const CULTURES = {
       stones: ["{X} Stones"], battlefield: ["Dagorlad {X}"], lighthouse: ["{X} Light"], bridge: ["{X} Bridge"], portal: ["The {A} Gate"], landmark: ["{X} Seat"],
     },
   },
+  plain: {
+    name: "Bare names (just the name, no 'Forest of…')",
+    root: (r) => CULTURES.anglo.root(r),
+    adj: ["Old"],
+    place: { default: ["{X}"] },
+    feature: {},
+    poi: {},
+  },
 };
 
 // ---- custom name sets ------------------------------------------------------
@@ -95,17 +103,24 @@ export function parseNameList(text) {
   const list = Array.isArray(text) ? text : String(text || "").split(/[\n,;]+/);
   return [...new Set(list.map((x) => String(x).trim()).filter((x) => x.length >= 2 && x.length <= 40))];
 }
-export function markovModel(samples) {
+// `samples` are the category's own names (weighted ×3); `extra` are the
+// other names of the same language — they teach the sounds when a category
+// has only a handful of examples.
+export function markovModel(samples, extra = []) {
   const words = parseNameList(samples);
-  const order = words.length < 25 ? 2 : 3;
+  const more = parseNameList(extra).filter((w) => !words.includes(w));
+  const all = [...words, ...more];
+  const order = all.length < 25 ? 2 : 3;
   const chain = new Map();
   const add = (k, c) => { if (!chain.has(k)) chain.set(k, []); chain.get(k).push(c); };
-  for (const w of words) {
+  const learn = (w) => {
     const s = "^".repeat(order) + w.toLowerCase() + "$";
     for (let i = 0; i + order < s.length; i++) add(s.slice(i, i + order), s[i + order]);
-  }
-  const lens = words.map((w) => w.length).sort((a, b) => a - b);
-  return { chain, order, words, known: new Set(words.map((w) => w.toLowerCase())), min: Math.max(3, lens[0] || 3), max: Math.max(5, lens[lens.length - 1] || 10) };
+  };
+  for (const w of words) { learn(w); learn(w); learn(w); }
+  for (const w of more) learn(w);
+  const lens = (words.length >= 2 ? words : all).map((w) => w.length).sort((a, b) => a - b);
+  return { chain, order, words: words.length ? words : all, known: new Set(all.map((w) => w.toLowerCase())), min: Math.max(3, lens[0] || 3), max: Math.max(5, lens[lens.length - 1] || 10) };
 }
 const titleCase = (s) => s.replace(/(^|[\s\-'’])(\p{L})/gu, (_, p, c) => p + c.toUpperCase());
 export function markovName(model, rng, { allowKnown = false } = {}) {
@@ -129,25 +144,47 @@ export function markovName(model, rng, { allowKnown = false } = {}) {
   return titleCase(model.words[Math.floor(rng() * model.words.length)] || "Nameless");
 }
 
-// names: optional custom set { samples: [...] | "text", mode: "inspire" | "use", base: cultureKey }
+// names: optional custom set, one "language" in three lists:
+//   { samples: towns & cities, places?: features (forests, rivers, caves…),
+//     people?: persons, mode: "inspire" | "use", base: cultureKey }
+// Lists can be arrays or text (one per line / comma separated).
+export function nameSetSize(names) {
+  return names ? parseNameList(names.samples).length + parseNameList(names.places).length + parseNameList(names.people).length : 0;
+}
 export function makeNamer(rng, cultureKey = "anglo", names = null) {
-  const custom = names && parseNameList(names.samples).length >= 3 ? names : null;
+  const custom = nameSetSize(names) >= 3 ? names : null;
   const c = CULTURES[custom ? custom.base || cultureKey : cultureKey] || CULTURES.anglo;
-  const model = custom ? markovModel(custom.samples) : null;
-  // "use": the given names go to settlements first, most important first
-  const pool = custom && custom.mode === "use" ? [...model.words] : [];
+  const lists = custom ? { towns: parseNameList(custom.samples), places: parseNameList(custom.places), people: parseNameList(custom.people) } : null;
+  const modelFor = (key) => {
+    if (!lists) return null;
+    const others = Object.entries(lists).filter(([k]) => k !== key).flatMap(([, v]) => v);
+    return markovModel(lists[key], others);
+  };
+  const model = modelFor("towns"), placeModel = modelFor("places"), peopleModel = modelFor("people");
+  // "use": the given names go to settlements (and places) first, most important first
+  const pool = custom && custom.mode === "use" ? [...lists.towns] : [];
+  const poiPool = custom && custom.mode === "use" ? [...lists.places] : [];
   const root = () => (model ? markovName(model, rng) : c.root(rng));
+  const placeRoot = () => (placeModel ? markovName(placeModel, rng) : c.root(rng));
   const used = new Set();
-  const fill = (tpl) => {
-    const r = root();
+  const fill = (tpl, rootFn = root) => {
+    const r = rootFn();
     return tpl.replace("{X}", r).replace("{x}", r.toLowerCase()).replace("{A}", pick(rng, c.adj));
   };
-  const unique = (tpls) => {
+  const unique = (tpls, rootFn) => {
     for (let k = 0; k < 30; k++) {
-      const s = fill(pick(rng, tpls));
+      const s = fill(pick(rng, tpls), rootFn);
       if (!used.has(s)) { used.add(s); return s; }
     }
-    return fill(pick(rng, tpls)) + " " + (used.size + 1);
+    // small name lists run out of fresh roots: join two (Xeredon + Kashr → Xerekashr)
+    const r = rootFn || root;
+    for (let k = 0; k < 40; k++) {
+      const x = r(), y = r();
+      const joined = x.slice(0, Math.max(2, Math.ceil(x.length * 0.6))) + y.slice(Math.floor(y.length / 2)).toLowerCase();
+      const s = pick(rng, tpls).replace("{X}", joined).replace("{x}", joined.toLowerCase()).replace("{A}", pick(rng, c.adj));
+      if (!used.has(s) && joined.length <= 12) { used.add(s); return s; }
+    }
+    return fill(pick(rng, tpls), rootFn) + " " + (used.size + 1);
   };
   return {
     culture: c,
@@ -157,8 +194,19 @@ export function makeNamer(rng, cultureKey = "anglo", names = null) {
       // a custom set's names are whole place names: no "Borgo {X}" dressing
       return unique(custom ? (type === "castle" ? c.place.castle || ["{X}"] : ["{X}"]) : c.place[type] || c.place.default || ["{X}"]);
     },
-    feature: (type) => unique(c.feature[type] || ["{X}"]),
-    poi: (type) => unique(c.poi[type] || ["{X}"]),
+    feature: (type) => unique(c.feature[type] || ["{X}"], placeRoot),
+    poi: (type) => {
+      if (poiPool.length) { const n = poiPool.shift(); used.add(n); return n; }
+      return unique(c.poi[type] || ["{X}"], placeRoot);
+    },
+    // a person's name in the set's language (custom sets only have a voice
+    // for this; built-in cultures fall back to their place roots)
+    person: () => {
+      const one = () => (peopleModel ? markovName(peopleModel, rng) : c.root(rng));
+      for (let k = 0; k < 30; k++) { const s = one(); if (!used.has(s)) { used.add(s); return s; } }
+      for (let k = 0; k < 40; k++) { const x = one(), y = one(); const s = x.slice(0, Math.max(2, Math.ceil(x.length * 0.6))) + y.slice(Math.floor(y.length / 2)).toLowerCase(); if (!used.has(s) && s.length <= 11) { used.add(s); return s; } }
+      return one();
+    },
     root,
   };
 }

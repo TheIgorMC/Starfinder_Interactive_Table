@@ -59,10 +59,10 @@ Names come from four cultures (`names.js`): anglo, italic (`Borgo Ardano`, `Rocc
 
 ### Custom name sets
 
-You can give the generator a list of example names. It builds a character-level Markov chain from them, Azgaar's "namesbase" idea: order 2 for short lists, which gives more variety, and order 3 for lists of 25 or more, which stays closer to the originals. Stored as `options.names = { samples, mode, base }`:
+You can give the generator example names of one invented language, in three lists: **towns** (`samples`), **places / features** (`places`) and **people** (`people`). Each category gets a character-level Markov chain, Azgaar's "namesbase" idea. It learns from all three lists, with its own examples weighted ×3, so even three town names give usable results. The chain is order 2 for short lists, which gives more variety, and order 3 for 25+ names, which stays closer to the originals. When a short list runs out of fresh names, two roots are joined (Xeredon + Kashr → Xerekashr) instead of numbering them. `namer.person()` gives people's names: in the dialog preview, from `name_ideas`, and for writing. Stored as `options.names = { samples, places, people, mode, base }`:
 - `mode: "inspire"` invents new names in the style of the list.
 - `mode: "use"` gives the listed names to the settlements first (most important first), then invents.
-- `base` is the culture whose wording dresses features: "Bosco di X", "X Wood"…
+- `base` is the culture whose wording dresses features: "Bosco di X", "X Wood"… `plain` uses the bare name, which suits invented languages.
 
 Where to set it:
 - the generator dialog;

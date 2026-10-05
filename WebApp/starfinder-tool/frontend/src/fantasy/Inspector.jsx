@@ -1,6 +1,6 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { NameSetField } from "./GeneratorDialog.jsx";
+import { NameSetField, EMPTY_NAMES } from "./GeneratorDialog.jsx";
 import { CULTURES } from "@galaxy-core/fantasy/names.js";
 import remarkGfm from "remark-gfm";
 import { SETTLEMENT_TYPES, POI_TYPES, ROAD_TYPES, LABEL_TYPES, EVENT_TYPES, COLLECTIONS, polyLength, fmtDist, fmtPop, resolveName, findChapter, chapterLabel } from "@galaxy-core/fantasy/model.js";
@@ -345,9 +345,9 @@ function MapNames({ map, setMap }) {
   const setOpts = (patch) => setMap((m) => ({ ...m, options: { ...(m.options || {}), ...patch } }));
   return (
     <div className="fm-sec">
-      <div className="fm-label">Names for new places</div>
+      <div className="fm-label">Names for new places & people</div>
       <select className="fm-in" value={names ? "custom" : map.options?.culture || "anglo"} onChange={(e) => (e.target.value === "custom"
-        ? setOpts({ names: { samples: "", mode: "inspire", base: map.options?.culture || "anglo" } })
+        ? setOpts({ names: { ...EMPTY_NAMES } })
         : setOpts({ names: null, culture: e.target.value }))}>
         {Object.entries(CULTURES).map(([k, c]) => <option key={k} value={k}>{c.name}</option>)}
         <option value="custom">My own list of names…</option>

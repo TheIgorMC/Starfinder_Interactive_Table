@@ -236,3 +236,7 @@
 .fm-draft-colors i { width: 22px; height: 16px; border: 1px solid var(--ink2); flex: none; }
 .fm-draft-colors small { width: 32px; color: var(--ink2); }
 .fm-draft-colors select { flex: 1; }
+.fm-namelist { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--ink2); margin-top: 6px; }
+.fm-namelist small { color: var(--red); }
+.fm-namepreview { background: #f8eed5; border: 1px solid #d6c19a; padding: 6px 9px; font-size: 14px; margin-top: 6px; }
+.fm-namepreview b { font-family: var(--caps); font-size: 11px; letter-spacing: .1em; color: var(--ink2); font-weight: normal; margin-right: 4px; }
