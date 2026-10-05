@@ -5,13 +5,22 @@ import { drawOverlay, hitTest, toCell, toScreen, vertexAt, SETTLEMENT_SIZE } fro
 // the active tool. All edits go out through callbacks; painting mutates the
 // runtime world directly (fast) and commits once at the end of the stroke.
 export default function MapView({ map, world, terrain, terrainRev, gm, tool, toolOpts, sel, onSelect, onMove, onMoveVertex, onDeleteVertex,
-  onPlace, draft, onDraftPoint, onFinishDraft, fitRev, route, onWaypoint, onPaintDab, onPaintEnd, focus, paused, showEvents = true, highlight }) {
+  onPlace, draft, onDraftPoint, onFinishDraft, fitRev, route, onWaypoint, onPaintDab, onPaintEnd, focus, paused, showEvents = true, highlight, underlay }) {
   const ref = useRef(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState(null);
   const [cursor, setCursor] = useState(null);
   const [hover, setHover] = useState(null);
   const drag = useRef(null);
+  // tracing layer (the draft the map was made from), GM only
+  const [under, setUnder] = useState(null);
+  useEffect(() => {
+    if (!underlay?.url) { setUnder(null); return undefined; }
+    const img = new Image();
+    img.onload = () => setUnder(img);
+    img.src = underlay.url;
+    return () => { img.onload = null; };
+  }, [underlay?.url]);
 
   // fit on load / size change of the map
   const fit = useCallback(() => {
@@ -52,9 +61,10 @@ export default function MapView({ map, world, terrain, terrainRev, gm, tool, too
       drawOverlay(ctx, {
         map, view, terrain, width: size.w, height: size.h, gm, sel, hover, route, draft, cursor,
         brush: tool === "brush" ? { r: toolOpts.brushR } : null, showEvents, highlight,
+        underlay: under && underlay?.visible ? { img: under, opacity: underlay.opacity ?? 0.45 } : null,
       });
     });
-  }, [map, view, terrain, terrainRev, size, gm, sel, hover, route, draft, cursor, tool, toolOpts.brushR, paused, showEvents, highlight]);
+  }, [map, view, terrain, terrainRev, size, gm, sel, hover, route, draft, cursor, tool, toolOpts.brushR, paused, showEvents, highlight, under, underlay?.visible, underlay?.opacity]);
 
   // wheel zoom around the pointer
   useEffect(() => {

@@ -285,7 +285,7 @@ function smoothPath(ctx, pts, v) {
 export const SETTLEMENT_SIZE = { capital: 15, city: 12, town: 9, village: 6.5, hamlet: 4, castle: 11 };
 
 export function drawOverlay(ctx, st) {
-  const { map, view: v, terrain, width, height, gm, sel, hover, route, draft, brush, cursor, showLabels = true, showEvents = true, highlight } = st;
+  const { map, view: v, terrain, width, height, gm, sel, hover, route, draft, brush, cursor, showLabels = true, showEvents = true, highlight, underlay } = st;
   const hl = (id) => highlight && highlight.has(id);
   const th = THEMES[map.style] || THEMES.parchment;
   ctx.save();
@@ -295,6 +295,7 @@ export function drawOverlay(ctx, st) {
   const [ox, oy] = toScreen(v, 0, 0);
   ctx.imageSmoothingEnabled = v.z < P;
   ctx.drawImage(terrain.canvas, ox, oy, map.w * v.z, map.h * v.z);
+  if (underlay) { ctx.globalAlpha = underlay.opacity; ctx.drawImage(underlay.img, ox, oy, map.w * v.z, map.h * v.z); ctx.globalAlpha = 1; }
   // frame
   ctx.strokeStyle = th.frame; ctx.lineWidth = 3; ctx.strokeRect(ox - 4, oy - 4, map.w * v.z + 8, map.h * v.z + 8);
   ctx.lineWidth = 1; ctx.strokeRect(ox - 8, oy - 8, map.w * v.z + 16, map.h * v.z + 16);

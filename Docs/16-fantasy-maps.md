@@ -57,6 +57,52 @@ The generator runs these steps in order:
 
 Names come from four cultures (`names.js`): anglo, italic (`Borgo Ardano`, `Rocca Vitenza`, `Monti di …`), nordic and elvish.
 
+### Custom name sets
+
+You can give the generator a list of example names. It builds a character-level Markov chain from them, Azgaar's "namesbase" idea: order 2 for short lists, which gives more variety, and order 3 for lists of 25 or more, which stays closer to the originals. Stored as `options.names = { samples, mode, base }`:
+- `mode: "inspire"` invents new names in the style of the list.
+- `mode: "use"` gives the listed names to the settlements first (most important first), then invents.
+- `base` is the culture whose wording dresses features: "Bosco di X", "X Wood"…
+
+Where to set it:
+- the generator dialog;
+- the map's properties ("Names for new places"), which the editor uses when you place something new;
+- the MCP tools `name_ideas` and `set_name_set` (the latter can also rename what is already on the map).
+
+### From a draft
+
+`generateMap({ guide })` rebuilds a draft. A **guide** is rows of characters stretched over the map, with the legend in `GUIDE_HELP`:
+
+| Char | Meaning |
+|---|---|
+| `~` | sea |
+| `o` | lake |
+| `.` | plains |
+| `,` | farmland |
+| `f` / `F` | forest / deep forest |
+| `t` | taiga |
+| `h` | hills |
+| `m` / `M` | mountains / snowy peaks |
+| `s` | marsh |
+| `d` | desert |
+| space | land, the climate decides |
+| `#` | ink, filled in from the neighbouring cells |
+
+How the guide is turned into a map:
+- The map keeps the draft's proportions.
+- Water touching the edge becomes sea; enclosed water becomes a lake.
+- Land rises with the distance from the shore, plus the hills and mountains the guide marks.
+- Rivers, climate and the unmarked land are generated as usual.
+
+`places` (`{ name, type, fx, fy }`, with fractions 0–1 of the map) puts the draft's own towns exactly where they are, nudged onto land. `labels` writes its names; a generated label of the same kind nearby is dropped. `extraSettlements: false` keeps only the given towns.
+
+**In the editor**, "From a draft" in the generator dialog loads a picture: a sketch, a scan or another tool's export.
+- `frontend/src/fantasy/draft.js` shrinks it to the grid and groups its colours with k-means, using farthest-point seeding so that small areas of a distinct colour keep their own group.
+- It guesses a terrain for each colour; anti-aliased edge colours follow the nearer big colour. The GM confirms or changes each guess, with a live preview.
+- The picture is uploaded and kept as the map's **tracing layer** (`underlay: { url, opacity, visible }`). It is drawn over the terrain for the GM only and stripped from the public API, so the GM can place their towns on it.
+
+**Over MCP**, `generate_map` takes `guide`, `places`, `labels`, `names` and `extra_settlements`, so a draft shown to Claude can be rebuilt from a description of it.
+
 ## Editing (GM)
 
 **Tools:**
@@ -159,7 +205,8 @@ The definitions are in `galaxy-core/fantasy/tools.js`. The backend runs them one
 - Every item returned carries its `link`: `SIT_PUBLIC_URL` + `/fantasy?map=…&sel=…`, or a relative link when `SIT_PUBLIC_URL` is unset.
 
 **The tools:**
-- **Maps:** `list_maps`, `generate_map`, `get_map`, `set_map_info`.
+- **Maps:** `list_maps`, `generate_map` (also from a draft: guide grid, places, labels, custom names), `get_map`, `set_map_info`.
+- **Names:** `name_ideas` (invent names in the style of examples), `set_name_set` (a map's naming style, optionally renaming what is there).
 - **Finding things:** `search`, `get_item`. `get_item` returns everything about one item: description, notes, pictures, links, cited chapters, events there, terrain and the nearest settlements.
 - **Adding:** `add_settlement`, `add_place`, `add_label`, `add_event`, `add_road`. `add_road` follows the terrain between named places.
 - **Editing:** `update_item`, `add_link`, `delete_item`, `paint_terrain`.

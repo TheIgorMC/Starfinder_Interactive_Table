@@ -1,5 +1,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { NameSetField } from "./GeneratorDialog.jsx";
+import { CULTURES } from "@galaxy-core/fantasy/names.js";
 import remarkGfm from "remark-gfm";
 import { SETTLEMENT_TYPES, POI_TYPES, ROAD_TYPES, LABEL_TYPES, EVENT_TYPES, COLLECTIONS, polyLength, fmtDist, fmtPop, resolveName, findChapter, chapterLabel } from "@galaxy-core/fantasy/model.js";
 
@@ -270,6 +272,17 @@ export function MapProperties({ map, gm, setMap, onRebuildRoads, onRegenerate, o
         {map.settlements.length} settlements · {map.pois.length} places · {map.roads.length} roads · {map.rivers.length} rivers · 1 cell = {(map.kmPerCell || 1).toFixed(2)} km
       </div>
       <Common item={map} set={set} gm={gm} isMap map={map} onLink={onLink} />
+      {gm && <MapNames map={map} setMap={setMap} />}
+      {gm && map.underlay && (
+        <div className="fm-sec">
+          <div className="fm-label">Tracing layer <span className="fm-muted">(the draft — only you see it)</span></div>
+          <div className="fm-row">
+            <label className="fm-check"><input type="checkbox" checked={!!map.underlay.visible} onChange={(e) => set({ underlay: { ...map.underlay, visible: e.target.checked } })} /> Show</label>
+            <input type="range" min={0.1} max={1} step={0.05} style={{ flex: 1 }} value={map.underlay.opacity ?? 0.45} onChange={(e) => set({ underlay: { ...map.underlay, opacity: Number(e.target.value) } })} />
+            <button className="fm-link" onClick={() => set({ underlay: null })}>remove</button>
+          </div>
+        </div>
+      )}
       {gm && (
         <div className="fm-sec fm-actions">
           <button className="fm-btn" onClick={onRebuildRoads} title="Re-trace the generated road network between the current settlements; roads you drew stay">Rebuild roads</button>
@@ -323,5 +336,23 @@ function EventFields({ item, set, gm, map, onLink, onPin, pinning }) {
         )}
       </div>
     </>
+  );
+}
+
+// names the editor invents for new places on this map
+function MapNames({ map, setMap }) {
+  const names = map.options?.names || null;
+  const setOpts = (patch) => setMap((m) => ({ ...m, options: { ...(m.options || {}), ...patch } }));
+  return (
+    <div className="fm-sec">
+      <div className="fm-label">Names for new places</div>
+      <select className="fm-in" value={names ? "custom" : map.options?.culture || "anglo"} onChange={(e) => (e.target.value === "custom"
+        ? setOpts({ names: { samples: "", mode: "inspire", base: map.options?.culture || "anglo" } })
+        : setOpts({ names: null, culture: e.target.value }))}>
+        {Object.entries(CULTURES).map(([k, c]) => <option key={k} value={k}>{c.name}</option>)}
+        <option value="custom">My own list of names…</option>
+      </select>
+      {names && <NameSetField value={names} onChange={(v) => setOpts({ names: v })} />}
+    </div>
   );
 }

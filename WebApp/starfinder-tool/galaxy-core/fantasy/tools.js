@@ -15,8 +15,9 @@ import {
   BIOMES, SETTLEMENT_TYPES, POI_TYPES, ROAD_TYPES, LABEL_TYPES, EVENT_TYPES, COLLECTIONS,
   newId, buildWorld, encodeTerrain, paintBiome, polyLength, fmtDist, citing, findChapter, emptyBook, emptyChapter,
 } from "./model.js";
-import { generateMap, traceRoad, TEMPLATES, CLIMATES, SIZES } from "./generate.js";
-import { CULTURES } from "./names.js";
+import { generateMap, traceRoad, TEMPLATES, CLIMATES, SIZES, GUIDE_HELP } from "./generate.js";
+import { CULTURES, makeNamer, parseNameList } from "./names.js";
+import { rngFrom } from "./rng.js";
 import { computeRoute, schedule, fmtDuration, MODES, PACES } from "./travel.js";
 import { defaultTreasury, toBase, formatAmount, exchange } from "./currency.js";
 
@@ -114,6 +115,11 @@ export function fantasyTools() {
   const mapId = z.number().int().optional().describe("Map id (fantasy_list_maps). Default: the most recently edited map.");
   const ref = z.string().describe("Id or name of the item");
   const kind = z.enum(KINDS).optional().describe("Limit the lookup to one collection");
+  const nameSet = z.object({
+    samples: z.array(z.string()).min(3).describe("example names"),
+    mode: z.enum(["inspire", "use"]).optional().describe("inspire: invent in their style (default); use: these names first, then invent"),
+    base: z.enum(Object.keys(CULTURES)).optional().describe("wording of features"),
+  });
   const where = {
     x_km: z.number().optional().describe("km east of the map's west edge"),
     y_km: z.number().optional().describe("km south of the map's north edge"),
@@ -155,14 +161,28 @@ export function fantasyTools() {
         forests: z.number().min(0).max(1).optional(), mountains: z.number().min(0).max(1).optional(), density: z.number().min(0).max(1).optional().describe("settlement density"),
         culture: z.enum(Object.keys(CULTURES)).optional().describe("naming style: anglo, italic, nordic, elvish"),
         public: z.boolean().optional().describe("readable by link without login (default true)"),
+        names: nameSet.optional().describe("a custom name list to name everything in its style"),
+        guide: z.array(z.string()).optional().describe(`Rebuild a draft: rows of characters drawn over the whole map (any size, e.g. 40×25; keep its proportions). ${GUIDE_HELP}`),
+        places: z.array(z.object({ name: z.string(), type: z.enum(Object.keys(SETTLEMENT_TYPES)), fx: z.number().min(0).max(1).describe("0 = west edge, 1 = east edge"), fy: z.number().min(0).max(1).describe("0 = north edge, 1 = south edge"), population: z.number().int().optional(), description: z.string().optional() })).optional().describe("settlements to place exactly (a draft's towns)"),
+        labels: z.array(z.object({ name: z.string(), type: z.enum(Object.keys(LABEL_TYPES)), fx: z.number().min(0).max(1), fy: z.number().min(0).max(1), size: z.number().optional() })).optional().describe("names to write on the map (realms, forests, ranges, seas)"),
+        extra_settlements: z.boolean().optional().describe("also generate other towns and villages (default true)"),
       }),
       run: async (i, host) => {
-        const { public: pub = true, ...opts } = i;
-        const data = generateMap(opts);
+        const { public: pub = true, extra_settlements: extraSettlements, names, ...opts } = i;
+        const data = generateMap({ ...opts, extraSettlements, names: names ? { mode: "inspire", base: "anglo", ...names, samples: names.samples.join("\n") } : undefined });
         data.currency = defaultTreasury();
         data.playerVisible = pub;
         const { id } = await host.createMap(data);
         return { id, name: data.name, seed: data.seed, width_km: Math.round(data.w * data.kmPerCell), height_km: Math.round(data.h * data.kmPerCell), settlements: data.settlements.length, roads: data.roads.length, link: host.link(id, {}) };
+      },
+    },
+    {
+      name: "name_ideas", scope: "global",
+      description: "Invent names in the style of a list of examples (a character-level Markov chain), e.g. towns that sound like a given set. Also shows how features would be worded.",
+      shape: () => ({ samples: z.array(z.string()).min(3), count: z.number().int().min(1).max(100).optional(), base: z.enum(Object.keys(CULTURES)).optional().describe("wording of features: anglo 'X Wood', italic 'Bosco di X', nordic 'Xskog', elvish 'Taur X'") }),
+      run: async (i) => {
+        const n = makeNamer(rngFrom(i.samples.join("|") + Math.random()), i.base || "anglo", { samples: i.samples, mode: "inspire", base: i.base || "anglo" });
+        return { places: Array.from({ length: i.count || 20 }, () => n.place("town")), features: ["forest", "mountains", "river", "lake", "region"].map((t) => n.feature(t)), learned_from: parseNameList(i.samples).length };
       },
     },
 
@@ -272,6 +292,29 @@ export function fantasyTools() {
         if (i.style) m.style = i.style;
         if (i.unit) m.travel = { ...(m.travel || {}), unit: i.unit };
         return { result: { ok: true, name: m.name, public: !!m.playerVisible, width_km: Math.round(m.w * m.kmPerCell), link: ctx.link({}) }, map: m };
+      },
+    },
+    {
+      name: "set_name_set", scope: "map",
+      description: "Set how new places on a map are named: a built-in culture, or a custom list of example names (invent in their style, or use them first). Optionally rename the settlements (and/or area labels) already on the map with it.",
+      shape: () => ({ mapId, culture: z.enum(Object.keys(CULTURES)).optional(), names: nameSet.optional(), rename: z.enum(["none", "settlements", "all"]).optional().describe("none (default), settlements, or all = settlements + places + area labels") }),
+      run: (i, ctx) => {
+        const m = clone(ctx.map);
+        m.options = { ...(m.options || {}) };
+        if (i.culture) m.options.culture = i.culture;
+        m.options.names = i.names ? { mode: "inspire", base: i.culture || m.options.culture || "anglo", ...i.names, samples: i.names.samples.join("\n") } : i.culture ? null : m.options.names || null;
+        const renamed = [];
+        if (i.rename && i.rename !== "none") {
+          const n = makeNamer(rngFrom(Math.random()), m.options.culture || "anglo", m.options.names);
+          const order = ["capital", "city", "town", "castle", "village", "hamlet"];
+          for (const s of [...m.settlements].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type))) { const old = s.name; s.name = n.place(s.type); renamed.push(`${old} → ${s.name}`); }
+          if (i.rename === "all") {
+            for (const p of m.pois) p.name = n.poi(p.type);
+            for (const l of m.labels) if (l.type !== "note") l.name = n.feature(l.type);
+            for (const r of m.rivers) if (r.name) r.name = n.feature("river");
+          }
+        }
+        return { result: { culture: m.options.culture, custom_names: !!m.options.names, renamed: renamed.length, examples: renamed.slice(0, 15) }, map: m };
       },
     },
     {

@@ -225,3 +225,14 @@
 .fm .fm-updown button:hover { color: var(--red); background: none; }
 .fm-readlink { display: inline-block; font-family: var(--caps); font-size: 13px; letter-spacing: .08em; color: var(--red); border: 1px solid var(--red); padding: 5px 12px; text-decoration: none; }
 .fm-readlink:hover { background: #fbecd0; }
+
+/* generator: names & draft */
+.fm-dialog.wide { width: 720px; }
+.fm-nameset { margin-top: 6px; }
+.fm-draft-previews { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fm-draft-previews img, .fm-draft-previews canvas { width: 100%; max-height: 220px; object-fit: contain; border: 1px solid var(--edge); background: #e9dcbc; image-rendering: pixelated; }
+.fm-draft-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin: 8px 0; }
+.fm-draft-colors label { display: flex; align-items: center; gap: 6px; }
+.fm-draft-colors i { width: 22px; height: 16px; border: 1px solid var(--ink2); flex: none; }
+.fm-draft-colors small { width: 32px; color: var(--ink2); }
+.fm-draft-colors select { flex: 1; }

@@ -38,10 +38,10 @@ export const CULTURES = {
     feature: {
       forest: ["Bosco di {X}", "Selva di {X}", "Foresta {A}"], mountains: ["Monti di {X}", "Alpi {X}e", "Catena di {X}"],
       hills: ["Colli di {X}", "Colline di {X}"], marsh: ["Paludi di {X}", "Acquitrini di {X}"], desert: ["Deserto di {X}", "Lande di {X}"],
-      sea: ["Mare di {X}", "Golfo di {X}"], lake: ["Lago di {X}", "Lago {A}"], river: ["Fiume {X}", "Torrente {X}"], region: ["Regno di {X}", "Contea di {X}", "Marca di {X}"],
+      sea: ["Mare di {X}", "Golfo di {X}"], lake: ["Lago di {X}"], river: ["Fiume {X}", "Torrente {X}"], region: ["Regno di {X}", "Contea di {X}", "Marca di {X}"],
     },
     poi: {
-      cave: ["Grotta di {X}", "Antro {A}"], mine: ["Miniera di {X}"], ruin: ["Rovine di {X}", "{X} Vecchia"], tower: ["Torre di {X}", "Torre {A}"],
+      cave: ["Grotta di {X}", "Antro di {X}"], mine: ["Miniera di {X}"], ruin: ["Rovine di {X}", "{X} Vecchia"], tower: ["Torre di {X}", "Torre {A}"],
       shrine: ["Edicola di {X}", "Santuario di {X}"], temple: ["Tempio di {X}"], monastery: ["Abbazia di {X}", "Convento di {X}"],
       dungeon: ["Cripta {A}", "Segrete di {X}"], lair: ["Tana {A}", "Covo di {X}"], camp: ["Accampamento di {X}"], inn: ["Locanda {A}", "Osteria di {X}"],
       stones: ["Pietre di {X}", "Cerchio {A}"], battlefield: ["Piana di {X}"], lighthouse: ["Faro di {X}"], bridge: ["Ponte di {X}"], portal: ["Porta {A}"], landmark: ["Sasso di {X}"],
@@ -87,12 +87,60 @@ export const CULTURES = {
   },
 };
 
-export function makeNamer(rng, cultureKey = "anglo") {
-  const c = CULTURES[cultureKey] || CULTURES.anglo;
+// ---- custom name sets ------------------------------------------------------
+// A list of sample names → a character-level Markov chain that writes new
+// names in the same style (Azgaar's "namesbase" idea). Order 2 with few
+// samples (more variety), 3 with many (closer to the originals).
+export function parseNameList(text) {
+  const list = Array.isArray(text) ? text : String(text || "").split(/[\n,;]+/);
+  return [...new Set(list.map((x) => String(x).trim()).filter((x) => x.length >= 2 && x.length <= 40))];
+}
+export function markovModel(samples) {
+  const words = parseNameList(samples);
+  const order = words.length < 25 ? 2 : 3;
+  const chain = new Map();
+  const add = (k, c) => { if (!chain.has(k)) chain.set(k, []); chain.get(k).push(c); };
+  for (const w of words) {
+    const s = "^".repeat(order) + w.toLowerCase() + "$";
+    for (let i = 0; i + order < s.length; i++) add(s.slice(i, i + order), s[i + order]);
+  }
+  const lens = words.map((w) => w.length).sort((a, b) => a - b);
+  return { chain, order, words, known: new Set(words.map((w) => w.toLowerCase())), min: Math.max(3, lens[0] || 3), max: Math.max(5, lens[lens.length - 1] || 10) };
+}
+const titleCase = (s) => s.replace(/(^|[\s\-'’])(\p{L})/gu, (_, p, c) => p + c.toUpperCase());
+export function markovName(model, rng, { allowKnown = false } = {}) {
+  for (let t = 0; t < 80; t++) {
+    let key = "^".repeat(model.order), out = "";
+    for (;;) {
+      const next = model.chain.get(key);
+      if (!next) break;
+      const c = next[Math.floor(rng() * next.length)];
+      if (c === "$") break;
+      out += c;
+      key = (key + c).slice(-model.order);
+      if (out.length > model.max + 2) break;
+    }
+    out = out.trim();
+    if (out.length < model.min || out.length > model.max + 1) continue;
+    if (!allowKnown && model.known.has(out)) continue;
+    if (/(.)\1\1/.test(out)) continue; // no triple letters
+    return titleCase(out);
+  }
+  return titleCase(model.words[Math.floor(rng() * model.words.length)] || "Nameless");
+}
+
+// names: optional custom set { samples: [...] | "text", mode: "inspire" | "use", base: cultureKey }
+export function makeNamer(rng, cultureKey = "anglo", names = null) {
+  const custom = names && parseNameList(names.samples).length >= 3 ? names : null;
+  const c = CULTURES[custom ? custom.base || cultureKey : cultureKey] || CULTURES.anglo;
+  const model = custom ? markovModel(custom.samples) : null;
+  // "use": the given names go to settlements first, most important first
+  const pool = custom && custom.mode === "use" ? [...model.words] : [];
+  const root = () => (model ? markovName(model, rng) : c.root(rng));
   const used = new Set();
   const fill = (tpl) => {
-    const root = c.root(rng);
-    return tpl.replace("{X}", root).replace("{x}", root.toLowerCase()).replace("{A}", pick(rng, c.adj));
+    const r = root();
+    return tpl.replace("{X}", r).replace("{x}", r.toLowerCase()).replace("{A}", pick(rng, c.adj));
   };
   const unique = (tpls) => {
     for (let k = 0; k < 30; k++) {
@@ -103,9 +151,14 @@ export function makeNamer(rng, cultureKey = "anglo") {
   };
   return {
     culture: c,
-    place: (type) => unique(c.place[type] || c.place.default || ["{X}"]),
+    custom: !!custom,
+    place: (type) => {
+      if (pool.length && type !== "castle") { const n = pool.shift(); used.add(n); return n; }
+      // a custom set's names are whole place names: no "Borgo {X}" dressing
+      return unique(custom ? (type === "castle" ? c.place.castle || ["{X}"] : ["{X}"]) : c.place[type] || c.place.default || ["{X}"]);
+    },
     feature: (type) => unique(c.feature[type] || ["{X}"]),
     poi: (type) => unique(c.poi[type] || ["{X}"]),
-    root: () => c.root(rng),
+    root,
   };
 }

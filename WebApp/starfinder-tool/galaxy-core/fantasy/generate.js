@@ -4,7 +4,8 @@
 // biomes → settlements → road network (A* that reuses existing roads, so
 // lanes join into highways) → points of interest → region labels.
 import { rngFrom, makeNoise, pick } from "./rng.js";
-import { encodeTerrain, simplify, SETTLEMENT_TYPES, newId, forEachCellOnLine, ROAD_TYPES } from "./model.js";
+import { encodeTerrain, simplify, SETTLEMENT_TYPES, LABEL_TYPES, newId, forEachCellOnLine, ROAD_TYPES } from "./model.js";
+const LABEL_KEYS = Object.keys(LABEL_TYPES);
 import { makeNamer } from "./names.js";
 import { findPath } from "./path.js";
 
@@ -28,11 +29,52 @@ const N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]
 const C = (s) => s.charCodeAt(0);
 const BC = Object.fromEntries("OLGAFDTHMSWR".split("").map((k) => [k, C(k)]));
 
+// Guide grids (a draft map to rebuild): rows of characters, any resolution,
+// stretched over the map. " " = land, let the climate decide; "#" = ink
+// (lines, lettering) — filled from the neighbouring cells.
+export const GUIDE_LEGEND = {
+  "~": "O", o: "L", ".": "G", ",": "A", f: "F", F: "D", t: "T", h: "H", m: "M", M: "S", s: "W", d: "R", " ": "", "#": "#",
+};
+export const GUIDE_HELP = "~ sea · o lake · . plains · , farmland · f forest · F deep forest · t taiga · h hills · m mountains · M snowy peaks · s marsh · d desert · (space) land, climate decides · # ink/unknown, filled from neighbours";
+
+// → Uint8Array of biome codes (0 = free land) at w×h, or null
+function sampleGuide(rows, w, h) {
+  const R = rows.length, Cn = Math.max(...rows.map((r) => r.length));
+  const g = new Uint8Array(w * h);
+  const INK = 255;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const ch = (rows[Math.min(R - 1, Math.floor((y + 0.5) * R / h))] || "")[Math.min(Cn - 1, Math.floor((x + 0.5) * Cn / w))] ?? " ";
+    const m = GUIDE_LEGEND[ch];
+    g[y * w + x] = m === undefined || m === "#" ? INK : m ? C(m) : 0;
+  }
+  // ink → nearest known value (multi-source BFS)
+  const q = [];
+  for (let k = 0; k < w * h; k++) if (g[k] !== INK) q.push(k);
+  if (!q.length) return null;
+  for (let qi = 0; qi < q.length; qi++) {
+    const k = q[qi], x = k % w, y = (k - x) / w;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const kk = yy * w + xx;
+      if (g[kk] === INK) { g[kk] = g[k]; q.push(kk); }
+    }
+  }
+  return g;
+}
+
 export function generateMap(opts = {}) {
   const o = { ...DEFAULT_OPTIONS, ...opts };
   const seed = o.seed || Math.random().toString(36).slice(2, 8);
-  const [w, h] = SIZES[o.size] || SIZES.medium;
+  const guideRows = Array.isArray(o.guide) ? o.guide.filter((r) => typeof r === "string") : null;
+  const hasGuide = !!(guideRows && guideRows.length >= 2);
+  let [w, h] = SIZES[o.size] || SIZES.medium;
+  if (hasGuide) { // keep the draft's proportions
+    const ratio = guideRows.length / Math.max(...guideRows.map((r) => r.length));
+    h = Math.round(Math.max(w * 0.35, Math.min(w * 1.6, w * ratio)));
+  }
   const n = w * h;
+  const G = hasGuide ? sampleGuide(guideRows, w, h) : null;
   const rng = rngFrom(seed);
   const nz = makeNoise(rngFrom(seed + ":h"));
   const mz = makeNoise(rngFrom(seed + ":m"));
@@ -72,16 +114,37 @@ export function generateMap(opts = {}) {
   // sea level from the template's land share; inland: no sea, only lakes
   const landShare = { coast: 0.68, peninsula: 0.5, island: 0.42, archipelago: 0.3, inland: 1, highlands: 0.85 }[o.template] ?? 0.65;
   const sorted = Float32Array.from(height).sort();
-  const sea = landShare >= 1 ? sorted[0] - 0.001 : sorted[Math.floor((1 - landShare) * (n - 1))];
+  let sea = landShare >= 1 ? sorted[0] - 0.001 : sorted[Math.floor((1 - landShare) * (n - 1))];
 
   const biome = new Uint8Array(n).fill(BC.G);
-  // ocean = below sea and connected to the border
-  const below = (k) => height[k] <= sea;
-  floodFromBorder(w, h, below, (k) => { biome[k] = BC.O; });
+  if (G) {
+    // a draft decides where land and water are; relief rises with the
+    // distance from the shore, plus the hills and mountains it marks
+    sea = 0.4;
+    const isW = (k) => G[k] === BC.O || G[k] === BC.L;
+    const dLand = distanceTo(w, h, (k) => !isW(k), 40), dWater = distanceTo(w, h, isW, 60);
+    for (let k = 0; k < n; k++) {
+      const x = k % w, y = (k - x) / w, nzv = nz.fbm(x * sc * 1.5, y * sc * 1.5, 5) - 0.5;
+      if (isW(k)) { height[k] = sea - 0.03 - Math.min(0.3, dLand[k] * 0.015) + nzv * 0.04; continue; }
+      let e = 0.08 + 0.42 * (1 - Math.exp(-dWater[k] / 14)) + nzv * 0.3;
+      if (G[k] === BC.H) e = Math.max(e, 0.52 + nzv * 0.15);
+      if (G[k] === BC.M || G[k] === BC.S) e = Math.max(e, 0.72 + nz.ridged(x * sc * 2 + 9, y * sc * 2 + 9, 3) * 0.25 + (G[k] === BC.S ? 0.08 : 0));
+      height[k] = sea + (1 - sea) * Math.max(0.02, Math.min(1, e));
+    }
+    // guided water: touching the map edge = sea, inland = lake (unless marked)
+    for (const comp of components(w, h, isW)) {
+      const edge = comp.some((k) => { const x = k % w, y = (k - x) / w; return x === 0 || y === 0 || x === w - 1 || y === h - 1; });
+      for (const k of comp) biome[k] = G[k] === BC.L || !edge ? BC.L : BC.O;
+    }
+  } else {
+    // ocean = below sea and connected to the border
+    const below = (k) => height[k] <= sea;
+    floodFromBorder(w, h, below, (k) => { biome[k] = BC.O; });
+  }
 
   // ---- 2. depressions → lakes; drainage surface ------------------------
   const filled = priorityFill(w, h, height, biome);
-  for (let k = 0; k < n; k++) {
+  if (!G) for (let k = 0; k < n; k++) {
     if (biome[k] === BC.O) continue;
     if (height[k] <= sea || filled[k] - height[k] > 0.035) biome[k] = BC.L;
   }
@@ -89,7 +152,7 @@ export function generateMap(opts = {}) {
   // rest go back to land (they still drain through)
   const lakes = components(w, h, (k) => biome[k] === BC.L).map((comp) => ({ comp, depth: Math.max(...comp.map((k) => filled[k] - height[k])) }));
   lakes.sort((a, b) => b.depth - a.depth);
-  let lakeBudget = Math.round(n * 0.04);
+  let lakeBudget = G ? Infinity : Math.round(n * 0.04);
   for (const l of lakes) {
     const keep = l.comp.length >= 4 && l.comp.length <= lakeBudget;
     if (keep) lakeBudget -= l.comp.length;
@@ -186,9 +249,10 @@ export function generateMap(opts = {}) {
     const e = (height[k] - sea) / (1 - sea), pr = prank[k];
     const m = moist[k] + (onRiver[k] ? 0.08 : 0), t = temp[k];
     let b = BC.G;
-    if (pr > 1 - mShare * 0.3) b = t < 0.5 ? BC.S : BC.M;
-    else if (pr > 1 - mShare) b = BC.M;
-    else if (pr > 1 - mShare - hShare) b = m > 0.66 - fShift ? BC.F : BC.H;
+    if (G && G[k]) { biome[k] = G[k]; continue; } // the draft said so
+    if (G ? e > 0.85 : pr > 1 - mShare * 0.3) b = t < 0.5 ? BC.S : BC.M;
+    else if (G ? e > 0.68 : pr > 1 - mShare) b = BC.M;
+    else if (G ? e > 0.5 : pr > 1 - mShare - hShare) b = m > 0.66 - fShift ? BC.F : BC.H;
     else if (t < 0.22) b = m > 0.5 ? BC.T : BC.G;
     else if (m < 0.3 && t > 0.6) b = BC.R;
     else if (e < 0.07 && m > 0.66) b = BC.W;
@@ -199,7 +263,7 @@ export function generateMap(opts = {}) {
 
   // ---- 6. settlements ----------------------------------------------------
   const world = { w, h, n, height, biome, sea, river: onRiver };
-  const namer = makeNamer(rngFrom(seed + ":names"), o.culture);
+  const namer = makeNamer(rngFrom(seed + ":names"), o.culture, o.names);
   const landCells = biome.reduce((a, b) => a + (b !== BC.O && b !== BC.L ? 1 : 0), 0);
   const scale = (landCells / 38400) * (0.5 + o.density);
   const sRng = rngFrom(seed + ":s");
@@ -240,14 +304,39 @@ export function generateMap(opts = {}) {
       made++;
     }
   };
+  // places given by the caller (a draft's towns), at fractions of the map
+  // (fx, fy in 0..1); nudged onto the nearest land
+  const given = { capital: 0, city: 0, town: 0, village: 0, hamlet: 0, castle: 0 };
+  for (const p of Array.isArray(o.places) ? o.places : []) {
+    const type = SETTLEMENT_TYPES[p.type] ? p.type : "village";
+    let x = Math.max(0, Math.min(w - 1, Math.floor((p.fx ?? 0.5) * w))), y = Math.max(0, Math.min(h - 1, Math.floor((p.fy ?? 0.5) * h)));
+    const land = (k) => biome[k] !== BC.O && biome[k] !== BC.L;
+    if (!land(i(x, y))) {
+      let best = null;
+      for (let r = 1; r < 12 && !best; r++) for (let dy = -r; dy <= r && !best; dy++) for (let dx = -r; dx <= r; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < w && yy < h && land(i(xx, yy))) { best = [xx, yy]; break; }
+      }
+      if (best) [x, y] = best;
+    }
+    const k = i(x, y), [p0, p1] = SETTLEMENT_TYPES[type].pop;
+    settlements.push({
+      id: newId("s"), type, name: p.name || namer.place(type), x: x + 0.5, y: y + 0.5, cell: k,
+      population: p.population ?? Math.round((p0 + (p1 - p0) * sRng() ** 2) / 10) * 10,
+      port: near(k, (q) => biome[q] === BC.O, 1), description: p.description || "", images: [], gmNotes: "", hidden: false,
+    });
+    given[type]++;
+  }
+  const extra = o.extraSettlements !== false;
+  const count = (type, nAuto) => (extra ? Math.max(0, nAuto - given[type]) : 0);
   const center = (k) => { const x = k % w, y = (k - x) / w; return -Math.hypot(x / w - 0.5, y / h - 0.5) * 1.2; };
-  place("capital", 1, 0, center);
-  place("city", Math.max(1, Math.round(3.5 * scale)), w / 8);
-  place("town", Math.max(2, Math.round(11 * scale)), w / 18);
-  place("village", Math.max(4, Math.round(34 * scale)), w / 40);
+  if (!given.capital) place("capital", extra || !settlements.length ? 1 : 0, 0, center);
+  place("city", count("city", Math.max(1, Math.round(3.5 * scale))), w / 8);
+  place("town", count("town", Math.max(2, Math.round(11 * scale))), w / 18);
+  place("village", count("village", Math.max(4, Math.round(34 * scale))), w / 40);
   // castles watch the hills near the settled land
   const hillScore = (k) => (biome[k] === BC.H ? 0.8 : biome[k] === BC.M ? 0.3 : 0);
-  place("castle", Math.max(1, Math.round(5 * scale)), w / 14, hillScore);
+  place("castle", count("castle", Math.max(1, Math.round(5 * scale))), w / 14, hillScore);
 
   // fields around farming settlements
   const fRng = rngFrom(seed + ":fields");
@@ -275,7 +364,17 @@ export function generateMap(opts = {}) {
     id: newId("v"), name: j < 8 ? namer.feature("river") : "", width: Math.round((0.6 + 2.6 * Math.sqrt(r.acc / maxAcc)) * 10) / 10,
     pts: r.pts.map(([x, y]) => [round2(x), round2(y)]), description: "", images: [], gmNotes: "", hidden: false,
   }));
-  const labels = areaLabels(world, namer);
+  let labels = areaLabels(world, namer);
+  if (Array.isArray(o.labels) && o.labels.length) {
+    const mine = o.labels.map((l) => ({
+      id: newId("l"), type: LABEL_KEYS.includes(l.type) ? l.type : "region", name: l.name || namer.feature(l.type || "region"),
+      x: round2(Math.max(0, Math.min(w, (l.fx ?? 0.5) * w))), y: round2(Math.max(0, Math.min(h, (l.fy ?? 0.5) * h))),
+      size: l.size ?? (l.type === "region" ? 4 : 2.5), angle: l.angle ?? 0, description: "", images: [], gmNotes: "", hidden: false,
+    }));
+    // a named feature of the draft replaces the generated name of the same kind nearby
+    labels = labels.filter((a) => !mine.some((m) => m.type === a.type && Math.hypot(m.x - a.x, m.y - a.y) < w / 8));
+    labels.push(...mine);
+  }
 
   for (const s of settlements) delete s.cell;
   const terrain = encodeTerrain({ n, height, biome, sea });
@@ -283,7 +382,7 @@ export function generateMap(opts = {}) {
     format: "sit-fantasy-map", formatVersion: 1,
     name: o.name || namer.feature("region"), seed, w, h,
     kmPerCell: Math.round((o.widthKm / w) * 1000) / 1000,
-    options: o, terrain,
+    options: { ...o, guide: hasGuide ? `${guideRows.length} rows` : undefined, places: undefined, labels: undefined }, terrain,
     settlements, roads, rivers: riverOut, pois, labels, events: [], books: [],
     style: "parchment", playerVisible: false, description: "", images: [], gmNotes: "",
     currency: defaultCurrencyRef(), travel: { unit: "km" },

@@ -201,7 +201,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
   const setTool = (t) => { setToolState(t); setDraft(null); setPinFor(null); if (t === "travel") setTab("travel"); };
   const select = (s) => { setSel(s); if (s) setTab("details"); };
 
-  const namer = useMemo(() => makeNamer(rngFrom(Math.random()), map?.options?.culture || "anglo"), [map?.options?.culture]); // eslint-disable-line react-hooks/exhaustive-deps
+  const namer = useMemo(() => makeNamer(rngFrom(Math.random()), map?.options?.culture || "anglo", map?.options?.names), [map?.options?.culture, map?.options?.names]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- edits ---------------------------------------------------------------
   const update = (s, patch, opts) => setMap((m) => ({ ...m, [s.kind]: m[s.kind].map((x) => (x.id === s.id ? { ...x, ...patch } : x)) }), opts);
@@ -334,10 +334,20 @@ export default function FantasyApp({ embedded = false, active = true }) {
   }, [map, tab, openChapter]);
 
   // ---- map-level actions -----------------------------------------------------
-  const createMap = async (opts) => {
+  // a draft image is kept on the map as a tracing layer
+  const uploadDraft = async (file) => {
+    if (!file) return null;
+    const fd = new FormData();
+    fd.append("file", file); fd.append("label", `draft: ${file.name}`); fd.append("folder", "fantasy");
+    const res = await fetch("/api/media/fantasy", { method: "POST", body: fd });
+    const body = await res.json().catch(() => null);
+    return res.ok ? { url: body.url, opacity: 0.45, visible: true } : null;
+  };
+  const createMap = async ({ draftFile, ...opts }) => {
     setBusy(true);
     await new Promise((r) => setTimeout(r, 30));
     const data = generateMap(opts);
+    data.underlay = await uploadDraft(draftFile);
     data.currency = defaultTreasury();
     data.playerVisible = true; // public by default: the atlas is meant to be shared by link
     const r = await req("POST", "/api/fantasy", { data, name: data.name });
@@ -347,15 +357,16 @@ export default function FantasyApp({ embedded = false, active = true }) {
     await refreshList();
     open(r.data.id);
   };
-  const regenerate = async (opts) => {
+  const regenerate = async ({ draftFile, ...opts }) => {
     if (!window.confirm("Replace this map's terrain, settlements, roads and places with a new generation? (Undo still works until you leave.)")) return;
     setBusy(true);
     await new Promise((r) => setTimeout(r, 30));
     const data = generateMap(opts);
+    data.underlay = draftFile ? await uploadDraft(draftFile) : map.underlay || null;
     setBusy(false);
     setDialog(null);
     setSel(null);
-    setMap((m) => ({ ...data, currency: m.currency, travel: m.travel, playerVisible: m.playerVisible, description: m.description, images: m.images, gmNotes: m.gmNotes }));
+    setMap((m) => ({ ...data, currency: m.currency, travel: m.travel, playerVisible: m.playerVisible, description: m.description, images: m.images, gmNotes: m.gmNotes, books: m.books || [], events: [] }));
     setFitRev((v) => v + 1);
   };
   const rebuildRoads = () => {
@@ -486,7 +497,7 @@ export default function FantasyApp({ embedded = false, active = true }) {
                 sel={sel} onSelect={select} onMove={onMove} onMoveVertex={onMoveVertex} onDeleteVertex={onDeleteVertex} onPlace={onPlace}
                 draft={draft} onDraftPoint={onDraftPoint} onFinishDraft={finishDraft} route={routeView} fitRev={fitRev}
                 onWaypoint={(p, s) => setTrip((t) => ({ ...t, waypoints: [...t.waypoints, p], names: [...(t.names || []), s?.name || ""] }))}
-                onPaintDab={onPaintDab} onPaintEnd={onPaintEnd} focus={focus} paused={!active} showEvents={showEvents} highlight={highlight} />
+                onPaintDab={onPaintDab} onPaintEnd={onPaintEnd} focus={focus} paused={!active} showEvents={showEvents} highlight={highlight} underlay={gm ? map.underlay : null} />
             )}
             <div className="fm-mapbtns"><button className="fm-btn icon" title="Fit the map" onClick={() => setFitRev((v) => v + 1)}>⤢</button></div>
             <div className="fm-hint">{pinFor ? "Click the map where the event happened · Esc cancels" : gm ? HINTS[tool] : tool === "travel" ? HINTS.travel : "Drag to pan · wheel to zoom · click a place to read about it"}</div>

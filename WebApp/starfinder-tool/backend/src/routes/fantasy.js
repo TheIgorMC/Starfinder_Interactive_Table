@@ -19,6 +19,7 @@ function forPublic(data) {
   const out = { ...data };
   for (const k of COLLECTIONS) out[k] = (data[k] || []).filter((e) => !e.hidden).map(({ gmNotes: _n, ...e }) => e);
   delete out.gmNotes;
+  delete out.underlay; // the GM's tracing layer (draft picture)
   // books: hidden books and chapters (not written yet, spoilers) stay GM-only
   out.books = (data.books || []).filter((b) => !b.hidden).map((b) => ({ ...b, chapters: (b.chapters || []).filter((c) => !c.hidden) }));
   return out;
