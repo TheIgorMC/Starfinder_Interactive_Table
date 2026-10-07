@@ -69,10 +69,18 @@ r.get("/:id", async (req, res) => {
 // and/or review_status/review_notes (the verdict). Whatever fields are
 // present in the body are the ones written; omitted fields are untouched.
 r.patch("/:id", async (req, res) => {
-  const { data, mechanics, review_status, review_notes } = req.body || {};
+  const { data, mechanics, source, review_status, review_notes } = req.body || {};
   const sets = [];
   const params = [];
 
+  // Lets a GM (or an MCP-connected AI) correct a `source` value straight
+  // from the review workflow — the natural place to fix anything
+  // scripts/normalize-sources.js flagged as "suspicious" (see
+  // Docs/04-data-pipeline-aon.md), without a separate direct-DB edit.
+  if (source !== undefined) {
+    params.push(source);
+    sets.push(`source = $${params.length}`);
+  }
   if (data !== undefined) {
     params.push(JSON.stringify(data));
     sets.push(`data = $${params.length}`);

@@ -41,6 +41,17 @@ node scripts/import-foundry.js [folder...] [--src=path] [--icons-src=path]  # pr
 node scripts/scrape-aon.js                                 # fallback for categories Foundry doesn't cover (Equipment, Themes, rules/setting/tables)
 node scripts/validate-aon-cache.js
 node scripts/import-aon-cache.js                            # THE step that actually pushes aon-cache/ into the live `aon_entries` table — needs DATABASE_URL
+
+# Retroactive cleanup over data already in `aon_entries` (both import pipelines
+# now canonicalize source names going forward via src/source-books.js; this is
+# for whatever was imported before that, or under a variant not yet mapped):
+node scripts/normalize-sources.js [--apply] [--flag-suspicious] [--category=feat]
+
+# AI-assisted first pass over the Data Review workflow (review_status/review_notes
+# on live aon_entries — same columns /review and the MCP server's review_* tools
+# use) — grounded against each entry's own source text via local Ollama, same
+# principle as audit-normalized.js below but against the live table, not aon-cache/:
+DATABASE_URL=... OLLAMA_URL=http://fisso:11434/v1 node scripts/audit-aon-entries.js <category> [--random --limit=N]
 ```
 
 `import-foundry.js`'s icon-copying default was broken until 2026-09 — it pointed at the checkout root instead of the checkout's `static/icons/` (one directory short), so every icon silently "went missing" even on a from-scratch run. Fixed now; if `icon-cache/` after a run has 0 files copied, something's wrong with `--icons-src`, not with the checkout.

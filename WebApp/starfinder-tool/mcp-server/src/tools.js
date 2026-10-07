@@ -118,11 +118,12 @@ export function registerTools(server) {
     "review_update",
     {
       title: "Correct and/or mark a compendium entry reviewed",
-      description: "Patch an entry's data/mechanics JSON and/or set its review verdict (approved/flagged) with notes. Fields omitted are left unchanged.",
+      description: "Patch an entry's data/mechanics JSON, its source book, and/or set its review verdict (approved/flagged) with notes. Fields omitted are left unchanged.",
       inputSchema: {
         id: z.number().int(),
         data: z.record(z.string(), z.any()).optional(),
         mechanics: z.record(z.string(), z.any()).optional(),
+        source: z.string().optional().describe("the sourcebook name — fix this when review flagged it as a parsing leak or an un-normalized variant"),
         review_status: z.enum(["unreviewed", "approved", "flagged"]).optional(),
         review_notes: z.string().optional(),
       },

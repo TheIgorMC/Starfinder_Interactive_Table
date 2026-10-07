@@ -31,6 +31,7 @@ export default function ReviewTool() {
   const [entry, setEntry] = useState(null); // full row from GET /:id
   const [dataText, setDataText] = useState("");
   const [mechanicsText, setMechanicsText] = useState("");
+  const [source, setSource] = useState("");
   const [notes, setNotes] = useState("");
   const [jsonError, setJsonError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -68,6 +69,7 @@ export default function ReviewTool() {
       setEntry(row);
       setDataText(JSON.stringify(row.data ?? {}, null, 2));
       setMechanicsText(JSON.stringify(row.mechanics ?? {}, null, 2));
+      setSource(row.source || "");
       setNotes(row.review_notes || "");
     }).catch((e) => setListError(e.message));
   };
@@ -94,7 +96,7 @@ export default function ReviewTool() {
 
     setSaving(true);
     try {
-      const body = { data, mechanics, review_notes: notes };
+      const body = { data, mechanics, source, review_notes: notes };
       if (status_override) body.review_status = status_override;
       const updated = await api(`/review/${selectedId}`, { method: "PATCH", body });
       setEntry(updated);
@@ -180,7 +182,7 @@ export default function ReviewTool() {
                 <div>
                   <h3>{entry.name}</h3>
                   <p className="muted">
-                    {entry.category} · {entry.source}
+                    {entry.category}
                     {" · "}
                     <span className={"pill" + (STATUS_PILL[entry.review_status] ? ` ${STATUS_PILL[entry.review_status]}` : "")}>
                       {STATUS_LABEL[entry.review_status] || entry.review_status}
@@ -202,6 +204,15 @@ export default function ReviewTool() {
               ) : (
                 <p className="pill bad">No AoN source URL on this entry — nothing to compare against.</p>
               )}
+
+              <div className="review-editor" style={{ maxWidth: 420 }}>
+                <label>source</label>
+                <input
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                  placeholder="Sourcebook name — fix here if flagged as suspicious"
+                />
+              </div>
 
               <div className="review-editors">
                 <div className="review-editor">

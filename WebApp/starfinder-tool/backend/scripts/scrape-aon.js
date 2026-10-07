@@ -18,6 +18,7 @@
 import { load } from "cheerio";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeSource } from "../src/source-books.js";
 
 const UA = "Mozilla/5.0 (SIT-scraper; personal, non-commercial use)";
 
@@ -278,8 +279,15 @@ async function main() {
         try {
           const detail = await fetchDetail(entry.url);
           if (!entry.source) {
-            entry.source = detail.book;
-            entry.data.sourcePage = detail.page;
+            // AoN's own "Source" line is usually already the book's full
+            // title ("Starfinder Core Rulebook"), but running it through
+            // the same normalizeSource() the Foundry importer uses is a
+            // safety net against stray abbreviations/page-number leaks and
+            // guarantees both pipelines land on the exact same canonical
+            // string for the same book (see src/source-books.js).
+            const normalized = normalizeSource(detail.book);
+            entry.source = normalized.book || detail.book;
+            entry.data.sourcePage = normalized.page ?? detail.page;
             entry.data.sourceUrl = detail.sourceUrl;
           }
           config.applyDetail?.(entry, detail.sections);

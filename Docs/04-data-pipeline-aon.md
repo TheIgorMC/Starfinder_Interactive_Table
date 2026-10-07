@@ -1696,6 +1696,73 @@ spot-checked that every `mechanics.*` hand-fix from earlier in this
 document survived. Distinct `source` values across the whole cache: 211
 → 201.
 
+#### `source-books.js`: one shared canonicalization table, and a retroactive cleanup script
+
+`SOURCE_BOOKS`/`normalizeSource()` used to live only in `foundry-import.js`
+— the AoN scraper (`scrape-aon.js`) lifted the book title straight off the
+page's own "Source" line with no normalization at all, so the two
+pipelines could independently land on different spellings for the same
+book even after the fixes above (and anything imported before this change
+still carries whatever raw string its pipeline produced at the time,
+abbreviation or not). Both are now:
+
+- **Deduplicated at the source**: `SOURCE_BOOKS`/`normalizeSource()` moved
+  to `backend/src/source-books.js`, imported by both `foundry-import.js`
+  and `scrape-aon.js`, so a future (re-)import of either kind always lands
+  on the exact same canonical string for the same book.
+- **Cleaned up retroactively, for data already in `aon_entries`**:
+  `backend/scripts/normalize-sources.js` reports every distinct live
+  `source` value with its row count, proposes a rename for anything
+  `SOURCE_BOOKS` recognizes as a known-but-non-canonical variant
+  (`--apply` to actually run the `UPDATE`s), and separately flags any
+  value that doesn't look like a real book title at all — empty, a stray
+  sentence fragment, a URL, anything over 60 characters
+  (`looksLikeSuspiciousSource()`, same module) — since there's no correct
+  rename to guess for those; `--flag-suspicious` sets `review_status =
+  'flagged'` on them instead, so they surface in the normal Data Review
+  queue (`/review`, or an MCP-connected AI's `review_list(status:
+  "flagged")`) for a human/AI to actually look at and correct by hand.
+  Dry-run by default. Run per-category with `--category=feat` to scope a
+  pass, or with no filter to sweep the whole table at once.
+
+#### `audit-aon-entries.js`: the grounded checker, applied to the live table
+
+Everything above audits `aon-cache/` — pre-import JSON files, checked
+before anything reaches a GM's actual Postgres. `backend/scripts/
+audit-aon-entries.js` runs the identical grounded check (same
+`buildItemAuditPrompt`/`applyItemAuditResults` from `scripts/lib/
+audit-item.js` — does a structured field match its OWN source text, never
+"is this correct per real Starfinder rules") against the **live
+`aon_entries` table** instead, and writes real verdicts into
+`review_status`/`review_notes`/`reviewed_by` — the same columns `/review`
+(the GM's Data Review tool) and the MCP server's `review_update` tool both
+read and write. This is the "AI assist to verify everything the first
+parser took for granted" pass: by default it only touches rows still
+`review_status = 'unreviewed'` (a human verdict is never silently
+overwritten), flags anything with a genuine mismatch or a deterministic
+anomaly, and auto-approves the rest (pass `--no-auto-approve` for a more
+conservative mode that only ever flags, never approves). `--all` re-sweeps
+every row regardless of current status — existing `review_notes` are
+appended to, not replaced, even then.
+
+```bash
+DATABASE_URL=postgres://... OLLAMA_URL=http://fisso:11434/v1 \
+  node scripts/audit-aon-entries.js feat --random --limit=50   # sample first
+DATABASE_URL=postgres://... node scripts/audit-aon-entries.js feat         # the whole category
+```
+
+The point of writing straight into `review_status`/`review_notes` rather
+than a separate findings file (unlike the `aon-cache/` audit above, which
+writes to `DataEntry/output/_audits/`) is so the much smaller flagged
+queue this produces is exactly what a human in `/review`, or an AI agent
+connected over MCP, works next — `review_list(status: "flagged")` to see
+what needs attention, `review_get(id)` for the full entry plus this run's
+note explaining what looked wrong, `review_update(id, ...)` to correct the
+`data`/`mechanics` field and clear the flag. Nobody has to churn through
+thousands of entries one MCP round trip at a time; the bulk sweep is cheap
+local inference, the judgment calls on what's actually flagged are what
+need a human or a more capable model's attention.
+
 ## Querying by source
 
 `GET /api/aon?category=feat&source=Starfinder+Core+Rulebook&q=adaptive` —
